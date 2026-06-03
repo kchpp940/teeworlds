@@ -751,8 +751,6 @@ void CMenus::RenderFilterHeader(CUIRect View, int FilterIndex)
 					m_lFilters[i].Switch();
 			}
 		}
-		m_aSelectedServers[ServerBrowser()->GetType()] = -1;
-		m_AddressSelection |= ADDR_SELECTION_CHANGE;
 	}
 }
 
@@ -2104,18 +2102,7 @@ void CMenus::RenderServerbrowserBottomBox(CUIRect MainView)
 	if(DoButton_Menu(&s_RefreshButton, Localize("Refresh"), 0, &Button) || (UI()->KeyPress(KEY_R) && (Input()->KeyIsPressed(KEY_LCTRL) || Input()->KeyIsPressed(KEY_RCTRL))))
 	{
 		if(m_MenuPage == PAGE_INTERNET)
-		{
-			bool FavFilterActive = false;
-			for(int i = 0; i < m_lFilters.size(); i++)
-			{
-				if(m_lFilters[i].Extended() && m_lFilters[i].Custom() == CBrowserFilter::FILTER_FAVORITES)
-				{
-					FavFilterActive = true;
-					break;
-				}
-			}
-			ServerBrowser()->Refresh(FavFilterActive ? IServerBrowser::REFRESHFLAG_FAVORITES : IServerBrowser::REFRESHFLAG_INTERNET);
-		}
+			ServerBrowser()->Refresh(IServerBrowser::REFRESHFLAG_INTERNET);
 		else if(m_MenuPage == PAGE_LAN)
 			ServerBrowser()->Refresh(IServerBrowser::REFRESHFLAG_LAN);
 	}

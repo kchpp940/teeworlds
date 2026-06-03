@@ -628,6 +628,7 @@ int CDataFileWriter::Finish()
 	int TypesSize, HeaderSize, OffsetSize, FileSize, SwapSize;
 	int DataSize = 0;
 	CDatafileHeader Header;
+	bool Error = false;
 
 	// we should now write this file!
 	if(DEBUG)
@@ -678,11 +679,12 @@ int CDataFileWriter::Finish()
 #if defined(CONF_ARCH_ENDIAN_BIG)
 		swap_endian(&Header, sizeof(int), sizeof(Header)/sizeof(int));
 #endif
-		io_write(m_File, &Header, sizeof(Header));
+		if(io_write(m_File, &Header, sizeof(Header)) != sizeof(Header))
+			Error = true;
 	}
 
 	// write types
-	for(int i = 0, Count = 0; i < 0xffff; i++)
+	for(int i = 0, Count = 0; i < 0xffff && !Error; i++)
 	{
 		if(m_pItemTypes[i].m_Num)
 		{
@@ -696,19 +698,20 @@ int CDataFileWriter::Finish()
 #if defined(CONF_ARCH_ENDIAN_BIG)
 			swap_endian(&Info, sizeof(int), sizeof(CDatafileItemType)/sizeof(int));
 #endif
-			io_write(m_File, &Info, sizeof(Info));
+			if(io_write(m_File, &Info, sizeof(Info)) != sizeof(Info))
+				Error = true;
 			Count += m_pItemTypes[i].m_Num;
 		}
 	}
 
 	// write item offsets
-	for(int i = 0, Offset = 0; i < 0xffff; i++)
+	for(int i = 0, Offset = 0; i < 0xffff && !Error; i++)
 	{
 		if(m_pItemTypes[i].m_Num)
 		{
 			// write all m_pItems in of this type
 			int k = m_pItemTypes[i].m_First;
-			while(k != -1)
+			while(k != -1 && !Error)
 			{
 				if(DEBUG)
 					dbg_msg("datafile", "writing item offset num=%d offset=%d", k, Offset);
@@ -716,7 +719,8 @@ int CDataFileWriter::Finish()
 #if defined(CONF_ARCH_ENDIAN_BIG)
 				swap_endian(&Temp, sizeof(int), sizeof(Temp)/sizeof(int));
 #endif
-				io_write(m_File, &Temp, sizeof(Temp));
+				if(io_write(m_File, &Temp, sizeof(Temp)) != sizeof(Temp))
+					Error = true;
 				Offset += m_pItems[k].m_Size + sizeof(CDatafileItem);
 
 				// next
@@ -726,7 +730,7 @@ int CDataFileWriter::Finish()
 	}
 
 	// write data offsets
-	for(int i = 0, Offset = 0; i < m_NumDatas; i++)
+	for(int i = 0, Offset = 0; i < m_NumDatas && !Error; i++)
 	{
 		if(DEBUG)
 			dbg_msg("datafile", "writing data offset num=%d offset=%d", i, Offset);
@@ -734,12 +738,13 @@ int CDataFileWriter::Finish()
 #if defined(CONF_ARCH_ENDIAN_BIG)
 		swap_endian(&Temp, sizeof(int), sizeof(Temp)/sizeof(int));
 #endif
-		io_write(m_File, &Temp, sizeof(Temp));
+		if(io_write(m_File, &Temp, sizeof(Temp)) != sizeof(Temp))
+			Error = true;
 		Offset += m_pDatas[i].m_CompressedSize;
 	}
 
 	// write data uncompressed sizes
-	for(int i = 0; i < m_NumDatas; i++)
+	for(int i = 0; i < m_NumDatas && !Error; i++)
 	{
 		if(DEBUG)
 			dbg_msg("datafile", "writing data uncompressed size num=%d size=%d", i, m_pDatas[i].m_UncompressedSize);
@@ -747,17 +752,18 @@ int CDataFileWriter::Finish()
 #if defined(CONF_ARCH_ENDIAN_BIG)
 		swap_endian(&UncompressedSize, sizeof(int), sizeof(UncompressedSize)/sizeof(int));
 #endif
-		io_write(m_File, &UncompressedSize, sizeof(UncompressedSize));
+		if(io_write(m_File, &UncompressedSize, sizeof(UncompressedSize)) != sizeof(UncompressedSize))
+			Error = true;
 	}
 
 	// write m_pItems
-	for(int i = 0; i < 0xffff; i++)
+	for(int i = 0; i < 0xffff && !Error; i++)
 	{
 		if(m_pItemTypes[i].m_Num)
 		{
 			// write all m_pItems in of this type
 			int k = m_pItemTypes[i].m_First;
-			while(k != -1)
+			while(k != -1 && !Error)
 			{
 				CDatafileItem Item;
 				Item.m_TypeAndID = (i<<16)|m_pItems[k].m_ID;
@@ -769,8 +775,10 @@ int CDataFileWriter::Finish()
 				swap_endian(&Item, sizeof(int), sizeof(Item)/sizeof(int));
 				swap_endian(m_pItems[k].m_pData, sizeof(int), m_pItems[k].m_Size/sizeof(int));
 #endif
-				io_write(m_File, &Item, sizeof(Item));
-				io_write(m_File, m_pItems[k].m_pData, m_pItems[k].m_Size);
+				if(io_write(m_File, &Item, sizeof(Item)) != sizeof(Item))
+					Error = true;
+				if(!Error && io_write(m_File, m_pItems[k].m_pData, m_pItems[k].m_Size) != (unsigned)m_pItems[k].m_Size)
+					Error = true;
 
 				// next
 				k = m_pItems[k].m_Next;
@@ -779,11 +787,12 @@ int CDataFileWriter::Finish()
 	}
 
 	// write data
-	for(int i = 0; i < m_NumDatas; i++)
+	for(int i = 0; i < m_NumDatas && !Error; i++)
 	{
 		if(DEBUG)
 			dbg_msg("datafile", "writing data id=%d size=%d", i, m_pDatas[i].m_CompressedSize);
-		io_write(m_File, m_pDatas[i].m_pCompressedData, m_pDatas[i].m_CompressedSize);
+		if(io_write(m_File, m_pDatas[i].m_pCompressedData, m_pDatas[i].m_CompressedSize) != (unsigned)m_pDatas[i].m_CompressedSize)
+			Error = true;
 	}
 
 	// free data
@@ -794,6 +803,13 @@ int CDataFileWriter::Finish()
 
 	io_close(m_File);
 	m_File = 0;
+
+	if(Error)
+	{
+		if(DEBUG)
+			dbg_msg("datafile", "error during write");
+		return 0;
+	}
 
 	if(DEBUG)
 		dbg_msg("datafile", "done");
