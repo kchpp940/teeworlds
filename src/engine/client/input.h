@@ -21,19 +21,10 @@ public:
 		int m_NumHats;
 		SDL_Joystick *m_pDelegate;
 
-		bool m_aAxisSuppressed[NUM_JOYSTICK_AXES];
-		bool m_aButtonSuppressed[NUM_JOYSTICK_BUTTONS];
-		bool m_aHatSuppressed[NUM_JOYSTICK_HATS];
-
 		CInput *Input() { return m_pInput; }
 
 	public:
-		CJoystick()
-		{
-			mem_zero(m_aAxisSuppressed, sizeof(m_aAxisSuppressed));
-			mem_zero(m_aButtonSuppressed, sizeof(m_aButtonSuppressed));
-			mem_zero(m_aHatSuppressed, sizeof(m_aHatSuppressed));
-		}
+		CJoystick() { /* empty constructor for sorted_array */ }
 		CJoystick(CInput *pInput, int Index, SDL_Joystick *pDelegate);
 
 		int GetIndex() const { return m_Index; }
@@ -44,21 +35,10 @@ public:
 		int GetNumButtons() const { return m_NumButtons; }
 		int GetNumBalls() const { return m_NumBalls; }
 		int GetNumHats() const { return m_NumHats; }
-		SDL_Joystick *GetDelegate() const { return m_pDelegate; }
 		float GetAxisValue(int Axis);
 		int GetHatValue(int Hat);
-		bool GetButtonValue(int Button);
 		bool Relative(float *pX, float *pY);
 		bool Absolute(float *pX, float *pY);
-
-		void SuppressAll();
-		void ClearSuppressed();
-		bool IsAxisSuppressed(int Axis) const { return Axis >= 0 && Axis < m_NumAxes && m_aAxisSuppressed[Axis]; }
-		bool IsButtonSuppressed(int Button) const { return Button >= 0 && Button < m_NumButtons && m_aButtonSuppressed[Button]; }
-		bool IsHatSuppressed(int Hat) const { return Hat >= 0 && Hat < m_NumHats && m_aHatSuppressed[Hat]; }
-		void SetAxisSuppressed(int Axis, bool Suppressed) { if(Axis >= 0 && Axis < m_NumAxes) m_aAxisSuppressed[Axis] = Suppressed; }
-		void SetButtonSuppressed(int Button, bool Suppressed) { if(Button >= 0 && Button < m_NumButtons) m_aButtonSuppressed[Button] = Suppressed; }
-		void SetHatSuppressed(int Hat, bool Suppressed) { if(Hat >= 0 && Hat < m_NumHats) m_aHatSuppressed[Hat] = Suppressed; }
 
 		static int GetJoystickHatKey(int Hat, int HatValue);
 	};
@@ -68,20 +48,17 @@ private:
 	IConsole *m_pConsole;
 
 	IEngineGraphics *Graphics() { return m_pGraphics; }
-	CConfig *Config() const { return m_pConfig; }
+	CConfig *Config() { return m_pConfig; }
 	IConsole *Console() { return m_pConsole; }
 
 	// joystick
 	array<CJoystick> m_aJoysticks;
 	CJoystick *m_pActiveJoystick;
-	bool m_JoystickGuidChainRegistered;
 	void InitJoysticks();
 	void CloseJoysticks();
 	void UpdateActiveJoystick();
 	static void ConchainJoystickGuidChanged(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
-	float GetJoystickDeadzone() const;
-	void HandleJoystickDeviceRemoved(const SDL_Event &Event);
-	void HandleJoystickDeviceAdded(const SDL_Event &Event);
+	float GetJoystickDeadzone();
 
 	bool m_MouseInputRelative;
 	char *m_pClipboardText;
@@ -112,6 +89,7 @@ private:
 	void HandleJoystickButtonEvent(const SDL_Event &Event);
 	void HandleJoystickHatMotionEvent(const SDL_Event &Event);
 
+	void ClearKeyStates();
 	bool KeyState(int Key) const;
 
 	void ProcessSystemMessage(SDL_SysWMmsg *pMsg);
@@ -123,7 +101,6 @@ public:
 	void Shutdown();
 	int Update();
 
-	void ClearKeyStates();
 	bool KeyIsPressed(int Key) const { return KeyState(Key); }
 	bool KeyPress(int Key, bool CheckCounter) const { return CheckCounter ? (m_aInputCount[Key] == m_InputCounter) : m_aInputCount[Key]; }
 

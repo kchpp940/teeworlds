@@ -1609,7 +1609,6 @@ void CMenus::SetActive(bool Active)
 	else
 	{
 		m_SkinModified = false;
-		Input()->ClearKeyStates();
 		if(Client()->State() == IClient::STATE_DEMOPLAYBACK)
 		{
 			m_pClient->OnRelease();

@@ -36,17 +36,6 @@ void CBinds::Bind(int KeyID, int Modifier, const char *pStr)
 	if(KeyID < 0 || KeyID >= KEY_LAST)
 		return;
 
-	if(Input()->KeyIsPressed(KeyID))
-	{
-		for(int m = 0; m < MODIFIER_COUNT; m++)
-		{
-			if(m_aaaKeyBindings[KeyID][m][0])
-			{
-				Console()->ExecuteLineStroked(0, m_aaaKeyBindings[KeyID][m]);
-			}
-		}
-	}
-
 	str_copy(m_aaaKeyBindings[KeyID][Modifier], pStr, sizeof(m_aaaKeyBindings[KeyID][Modifier]));
 	char aBuf[256];
 	if(!m_aaaKeyBindings[KeyID][Modifier][0])
@@ -205,20 +194,8 @@ bool CBinds::OnInput(IInput::CEvent Event)
 void CBinds::UnbindAll()
 {
 	for(int i = 0; i < KEY_LAST; i++)
-	{
-		if(Input()->KeyIsPressed(i))
-		{
-			for(int m = 0; m < MODIFIER_COUNT; m++)
-			{
-				if(m_aaaKeyBindings[i][m][0])
-				{
-					Console()->ExecuteLineStroked(0, m_aaaKeyBindings[i][m]);
-				}
-			}
-		}
 		for(int m = 0; m < MODIFIER_COUNT; m++)
 			m_aaaKeyBindings[i][m][0] = 0;
-	}
 }
 
 const char *CBinds::Get(int KeyID, int Modifier)
@@ -282,7 +259,6 @@ void CBinds::SetDefaults()
 	dbg_assert(count == sizeof(s_aaDefaultBindValues)/32, "the count of bind keys differs from that of bind values!");
 	for(int i = 0; i < count; i++)
 		Bind(s_aaDefaultBindKeys[i][0], s_aaDefaultBindKeys[i][1], s_aaDefaultBindValues[i]);
-	Input()->ClearKeyStates();
 }
 
 void CBinds::OnConsoleInit()

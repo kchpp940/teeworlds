@@ -10,6 +10,15 @@
 #include <game/server/player.h>
 #include "ctf.h"
 
+enum
+{
+	FLAGRELEASE_DEATH = 0,
+	FLAGRELEASE_DISCONNECT = 1,
+	FLAGRELEASE_TEAMCHANGE = 2,
+	FLAGRELEASE_SPECTATOR = 3,
+	FLAGRELEASE_AUTO = 4,
+};
+
 CGameControllerCTF::CGameControllerCTF(CGameContext *pGameServer)
 : IGameController(pGameServer)
 {
@@ -36,13 +45,31 @@ bool CGameControllerCTF::CanBeMovedOnBalance(int ClientID) const
 	return true;
 }
 
+void CGameControllerCTF::DropFlag(CFlag *pFlag, int Reason)
+{
+	if(!pFlag || !pFlag->GetCarrier())
+		return;
+
+	CCharacter *pCarrier = pFlag->GetCarrier();
+
+	char aBuf[256];
+	str_format(aBuf, sizeof(aBuf), "flag_release player='%d:%s' reason=%d flag_team=%d",
+		pCarrier->GetPlayer()->GetCID(),
+		Server()->ClientName(pCarrier->GetPlayer()->GetCID()),
+		Reason,
+		pFlag->GetTeam());
+	GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
+
+	GameServer()->SendGameMsg(GAMEMSG_CTF_DROP, -1);
+	pFlag->ClearCarrier();
+}
+
 // event
 int CGameControllerCTF::OnCharacterDeath(CCharacter *pVictim, CPlayer *pKiller, int WeaponID)
 {
 	IGameController::OnCharacterDeath(pVictim, pKiller, WeaponID);
 	int HadFlag = 0;
 
-	// drop flags
 	for(int i = 0; i < 2; i++)
 	{
 		CFlag *F = m_apFlags[i];
@@ -50,8 +77,7 @@ int CGameControllerCTF::OnCharacterDeath(CCharacter *pVictim, CPlayer *pKiller, 
 			HadFlag |= 2;
 		if(F && F->GetCarrier() == pVictim)
 		{
-			GameServer()->SendGameMsg(GAMEMSG_CTF_DROP, -1);
-			F->Drop();
+			DropFlag(F, FLAGRELEASE_DEATH);
 
 			if(pKiller && pKiller->GetTeam() != pVictim->GetPlayer()->GetTeam())
 				pKiller->m_Score++;
@@ -83,6 +109,33 @@ bool CGameControllerCTF::OnEntity(int Index, vec2 Pos)
 	CFlag *F = new CFlag(&GameServer()->m_World, Team, Pos);
 	m_apFlags[Team] = F;
 	return true;
+}
+
+void CGameControllerCTF::OnPlayerDisconnect(CPlayer *pPlayer)
+{
+	for(int i = 0; i < 2; i++)
+	{
+		CFlag *F = m_apFlags[i];
+		if(F && F->GetCarrier() && F->GetCarrier()->GetPlayer() == pPlayer)
+			DropFlag(F, FLAGRELEASE_DISCONNECT);
+	}
+
+	IGameController::OnPlayerDisconnect(pPlayer);
+}
+
+void CGameControllerCTF::OnPlayerTeamChange(CPlayer *pPlayer, int OldTeam, int NewTeam)
+{
+	if(OldTeam == TEAM_SPECTATORS)
+		return;
+
+	int Reason = (NewTeam == TEAM_SPECTATORS) ? FLAGRELEASE_SPECTATOR : FLAGRELEASE_TEAMCHANGE;
+
+	for(int i = 0; i < 2; i++)
+	{
+		CFlag *F = m_apFlags[i];
+		if(F && F->GetCarrier() && F->GetCarrier()->GetPlayer() == pPlayer)
+			DropFlag(F, Reason);
+	}
 }
 
 // game
@@ -128,7 +181,7 @@ void CGameControllerCTF::Snap(int SnappingClient)
 	{
 		if(m_apFlags[TEAM_RED]->IsAtStand())
 			pGameDataFlag->m_FlagCarrierRed = FLAG_ATSTAND;
-		else if(m_apFlags[TEAM_RED]->GetCarrier() && m_apFlags[TEAM_RED]->GetCarrier()->GetPlayer())
+		else if(m_apFlags[TEAM_RED]->GetCarrier() && m_apFlags[TEAM_RED]->GetCarrier()->IsAlive() && m_apFlags[TEAM_RED]->GetCarrier()->GetPlayer())
 			pGameDataFlag->m_FlagCarrierRed = m_apFlags[TEAM_RED]->GetCarrier()->GetPlayer()->GetCID();
 		else
 		{
@@ -143,7 +196,7 @@ void CGameControllerCTF::Snap(int SnappingClient)
 	{
 		if(m_apFlags[TEAM_BLUE]->IsAtStand())
 			pGameDataFlag->m_FlagCarrierBlue = FLAG_ATSTAND;
-		else if(m_apFlags[TEAM_BLUE]->GetCarrier() && m_apFlags[TEAM_BLUE]->GetCarrier()->GetPlayer())
+		else if(m_apFlags[TEAM_BLUE]->GetCarrier() && m_apFlags[TEAM_BLUE]->GetCarrier()->IsAlive() && m_apFlags[TEAM_BLUE]->GetCarrier()->GetPlayer())
 			pGameDataFlag->m_FlagCarrierBlue = m_apFlags[TEAM_BLUE]->GetCarrier()->GetPlayer()->GetCID();
 		else
 		{
@@ -172,6 +225,12 @@ void CGameControllerCTF::Tick()
 		//
 		if(F->GetCarrier())
 		{
+			if(!F->GetCarrier()->IsAlive())
+			{
+				DropFlag(F, FLAGRELEASE_AUTO);
+				continue;
+			}
+
 			if(m_apFlags[fi^1] && m_apFlags[fi^1]->IsAtStand())
 			{
 				if(distance(F->GetPos(), m_apFlags[fi^1]->GetPos()) < CFlag::ms_PhysSize + CCharacter::ms_PhysSize)

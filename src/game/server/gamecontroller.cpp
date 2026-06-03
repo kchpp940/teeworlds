@@ -347,6 +347,10 @@ void IGameController::OnPlayerInfoChange(CPlayer *pPlayer)
 {
 }
 
+void IGameController::OnPlayerTeamChange(CPlayer *pPlayer, int OldTeam, int NewTeam)
+{
+}
+
 void IGameController::OnPlayerReadyChange(CPlayer *pPlayer)
 {
 	if(Config()->m_SvPlayerReadyMode && pPlayer->GetTeam() != TEAM_SPECTATORS && !pPlayer->m_DeadSpecMode)
@@ -1138,6 +1142,7 @@ void IGameController::DoTeamChange(CPlayer *pPlayer, int Team, bool DoChatMsg)
 		return;
 
 	int OldTeam = pPlayer->GetTeam();
+	OnPlayerTeamChange(pPlayer, OldTeam, Team);
 	pPlayer->SetTeam(Team);
 
 	int ClientID = pPlayer->GetCID();
