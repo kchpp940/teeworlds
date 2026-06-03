@@ -169,7 +169,6 @@ public:
 	virtual void OnPlayerDisconnect(class CPlayer *pPlayer);
 	virtual void OnPlayerInfoChange(class CPlayer *pPlayer);
 	virtual void OnPlayerReadyChange(class CPlayer *pPlayer);
-	virtual void OnPlayerTeamChange(class CPlayer *pPlayer, int OldTeam, int NewTeam);
 	void OnPlayerCommand(class CPlayer *pPlayer, const char *pCommandName, const char *pCommandArgs);
 
 	void OnReset();

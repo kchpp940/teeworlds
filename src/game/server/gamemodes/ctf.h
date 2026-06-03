@@ -15,8 +15,6 @@ class CGameControllerCTF : public IGameController
 
 	virtual bool DoWincheckMatch();
 
-	void DropFlag(class CFlag *pFlag, int Reason);
-
 public:
 	CGameControllerCTF(class CGameContext *pGameServer);
 	
@@ -24,8 +22,6 @@ public:
 	virtual int OnCharacterDeath(class CCharacter *pVictim, class CPlayer *pKiller, int Weapon);
 	virtual void OnFlagReturn(class CFlag *pFlag);
 	virtual bool OnEntity(int Index, vec2 Pos);
-	virtual void OnPlayerDisconnect(class CPlayer *pPlayer);
-	virtual void OnPlayerTeamChange(class CPlayer *pPlayer, int OldTeam, int NewTeam);
 
 	// general
 	virtual void Snap(int SnappingClient);

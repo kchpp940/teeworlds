@@ -42,7 +42,6 @@ public:
 	/* Functions */
 	void Grab(class CCharacter *pChar);
 	void Drop();
-	void ClearCarrier();
 };
 
 #endif

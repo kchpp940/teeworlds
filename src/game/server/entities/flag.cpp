@@ -36,26 +36,19 @@ void CFlag::Grab(CCharacter *pChar)
 
 void CFlag::Drop()
 {
-	if(!m_pCarrier)
-		return;
 	m_pCarrier = 0;
 	m_Vel = vec2(0, 0);
 	m_DropTick = Server()->Tick();
-}
-
-void CFlag::ClearCarrier()
-{
-	Drop();
 }
 
 void CFlag::TickDefered()
 {
 	if(m_pCarrier)
 	{
+		// update flag position
 		m_Pos = m_pCarrier->GetPos();
 	}
-
-	if(!m_pCarrier)
+	else
 	{
 		// flag hits death-tile or left the game layer, reset it
 		if((GameServer()->Collision()->GetCollisionAt(m_Pos.x, m_Pos.y) & CCollision::COLFLAG_DEATH)

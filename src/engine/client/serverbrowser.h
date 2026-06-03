@@ -17,6 +17,14 @@ public:
 		SET_FAV_ADD,
 		SET_TOKEN,
 	};
+
+	enum EView
+	{
+		VIEW_INTERNET=0,
+		VIEW_LAN=1,
+		VIEW_FAVORITES=2,
+		NUM_VIEWS=3,
+	};
 		
 	CServerBrowser();
 	void Init(class CNetClient *pClient, const char *pNetVersion);
@@ -27,7 +35,7 @@ public:
 	int GetType() { return m_ActServerlistType; }
 	void SetType(int Type);
 	void Refresh(int RefreshFlags);
-	bool IsRefreshing() const { return m_pFirstReqServer != 0; }
+	bool IsRefreshing() const { return m_pFirstReqServer != 0 || m_FavoritesRefreshActive; }
 	bool IsRefreshingMasters() const { return m_pMasterServer->IsRefreshing(); }
 	bool WasUpdated(bool Purge);
 	int LoadingProgression() const;
@@ -102,9 +110,12 @@ private:
 	bool m_NeedResort;
 
 	// the token is to keep server refresh separated from each other
-	int m_CurrentLanToken;
+	int m_aCurrentToken[NUM_TYPES];
+	int m_FavoritesToken;
+	bool m_FavoritesRefreshActive;
 
 	int m_RefreshFlags;
+	int m_aRefreshGeneration[NUM_VIEWS]; // per-view refresh generations
 	int64 m_BroadcastTime;
 	int64 m_MasterRefreshTime;
 

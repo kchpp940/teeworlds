@@ -76,8 +76,13 @@ CServerBrowser::CServerBrowser()
 	m_NeedResort = false;
 
 	// the token is to keep server refresh separated from each other
-	m_CurrentLanToken = 1;
+	for(int i = 0; i < NUM_TYPES; ++i)
+		m_aCurrentToken[i] = 1;
+	m_FavoritesToken = 1;
+	m_FavoritesRefreshActive = false;
 
+	for(int i = 0; i < NUM_VIEWS; ++i)
+		m_aRefreshGeneration[i] = 1;
 	m_ActServerlistType = 0;
 	m_BroadcastTime = 0;
 	m_MasterRefreshTime = 0;
@@ -118,7 +123,7 @@ void CServerBrowser::Set(const NETADDR &Addr, int SetType, int Token, const CSer
 		break;
 	case SET_FAV_ADD:
 		{
-			if(!(m_RefreshFlags&IServerBrowser::REFRESHFLAG_INTERNET))
+			if(!(m_RefreshFlags&(IServerBrowser::REFRESHFLAG_INTERNET|IServerBrowser::REFRESHFLAG_FAVORITES)))
 				return;
 
 			if(!Find(IServerBrowser::TYPE_INTERNET, Addr))
@@ -130,22 +135,51 @@ void CServerBrowser::Set(const NETADDR &Addr, int SetType, int Token, const CSer
 		break;
 	case SET_TOKEN:
 		{
-			int Type;
+			int Type = IServerBrowser::TYPE_INTERNET;
+			bool IsValidToken = false;
 
-			// internet entry
-			if(m_RefreshFlags&IServerBrowser::REFRESHFLAG_INTERNET)
+			// try internet entry - validate entry token + per-view generation + view type
+			if(m_RefreshFlags&(IServerBrowser::REFRESHFLAG_INTERNET|IServerBrowser::REFRESHFLAG_FAVORITES))
 			{
 				Type = IServerBrowser::TYPE_INTERNET;
 				pEntry = Find(Type, Addr);
-				if(pEntry && (pEntry->m_InfoState != CServerEntry::STATE_PENDING || Token != pEntry->m_CurrentToken))
+				if(pEntry && pEntry->m_InfoState == CServerEntry::STATE_PENDING
+					&& Token == pEntry->m_CurrentToken
+					&& pEntry->m_RequestView >= 0 && pEntry->m_RequestView < NUM_VIEWS
+					&& pEntry->m_RequestGeneration == m_aRefreshGeneration[pEntry->m_RequestView])
+				{
+					if(pEntry->m_RequestView == VIEW_FAVORITES)
+					{
+						if(pEntry->m_Info.m_Favorite)
+							IsValidToken = true;
+					}
+					else
+					{
+						IsValidToken = true;
+					}
+				}
+				if(!IsValidToken)
 					pEntry = 0;
 			}
 
-			// lan entry
-			if(!pEntry && (m_RefreshFlags&IServerBrowser::REFRESHFLAG_LAN) && m_BroadcastTime+time_freq() >= time_get())
+			// lan entry - validate batch token + per-view generation + view type
+			if(!pEntry && (m_RefreshFlags&IServerBrowser::REFRESHFLAG_LAN)
+				&& Token == m_aCurrentToken[IServerBrowser::TYPE_LAN]
+				&& m_BroadcastTime+time_freq() >= time_get())
 			{
 				Type = IServerBrowser::TYPE_LAN;
-				pEntry = Add(Type, Addr);
+				pEntry = Find(Type, Addr);
+				if(!pEntry)
+				{
+					pEntry = Add(Type, Addr);
+					pEntry->m_RequestView = VIEW_LAN;
+					pEntry->m_RequestGeneration = m_aRefreshGeneration[VIEW_LAN];
+				}
+				else if(pEntry->m_RequestView != VIEW_LAN
+					|| pEntry->m_RequestGeneration != m_aRefreshGeneration[VIEW_LAN])
+				{
+					pEntry = 0;
+				}
 			}
 
 			// set info
@@ -158,6 +192,21 @@ void CServerBrowser::Set(const NETADDR &Addr, int SetType, int Token, const CSer
 					pEntry->m_Info.m_Latency = minimum(static_cast<int>((time_get()-pEntry->m_RequestTime)*1000/time_freq()), 999);
 				m_InfoUpdated = true;
 				RemoveRequest(pEntry);
+
+				if(m_FavoritesRefreshActive && Type == IServerBrowser::TYPE_INTERNET)
+				{
+					bool AllDone = true;
+					for(CServerEntry *pReq = m_pFirstReqServer; pReq; pReq = pReq->m_pNextReq)
+					{
+						if(pReq->m_InfoState == CServerEntry::STATE_PENDING && pReq->m_CurrentToken == m_FavoritesToken)
+						{
+							AllDone = false;
+							break;
+						}
+					}
+					if(AllDone)
+						m_FavoritesRefreshActive = false;
+				}
 			}
 		}
 	}
@@ -230,6 +279,22 @@ void CServerBrowser::Update()
 		pEntry = pNext;
 	}
 
+	// check if favorites refresh is done
+	if(m_FavoritesRefreshActive)
+	{
+		bool AllDone = true;
+		for(CServerEntry *pReq = m_pFirstReqServer; pReq; pReq = pReq->m_pNextReq)
+		{
+			if(pReq->m_CurrentToken == m_FavoritesToken)
+			{
+				AllDone = false;
+				break;
+			}
+		}
+		if(AllDone)
+			m_FavoritesRefreshActive = false;
+	}
+
 	// do timeouts
 	pEntry = m_pFirstReqServer;
 	Count = 0;
@@ -276,26 +341,29 @@ void CServerBrowser::SetType(int Type)
 
 	m_ActServerlistType = Type;
 	m_ServerBrowserFilter.Sort(m_aServerlist[m_ActServerlistType].m_ppServerlist, m_aServerlist[m_ActServerlistType].m_NumServers, CServerBrowserFilter::RESORT_FLAG_FORCE);
+	m_NeedResort = false;
 }
 
 void CServerBrowser::Refresh(int RefreshFlags)
 {
-	m_RefreshFlags |= RefreshFlags;
+	m_RefreshFlags = RefreshFlags;
 
 	if(RefreshFlags&IServerBrowser::REFRESHFLAG_LAN)
 	{
+		m_aRefreshGeneration[VIEW_LAN]++;
+
 		// clear out everything
 		m_aServerlist[IServerBrowser::TYPE_LAN].Clear();
 		if(m_ActServerlistType == IServerBrowser::TYPE_LAN)
 			m_ServerBrowserFilter.Clear();
 
 		// next token
-		m_CurrentLanToken = GetNewToken();
+		m_aCurrentToken[IServerBrowser::TYPE_LAN] = GetNewToken();
 
 		CPacker Packer;
 		Packer.Reset();
 		Packer.AddRaw(SERVERBROWSE_GETINFO, sizeof(SERVERBROWSE_GETINFO));
-		Packer.AddInt(m_CurrentLanToken);
+		Packer.AddInt(m_aCurrentToken[IServerBrowser::TYPE_LAN]);
 
 		/* do the broadcast version */
 		CNetChunk Packet;
@@ -319,6 +387,8 @@ void CServerBrowser::Refresh(int RefreshFlags)
 
 	if(RefreshFlags&IServerBrowser::REFRESHFLAG_INTERNET)
 	{
+		m_aRefreshGeneration[VIEW_INTERNET]++;
+
 		// clear out everything
 		for(CServerEntry *pEntry = m_pFirstReqServer; pEntry; pEntry = pEntry->m_pNextReq)
 		{
@@ -331,10 +401,44 @@ void CServerBrowser::Refresh(int RefreshFlags)
 		m_pLastReqServer = 0;
 		m_NumRequests = 0;
 
+		// next token for internet batch
+		m_aCurrentToken[IServerBrowser::TYPE_INTERNET] = GetNewToken();
+
+		m_FavoritesRefreshActive = false;
+
 		m_NeedRefresh = true;
 		for(int i = 0; i < m_ServerBrowserFavorites.m_NumFavoriteServers; i++)
 			if(m_ServerBrowserFavorites.m_aFavoriteServers[i].m_State >= CServerBrowserFavorites::FAVSTATE_ADDR)
 				Set(m_ServerBrowserFavorites.m_aFavoriteServers[i].m_Addr, SET_FAV_ADD, -1, 0);
+	}
+
+	if(RefreshFlags&IServerBrowser::REFRESHFLAG_FAVORITES)
+	{
+		m_aRefreshGeneration[VIEW_FAVORITES]++;
+		m_FavoritesToken = GetNewToken();
+		m_FavoritesRefreshActive = true;
+
+		for(int i = 0; i < m_ServerBrowserFavorites.m_NumFavoriteServers; i++)
+		{
+			if(m_ServerBrowserFavorites.m_aFavoriteServers[i].m_State < CServerBrowserFavorites::FAVSTATE_ADDR)
+				continue;
+
+			CServerEntry *pEntry = Find(IServerBrowser::TYPE_INTERNET, m_ServerBrowserFavorites.m_aFavoriteServers[i].m_Addr);
+			if(pEntry)
+			{
+				RemoveRequest(pEntry);
+				pEntry->m_CurrentToken = m_FavoritesToken;
+				pEntry->m_InfoState = CServerEntry::STATE_INVALID;
+				pEntry->m_RequestTime = 0;
+				QueueRequest(pEntry);
+			}
+			else
+			{
+				pEntry = Add(IServerBrowser::TYPE_INTERNET, m_ServerBrowserFavorites.m_aFavoriteServers[i].m_Addr);
+				pEntry->m_CurrentToken = m_FavoritesToken;
+				QueueRequest(pEntry);
+			}
+		}
 	}
 }
 
@@ -446,6 +550,8 @@ CServerEntry *CServerBrowser::Add(int ServerlistType, const NETADDR &Addr)
 	pEntry->m_Addr = Addr;
 	pEntry->m_InfoState = CServerEntry::STATE_INVALID;
 	pEntry->m_CurrentToken = GetNewToken();
+	pEntry->m_RequestView = CServerBrowser::VIEW_INTERNET; // default, updated by Refresh()
+	pEntry->m_RequestGeneration = 0; // default, updated by Refresh()
 	pEntry->m_Info.m_NetAddr = Addr;
 
 	pEntry->m_Info.m_Latency = 999;
@@ -499,6 +605,22 @@ CServerEntry *CServerBrowser::Find(int ServerlistType, const NETADDR &Addr)
 
 void CServerBrowser::QueueRequest(CServerEntry *pEntry)
 {
+	if(m_RefreshFlags&IServerBrowser::REFRESHFLAG_FAVORITES)
+	{
+		pEntry->m_RequestView = VIEW_FAVORITES;
+		pEntry->m_RequestGeneration = m_aRefreshGeneration[VIEW_FAVORITES];
+	}
+	else if(m_RefreshFlags&IServerBrowser::REFRESHFLAG_INTERNET)
+	{
+		pEntry->m_RequestView = VIEW_INTERNET;
+		pEntry->m_RequestGeneration = m_aRefreshGeneration[VIEW_INTERNET];
+	}
+	else if(m_RefreshFlags&IServerBrowser::REFRESHFLAG_LAN)
+	{
+		pEntry->m_RequestView = VIEW_LAN;
+		pEntry->m_RequestGeneration = m_aRefreshGeneration[VIEW_LAN];
+	}
+
 	// add it to the list of servers that we should request info from
 	pEntry->m_pPrevReq = m_pLastReqServer;
 	if(m_pLastReqServer)
@@ -566,7 +688,7 @@ void CServerBrowser::RequestImpl(const NETADDR &Addr, CServerEntry *pEntry)
 	CPacker Packer;
 	Packer.Reset();
 	Packer.AddRaw(SERVERBROWSE_GETINFO, sizeof(SERVERBROWSE_GETINFO));
-	Packer.AddInt(pEntry ? pEntry->m_CurrentToken : m_CurrentLanToken);
+	Packer.AddInt(pEntry ? pEntry->m_CurrentToken : m_aCurrentToken[IServerBrowser::TYPE_LAN]);
 
 	CNetChunk Packet;
 	Packet.m_ClientID = -1;

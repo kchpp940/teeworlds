@@ -17,6 +17,8 @@ public:
 	int64 m_RequestTime;
 	int m_InfoState;
 	int m_CurrentToken;	// the token is to keep server refresh separated from each other
+	int m_RequestView; // which view (EView) this request belongs to
+	int m_RequestGeneration; // per-view generation when request was made
 	int m_TrackID;
 	class CServerInfo m_Info;
 
