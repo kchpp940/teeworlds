@@ -729,6 +729,7 @@ void CGameConsole::Toggle(int Type)
 			m_ConsoleState = CONSOLE_OPENING;
 			// reset controls
 			m_pClient->m_pControls->OnReset();
+			Input()->ClearKeyStates();
 		}
 		else
 		{

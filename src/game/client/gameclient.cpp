@@ -621,6 +621,7 @@ void CGameClient::OnRender()
 
 void CGameClient::OnRelease()
 {
+	Input()->ClearKeyStates();
 	// release all systems
 	for(int i = 0; i < m_All.m_Num; i++)
 		m_All.m_apComponents[i]->OnRelease();

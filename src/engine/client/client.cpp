@@ -548,6 +548,8 @@ void CClient::Connect(const char *pAddress)
 	m_NetClient.Connect(&m_ServerAddress);
 	SetState(IClient::STATE_CONNECTING);
 
+	Input()->ClearKeyStates();
+
 	DemoRecorder_Stop();
 
 	m_InputtimeMarginGraph.Init(-150.0f, 150.0f);
@@ -605,6 +607,8 @@ void CClient::DisconnectWithReason(const char *pReason)
 	m_aSnapshots[SNAP_CURRENT] = 0;
 	m_aSnapshots[SNAP_PREV] = 0;
 	m_ReceivedSnapshots = 0;
+
+	Input()->ClearKeyStates();
 }
 
 void CClient::Disconnect()
@@ -2025,7 +2029,10 @@ void CClient::Run()
 		if(!m_pGraphics->WindowActive())
 		{
 			if(m_WindowMustRefocus == 0)
+			{
 				Input()->MouseModeAbsolute();
+				Input()->ClearKeyStates();
+			}
 			m_WindowMustRefocus = 1;
 		}
 		else if (Config()->m_DbgFocus && Input()->KeyPress(KEY_ESCAPE, true))

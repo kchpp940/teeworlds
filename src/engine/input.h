@@ -65,6 +65,7 @@ public:
 		return m_aInputEvents[Index];
 	}
 	virtual void Clear() = 0;
+	virtual void ClearKeyStates() = 0;
 
 	// keys
 	virtual bool KeyIsPressed(int Key) const = 0;
