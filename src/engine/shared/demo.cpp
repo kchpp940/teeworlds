@@ -3,6 +3,8 @@
 #include <base/math.h>
 #include <base/system.h>
 
+#include <stdio.h>
+
 #include <engine/console.h>
 #include <engine/storage.h>
 
@@ -353,6 +355,12 @@ CDemoPlayer::CDemoPlayer(class CSnapshotDelta *pSnapshotDelta)
 
 	m_pSnapshotDelta = pSnapshotDelta;
 	m_LastSnapshotDataSize = -1;
+
+	m_NumBookmarks = 0;
+}
+
+CDemoPlayer::~CDemoPlayer()
+{
 }
 
 void CDemoPlayer::Init(class IConsole *pConsole, class IStorage *pStorage)
@@ -723,6 +731,10 @@ const char *CDemoPlayer::Load(const char *pFilename, int StorageType, const char
 	// scan the file for interesting points
 	ScanFile();
 
+	// load bookmarks for this demo
+	m_NumBookmarks = 0;
+	LoadBookmarks();
+
 	// ready for playback
 	return 0;
 }
@@ -751,6 +763,9 @@ int CDemoPlayer::SetPos(int WantedTick)
 	if(!m_File)
 		return -1;
 
+	if(m_pListener)
+		m_pListener->OnBeginSeek();
+
 	WantedTick = clamp(WantedTick, m_Info.m_Info.m_FirstTick, m_Info.m_Info.m_LastTick);
 	int KeyframeWantedTick = WantedTick - 5; // -5 because we have to have a current tick and previous tick when we do the playback
 	const float Percent = (KeyframeWantedTick - m_Info.m_Info.m_FirstTick) / float(m_Info.m_Info.m_LastTick - m_Info.m_Info.m_FirstTick);
@@ -774,6 +789,9 @@ int CDemoPlayer::SetPos(int WantedTick)
 		DoTick();
 
 	Play();
+
+	if(m_pListener)
+		m_pListener->OnEndSeek();
 
 	return 0;
 }
@@ -889,4 +907,277 @@ int CDemoPlayer::GetDemoType() const
 	if(m_File)
 		return m_DemoType;
 	return DEMOTYPE_INVALID;
+}
+
+void CDemoPlayer::GetBookmarkFilePath(const char *pDemoPath, char *pBuffer, int BufferSize)
+{
+	const unsigned long long FNV_OFFSET_BASIS = 14695981039346656037ULL;
+	const unsigned long long FNV_PRIME = 1099511628211ULL;
+
+	unsigned long long Hash = FNV_OFFSET_BASIS;
+	for(const char *p = pDemoPath; *p != '\0'; p++)
+	{
+		Hash ^= (unsigned char)*p;
+		Hash *= FNV_PRIME;
+	}
+
+	char aHashHex[17];
+	str_hex(aHashHex, sizeof(aHashHex), &Hash, sizeof(Hash));
+	str_format(pBuffer, BufferSize, "bookmarks/%s.bm", aHashHex);
+}
+
+void CDemoPlayer::LoadBookmarks()
+{
+	if(!m_aFilename[0] || !m_pStorage)
+		return;
+
+	char aPath[IO_MAX_PATH_LENGTH];
+	GetBookmarkFilePath(m_aFilename, aPath, sizeof(aPath));
+
+	IOHANDLE File = m_pStorage->OpenFile(aPath, IOFLAG_READ, IStorage::TYPE_SAVE);
+	if(!File)
+		return;
+
+	char aLine[256];
+	int LinePos = 0;
+	int LineNum = 0;
+	bool PathVerified = false;
+	char Char;
+	while(io_read(File, &Char, 1) == 1)
+	{
+		if(Char == '\n')
+		{
+			aLine[LinePos] = '\0';
+			LineNum++;
+
+			if(LineNum == 1)
+			{
+				if(str_comp(aLine, "TWBM2") != 0)
+					break;
+				LinePos = 0;
+				continue;
+			}
+
+			if(LineNum == 2)
+			{
+				if(str_comp(aLine, m_aFilename) != 0)
+					break;
+				PathVerified = true;
+				LinePos = 0;
+				continue;
+			}
+
+			if(PathVerified && aLine[0] != '\0' && m_NumBookmarks < MAX_DEMO_BOOKMARKS)
+			{
+				char aName[MAX_BOOKMARK_NAME] = {0};
+				int Tick = 0;
+				const char *pRest = str_skip_whitespaces_const(aLine);
+
+				if(sscanf(pRest, "%d", &Tick) == 1)
+				{
+					pRest = str_skip_whitespaces_const(str_skip_to_whitespace_const(pRest));
+					if(*pRest)
+						str_copy(aName, pRest, sizeof(aName));
+					else
+						str_format(aName, sizeof(aName), "Bookmark %d", m_NumBookmarks + 1);
+
+					m_aBookmarks[m_NumBookmarks].m_Tick = Tick;
+					str_copy(m_aBookmarks[m_NumBookmarks].m_aName, aName, sizeof(m_aBookmarks[m_NumBookmarks].m_aName));
+					m_NumBookmarks++;
+				}
+			}
+
+			LinePos = 0;
+		}
+		else if(Char != '\r' && LinePos < (int)sizeof(aLine) - 1)
+		{
+			aLine[LinePos++] = Char;
+		}
+	}
+
+	io_close(File);
+	SortBookmarks();
+}
+
+void CDemoPlayer::SaveBookmarks()
+{
+	if(!m_aFilename[0] || !m_pStorage)
+		return;
+
+	char aPath[IO_MAX_PATH_LENGTH];
+	GetBookmarkFilePath(m_aFilename, aPath, sizeof(aPath));
+
+	if(m_NumBookmarks == 0)
+	{
+		m_pStorage->RemoveFile(aPath, IStorage::TYPE_SAVE);
+		return;
+	}
+
+	fs_makedir_recursive("bookmarks");
+
+	IOHANDLE File = m_pStorage->OpenFile(aPath, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+	if(!File)
+		return;
+
+	io_write(File, "TWBM2\n", 6);
+
+	char aHeader[256];
+	str_format(aHeader, sizeof(aHeader), "%s\n", m_aFilename);
+	io_write(File, aHeader, str_length(aHeader));
+
+	char aLine[IO_MAX_PATH_LENGTH];
+	for(int i = 0; i < m_NumBookmarks; i++)
+	{
+		str_format(aLine, sizeof(aLine), "%d\t%s\n", m_aBookmarks[i].m_Tick, m_aBookmarks[i].m_aName);
+		io_write(File, aLine, str_length(aLine));
+	}
+
+	io_close(File);
+}
+
+void IDemoPlayer::DeleteBookmarkFile(IStorage *pStorage, const char *pDemoPath)
+{
+	char aPath[IO_MAX_PATH_LENGTH];
+	CDemoPlayer::GetBookmarkFilePath(pDemoPath, aPath, sizeof(aPath));
+	pStorage->RemoveFile(aPath, IStorage::TYPE_SAVE);
+}
+
+void IDemoPlayer::RenameBookmarkFile(IStorage *pStorage, const char *pOldDemoPath, const char *pNewDemoPath)
+{
+	char aOldPath[IO_MAX_PATH_LENGTH];
+	char aNewPath[IO_MAX_PATH_LENGTH];
+	CDemoPlayer::GetBookmarkFilePath(pOldDemoPath, aOldPath, sizeof(aOldPath));
+	CDemoPlayer::GetBookmarkFilePath(pNewDemoPath, aNewPath, sizeof(aNewPath));
+
+	IOHANDLE File = pStorage->OpenFile(aOldPath, IOFLAG_READ, IStorage::TYPE_SAVE);
+	if(!File)
+		return;
+
+	enum { MAX_BM_FILE_SIZE = 64 * 1024 };
+	unsigned char *pBuf = (unsigned char *)malloc(MAX_BM_FILE_SIZE);
+	int Size = io_read(File, pBuf, MAX_BM_FILE_SIZE);
+	io_close(File);
+
+	if(Size <= 0)
+	{
+		free(pBuf);
+		return;
+	}
+
+	fs_makedir_recursive("bookmarks");
+
+	IOHANDLE NewFile = pStorage->OpenFile(aNewPath, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+	if(!NewFile)
+	{
+		free(pBuf);
+		return;
+	}
+
+	int Pos = 0;
+	if(Pos < Size && pBuf[Pos] == 'T') Pos++;
+	if(Pos < Size && pBuf[Pos] == 'W') Pos++;
+	if(Pos < Size && pBuf[Pos] == 'B') Pos++;
+	if(Pos < Size && pBuf[Pos] == 'M') Pos++;
+	if(Pos < Size && pBuf[Pos] >= '0' && pBuf[Pos] <= '9') Pos++;
+	if(Pos < Size && pBuf[Pos] == '\n') Pos++;
+
+	io_write(NewFile, "TWBM2\n", 6);
+	char aHeader[256];
+	str_format(aHeader, sizeof(aHeader), "%s\n", pNewDemoPath);
+	io_write(NewFile, aHeader, str_length(aHeader));
+
+	while(Pos < Size && pBuf[Pos] != '\n') Pos++;
+	if(Pos < Size && pBuf[Pos] == '\n') Pos++;
+
+	if(Pos < Size)
+		io_write(NewFile, pBuf + Pos, Size - Pos);
+
+	io_close(NewFile);
+	free(pBuf);
+
+	pStorage->RemoveFile(aOldPath, IStorage::TYPE_SAVE);
+}
+
+void CDemoPlayer::SortBookmarks()
+{
+	for(int i = 0; i < m_NumBookmarks - 1; i++)
+	{
+		for(int j = 0; j < m_NumBookmarks - i - 1; j++)
+		{
+			if(m_aBookmarks[j].m_Tick > m_aBookmarks[j+1].m_Tick)
+			{
+				CDemoBookmark Temp = m_aBookmarks[j];
+				m_aBookmarks[j] = m_aBookmarks[j+1];
+				m_aBookmarks[j+1] = Temp;
+			}
+		}
+	}
+}
+
+int CDemoPlayer::AddBookmark(int Tick, const char *pName)
+{
+	if(!m_File || !m_aFilename[0])
+		return -1;
+
+	if(m_NumBookmarks >= MAX_DEMO_BOOKMARKS)
+		return -1;
+
+	int Index = m_NumBookmarks;
+	m_aBookmarks[Index].m_Tick = Tick;
+	str_copy(m_aBookmarks[Index].m_aName, pName, sizeof(m_aBookmarks[Index].m_aName));
+	m_NumBookmarks++;
+
+	SortBookmarks();
+	SaveBookmarks();
+
+	for(int i = 0; i < m_NumBookmarks; i++)
+	{
+		if(m_aBookmarks[i].m_Tick == Tick && str_comp(m_aBookmarks[i].m_aName, pName) == 0)
+			return i;
+	}
+	return Index;
+}
+
+bool CDemoPlayer::RemoveBookmark(int Index)
+{
+	if(Index < 0 || Index >= m_NumBookmarks)
+		return false;
+
+	mem_move(&m_aBookmarks[Index], &m_aBookmarks[Index + 1],
+		sizeof(CDemoBookmark) * (m_NumBookmarks - Index - 1));
+	m_NumBookmarks--;
+
+	SaveBookmarks();
+	return true;
+}
+
+bool CDemoPlayer::RenameBookmark(int Index, const char *pName)
+{
+	if(Index < 0 || Index >= m_NumBookmarks)
+		return false;
+
+	str_copy(m_aBookmarks[Index].m_aName, pName, sizeof(m_aBookmarks[Index].m_aName));
+
+	SaveBookmarks();
+	return true;
+}
+
+int CDemoPlayer::GotoBookmark(int Index)
+{
+	if(Index < 0 || Index >= m_NumBookmarks)
+		return -1;
+
+	return m_aBookmarks[Index].m_Tick;
+}
+
+int CDemoPlayer::GetNumBookmarks() const
+{
+	return m_NumBookmarks;
+}
+
+const CDemoBookmark *CDemoPlayer::GetBookmark(int Index) const
+{
+	if(Index < 0 || Index >= m_NumBookmarks)
+		return 0;
+	return &m_aBookmarks[Index];
 }

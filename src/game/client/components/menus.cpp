@@ -7,6 +7,7 @@
 #include <base/vmath.h>
 
 #include <engine/config.h>
+#include <engine/demo.h>
 #include <engine/editor.h>
 #include <engine/engine.h>
 #include <engine/contacts.h>
@@ -60,6 +61,9 @@ CMenus::CMenus()
 	m_aDemolistPreviousSelection[0] = '\0';
 	m_SeekBarActivatedTime = 0;
 	m_SeekBarActive = true;
+	m_DemoPositionToSeek = -1.0f;
+	m_BookmarkPopupIndex = -1;
+	m_BookmarksListActive = false;
 	m_SkinModified = false;
 	m_KeyReaderWasActive = false;
 	m_KeyReaderIsActive = false;
@@ -1168,6 +1172,21 @@ void CMenus::RenderMenu(CUIRect Screen)
 			pTitle = Localize("Rename demo");
 			NumOptions = 6;
 		}
+		else if(m_Popup == POPUP_ADD_BOOKMARK)
+		{
+			pTitle = Localize("Add bookmark");
+			NumOptions = 6;
+		}
+		else if(m_Popup == POPUP_RENAME_BOOKMARK)
+		{
+			pTitle = Localize("Rename bookmark");
+			NumOptions = 6;
+		}
+		else if(m_Popup == POPUP_CONFIRM_DELETE_BOOKMARK)
+		{
+			pTitle = Localize("Delete bookmark");
+			NumOptions = 5;
+		}
 		else if(m_Popup == POPUP_SAVE_SKIN)
 		{
 			pTitle = Localize("Save skin");
@@ -1476,6 +1495,7 @@ void CMenus::RenderMenu(CUIRect Screen)
 						str_format(aPathNew, sizeof(aPathNew), "%s/%s", m_aCurrentDemoFolder, m_DemoNameInput.GetString());
 						if(Storage()->RenameFile(aBufOld, aPathNew, m_lDemos[m_DemolistSelectedIndex].m_StorageType))
 						{
+							IDemoPlayer::RenameBookmarkFile(Storage(), aBufOld, aPathNew);
 							str_copy(m_aDemolistPreviousSelection, m_DemoNameInput.GetString(), sizeof(m_aDemolistPreviousSelection));
 							DemolistPopulate();
 							DemolistOnUpdate(false);
@@ -1483,6 +1503,69 @@ void CMenus::RenderMenu(CUIRect Screen)
 						else
 							PopupMessage(Localize("Error"), Localize("Unable to rename the demo"), Localize("Ok"), POPUP_RENAME_DEMO);
 					}
+				}
+			}
+		}
+		else if(m_Popup == POPUP_ADD_BOOKMARK)
+		{
+			Box.HSplitTop(27.0f, 0, &Box);
+			Box.VMargin(10.0f, &Box);
+			UI()->DoLabel(&Box, Localize("Enter a name for the bookmark:"), FontSize, TEXTALIGN_LEFT);
+
+			CUIRect EditBox;
+			Box.HSplitBottom(Box.h/2.0f, 0, &Box);
+			Box.HSplitTop(20.0f, &EditBox, &Box);
+
+			UI()->DoEditBoxOption(&m_BookmarkNameInput, &EditBox, Localize("Name"), ButtonWidth);
+
+			CUIRect Yes, No;
+			BottomBar.VSplitMid(&No, &Yes, SpacingW);
+
+			static CButtonContainer s_ButtonNo;
+			if(DoButton_Menu(&s_ButtonNo, Localize("Cancel"), 0, &No) || UI()->ConsumeHotkey(CUI::HOTKEY_ESCAPE))
+				m_Popup = POPUP_NONE;
+
+			static CButtonContainer s_ButtonYes;
+			if(DoButton_Menu(&s_ButtonYes, Localize("Add"), !m_BookmarkNameInput.GetLength(), &Yes) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER))
+			{
+				if(m_BookmarkNameInput.GetLength())
+				{
+					m_Popup = POPUP_NONE;
+					const IDemoPlayer::CInfo *pInfo = DemoPlayer()->BaseInfo();
+					int Index = DemoPlayer()->AddBookmark(pInfo->m_CurrentTick, m_BookmarkNameInput.GetString());
+					if(Index >= 0)
+					{
+						m_BookmarksListActive = true;
+					}
+				}
+			}
+		}
+		else if(m_Popup == POPUP_RENAME_BOOKMARK)
+		{
+			Box.HSplitTop(27.0f, 0, &Box);
+			Box.VMargin(10.0f, &Box);
+			UI()->DoLabel(&Box, Localize("Enter a new name for the bookmark:"), FontSize, TEXTALIGN_LEFT);
+
+			CUIRect EditBox;
+			Box.HSplitBottom(Box.h/2.0f, 0, &Box);
+			Box.HSplitTop(20.0f, &EditBox, &Box);
+
+			UI()->DoEditBoxOption(&m_BookmarkNameInput, &EditBox, Localize("Name"), ButtonWidth);
+
+			CUIRect Yes, No;
+			BottomBar.VSplitMid(&No, &Yes, SpacingW);
+
+			static CButtonContainer s_ButtonNo;
+			if(DoButton_Menu(&s_ButtonNo, Localize("Cancel"), 0, &No) || UI()->ConsumeHotkey(CUI::HOTKEY_ESCAPE))
+				m_Popup = POPUP_NONE;
+
+			static CButtonContainer s_ButtonYes;
+			if(DoButton_Menu(&s_ButtonYes, Localize("Rename"), !m_BookmarkNameInput.GetLength(), &Yes) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER))
+			{
+				if(m_BookmarkNameInput.GetLength())
+				{
+					m_Popup = POPUP_NONE;
+					DemoPlayer()->RenameBookmark(m_BookmarkPopupIndex, m_BookmarkNameInput.GetString());
 				}
 			}
 		}

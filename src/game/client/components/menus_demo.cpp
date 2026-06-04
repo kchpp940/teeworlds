@@ -86,7 +86,6 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 		SeekBar = MainView;
 
 	// do seekbar
-	float PositionToSeek = -1.0f;
 	if(m_SeekBarActive || m_MenuActive)
 	{
 		static bool s_PausedBeforeSeeking = false;
@@ -114,6 +113,21 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 			Graphics()->QuadsEnd();
 		}
 
+		// draw bookmarks
+		for(int i = 0; i < DemoPlayer()->GetNumBookmarks(); i++)
+		{
+			const CDemoBookmark *pBookmark = DemoPlayer()->GetBookmark(i);
+			if(!pBookmark)
+				continue;
+			float Ratio = (pBookmark->m_Tick - pInfo->m_FirstTick) / (float)TotalTicks;
+			Graphics()->TextureClear();
+			Graphics()->QuadsBegin();
+			Graphics()->SetColor(0.3f, 0.7f, 1.0f, 1.0f);
+			IGraphics::CQuadItem QuadItem(SeekBar.x + (SeekBar.w-2*Rounding)*Ratio - UI()->PixelSize(), SeekBar.y, UI()->PixelSize()*3, SeekBar.h);
+			Graphics()->QuadsDrawTL(&QuadItem, 1);
+			Graphics()->QuadsEnd();
+		}
+
 		// draw time
 		char aBuffer[64];
 		str_format(aBuffer, sizeof(aBuffer), "%d:%02d / %d:%02d",
@@ -137,7 +151,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 				if(absolute(s_PrevAmount-Amount) >= (0.1f/UI()->Screen()->w))
 				{
 					s_PrevAmount = Amount;
-					PositionToSeek = Amount;
+					m_DemoPositionToSeek = Amount;
 				}
 			}
 		}
@@ -167,7 +181,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 	if(CurrentTick == TotalTicks)
 	{
 		DemoPlayer()->Pause();
-		PositionToSeek = 0.0f;
+		m_DemoPositionToSeek = 0.0f;
 	}
 
 	if(UI()->KeyPress(KEY_MOUSE_WHEEL_UP) || UI()->KeyPress(KEY_PLUS) || UI()->KeyPress(KEY_KP_PLUS))
@@ -183,6 +197,20 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 		else
 			DemoPlayer()->Unpause();
 		SeekBarActivate = true;
+	}
+
+	// add bookmark with B key
+	if(UI()->KeyPress(KEY_B))
+	{
+		char aName[64];
+		int Num = DemoPlayer()->GetNumBookmarks() + 1;
+		str_format(aName, sizeof(aName), "Bookmark %d", Num);
+		int Index = DemoPlayer()->AddBookmark(pInfo->m_CurrentTick, aName);
+		if(Index >= 0)
+		{
+			m_BookmarksListActive = true;
+			SeekBarActivate = true;
+		}
 	}
 
 	// skip forward/backward using left/right arrow keys
@@ -250,7 +278,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 			DesiredTick = CurrentTick + (SkipBackwards ? -1 : 1) * SkippedTicks;
 		}
 
-		PositionToSeek = clamp(DesiredTick, 0, TotalTicks-1)/(float)TotalTicks;
+		m_DemoPositionToSeek = clamp(DesiredTick, 0, TotalTicks-1)/(float)TotalTicks;
 		SeekBarActivate = true;
 	}
 	else
@@ -260,7 +288,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 		{
 			if(UI()->KeyPress(DigitToNumberKey(Digit)) || UI()->KeyPress(DigitToKeypadKey(Digit)))
 			{
-				PositionToSeek = Digit / 10.0f;
+				m_DemoPositionToSeek = Digit / 10.0f;
 				SeekBarActivate = true;
 				break;
 			}
@@ -270,11 +298,9 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 	// Advance single frame forward/backward with period/comma key
 	const bool TickForwards = UI()->KeyPress(KEY_PERIOD);
 	const bool TickBackwards = UI()->KeyPress(KEY_COMMA);
-	if(PositionToSeek < 0.0f && (TickForwards || TickBackwards))
+	if(m_DemoPositionToSeek < 0.0f && (TickForwards || TickBackwards))
 	{
-		m_pClient->m_SuppressEvents = true;
 		DemoPlayer()->SetPos(pInfo->m_CurrentTick + (TickForwards ? 3 : 0));
-		m_pClient->m_SuppressEvents = false;
 		DemoPlayer()->Pause();
 		SeekBarActivate = true;
 	}
@@ -311,7 +337,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 		if(DoButton_SpriteID(&s_ResetButton, IMAGE_DEMOBUTTONS, SPRITE_DEMOBUTTON_STOP, false, &Button, CUIRect::CORNER_ALL))
 		{
 			DemoPlayer()->Pause();
-			PositionToSeek = 0.0f;
+			m_DemoPositionToSeek = 0.0f;
 		}
 
 		// slowdown
@@ -334,7 +360,33 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 		str_format(aBuffer, sizeof(aBuffer), pInfo->m_Speed >= 1.0f ? "x%.0f" : "x%.2f", pInfo->m_Speed);
 		UI()->DoLabel(&ButtonBar, aBuffer, Button.h*0.7f, TEXTALIGN_LEFT);
 
+		// add bookmark button
+		ButtonBar.VSplitRight(Margins, 0, &ButtonBar);
+		ButtonBar.VSplitRight(ButtonbarHeight*4, &ButtonBar, &Button);
+		static CButtonContainer s_AddBookmarkButton;
+		if(DoButton_Menu(&s_AddBookmarkButton, Localize("Add Bookmark", "DemoPlayer"), 0, &Button))
+		{
+			m_Popup = POPUP_ADD_BOOKMARK;
+			int Num = DemoPlayer()->GetNumBookmarks() + 1;
+			str_format(aBuffer, sizeof(aBuffer), "Bookmark %d", Num);
+			m_BookmarkNameInput.Set(aBuffer);
+			m_BookmarkNameInput.SetCursorOffset(m_BookmarkNameInput.GetLength());
+			m_BookmarkNameInput.SetSelection(0, m_BookmarkNameInput.GetLength());
+			UI()->SetActiveItem(&m_BookmarkNameInput);
+		}
+
+		// bookmarks list button
+		ButtonBar.VSplitRight(Margins, 0, &ButtonBar);
+		ButtonBar.VSplitRight(ButtonbarHeight*5, &ButtonBar, &Button);
+		static CButtonContainer s_BookmarksButton;
+		str_format(aBuffer, sizeof(aBuffer), Localize("Bookmarks %d", "DemoPlayer"), DemoPlayer()->GetNumBookmarks());
+		if(DoButton_Menu(&s_BookmarksButton, aBuffer, 0, &Button))
+		{
+			m_BookmarksListActive = !m_BookmarksListActive;
+		}
+
 		// close button
+		ButtonBar.VSplitRight(Margins, 0, &ButtonBar);
 		ButtonBar.VSplitRight(ButtonbarHeight*3, &ButtonBar, &Button);
 		static CButtonContainer s_ExitButton;
 		if(DoButton_Menu(&s_ExitButton, Localize("Close"), 0, &Button))
@@ -348,12 +400,18 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 		UI()->DoLabel(&NameBar, aBuf, Button.h*0.5f, TEXTALIGN_TL, NameBar.w);
 	}
 
-	if(PositionToSeek >= 0.0f && PositionToSeek <= 1.0f)
+	if(m_DemoPositionToSeek >= 0.0f && m_DemoPositionToSeek <= 1.0f)
 	{
-		m_pClient->OnReset();
-		m_pClient->m_SuppressEvents = true;
-		DemoPlayer()->SetPos(PositionToSeek);
-		m_pClient->m_SuppressEvents = false;
+		DemoPlayer()->SetPos(m_DemoPositionToSeek);
+		m_DemoPositionToSeek = -1.0f;
+	}
+
+	if(m_BookmarksListActive && m_MenuActive && DemoPlayer()->GetNumBookmarks() > 0)
+	{
+		CUIRect BookmarksView = MainView;
+		BookmarksView.y -= 5.0f;
+		BookmarksView.HSplitTop(5.0f, 0, &BookmarksView);
+		RenderDemoBookmarks(BookmarksView);
 	}
 
 	UI()->MapScreen();
@@ -738,6 +796,7 @@ void CMenus::PopupConfirmDeleteDemo()
 	{
 		char aBuf[IO_MAX_PATH_LENGTH];
 		str_format(aBuf, sizeof(aBuf), "%s/%s", m_aCurrentDemoFolder, m_lDemos[m_DemolistSelectedIndex].m_aFilename);
+		IDemoPlayer::DeleteBookmarkFile(Storage(), aBuf);
 		if(Storage()->RemoveFile(aBuf, m_lDemos[m_DemolistSelectedIndex].m_StorageType))
 		{
 			DemolistPopulate();
@@ -820,4 +879,96 @@ void CMenus::Con_Play(IConsole::IResult *pResult, void *pUserData)
 	str_copy(pSelf->m_aDemoLoadingFile, pResult->GetString(0), sizeof(pSelf->m_aDemoLoadingFile));
 	pSelf->m_DemoLoadingStorageType = IStorage::TYPE_ALL;
 	pSelf->m_Popup = POPUP_LOADING_DEMO;
+}
+
+void CMenus::PopupConfirmDeleteBookmark()
+{
+	if(DemoPlayer()->RemoveBookmark(m_BookmarkPopupIndex))
+	{
+		if(DemoPlayer()->GetNumBookmarks() == 0)
+			m_BookmarksListActive = false;
+	}
+}
+
+float CMenus::RenderDemoBookmarks(CUIRect View)
+{
+	const IDemoPlayer::CInfo *pInfo = DemoPlayer()->BaseInfo();
+	int FirstTick = pInfo->m_FirstTick;
+	int TotalTicks = pInfo->m_LastTick - pInfo->m_FirstTick;
+
+	const float ButtonHeight = 20.0f;
+	const float Spacing = 2.0f;
+	const float HMargin = 5.0f;
+
+	int NumBookmarks = DemoPlayer()->GetNumBookmarks();
+	float BackgroundHeight = (float)(NumBookmarks) * ButtonHeight + (float)(NumBookmarks) * Spacing;
+
+	CUIRect ListView;
+	View.HSplitTop(BackgroundHeight + 2 * HMargin, &ListView, &View);
+	ListView.Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha/100.0f), 10.0f, CUIRect::CORNER_T);
+
+	ListView.Margin(HMargin, &ListView);
+	ListView.HSplitTop(HMargin, 0, &ListView);
+
+	char aBuffer[128];
+	for(int i = 0; i < NumBookmarks; i++)
+	{
+		const CDemoBookmark *pBookmark = DemoPlayer()->GetBookmark(i);
+		if(!pBookmark)
+			continue;
+
+		ListView.HSplitTop(ButtonHeight, &ListView, 0);
+		CUIRect ItemView = ListView;
+		ListView.HSplitTop(Spacing, 0, &ListView);
+
+		int Tick = pBookmark->m_Tick - FirstTick;
+		int Minutes = Tick / SERVER_TICK_SPEED / 60;
+		int Seconds = (Tick / SERVER_TICK_SPEED) % 60;
+
+		CUIRect Button, TimeLabel, NameLabel;
+
+		ItemView.VSplitRight(ButtonHeight * 2, &ItemView, &Button);
+		static CButtonContainer s_DeleteButton;
+		if(DoButton_Menu(&s_DeleteButton, Localize("Del"), 0, &Button))
+		{
+			m_BookmarkPopupIndex = i;
+			str_format(aBuffer, sizeof(aBuffer), Localize("Are you sure that you want to delete the bookmark '%s'?"), pBookmark->m_aName);
+			PopupConfirm(Localize("Delete bookmark"), aBuffer, Localize("Yes"), Localize("No"), &CMenus::PopupConfirmDeleteBookmark);
+		}
+
+		ItemView.VSplitRight(Spacing, 0, &ItemView);
+		ItemView.VSplitRight(ButtonHeight * 2, &ItemView, &Button);
+		static CButtonContainer s_RenameButton;
+		if(DoButton_Menu(&s_RenameButton, Localize("Ren"), 0, &Button))
+		{
+			m_BookmarkPopupIndex = i;
+			m_Popup = POPUP_RENAME_BOOKMARK;
+			m_BookmarkNameInput.Set(pBookmark->m_aName);
+			m_BookmarkNameInput.SetCursorOffset(m_BookmarkNameInput.GetLength());
+			m_BookmarkNameInput.SetSelection(0, m_BookmarkNameInput.GetLength());
+			UI()->SetActiveItem(&m_BookmarkNameInput);
+		}
+
+		ItemView.VSplitRight(Spacing, 0, &ItemView);
+		ItemView.VSplitLeft(60.0f, &TimeLabel, &NameLabel);
+
+		str_format(aBuffer, sizeof(aBuffer), "%d:%02d", Minutes, Seconds);
+		UI()->DoLabel(&TimeLabel, aBuffer, ButtonHeight*0.6f, TEXTALIGN_LEFT);
+
+		CUIRect ClickView = ItemView;
+		ClickView.VSplitLeft(60.0f, 0, &ClickView);
+		static CButtonContainer s_JumpButton;
+		if(DoButton_Menu(&s_JumpButton, pBookmark->m_aName, 0, &ClickView))
+		{
+			int BookmarkTick = DemoPlayer()->GotoBookmark(i);
+			if(BookmarkTick >= 0 && TotalTicks > 0)
+			{
+				m_DemoPositionToSeek = clamp(BookmarkTick - pInfo->m_FirstTick, 0, TotalTicks) / (float)TotalTicks;
+				m_SeekBarActive = true;
+				m_SeekBarActivatedTime = time_get();
+			}
+		}
+	}
+
+	return BackgroundHeight + 2 * HMargin;
 }

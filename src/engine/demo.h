@@ -7,7 +7,16 @@
 
 enum
 {
-	MAX_TIMELINE_MARKERS=64
+	MAX_TIMELINE_MARKERS=64,
+	MAX_DEMO_BOOKMARKS=128,
+	MAX_BOOKMARK_NAME=64,
+	MAX_DEMO_PATH=512,
+};
+
+struct CDemoBookmark
+{
+	int m_Tick;
+	char m_aName[MAX_BOOKMARK_NAME];
 };
 
 struct CDemoHeader
@@ -62,6 +71,18 @@ public:
 	virtual void GetDemoName(char *pBuffer, int BufferSize) const = 0;
 	virtual bool GetDemoInfo(const char *pFilename, int StorageType, CDemoHeader *pDemoHeader) const = 0;
 	virtual int GetDemoType() const = 0;
+
+	virtual int AddBookmark(int Tick, const char *pName) = 0;
+	virtual bool RemoveBookmark(int Index) = 0;
+	virtual bool RenameBookmark(int Index, const char *pName) = 0;
+	virtual int GotoBookmark(int Index) = 0;
+	virtual int GetNumBookmarks() const = 0;
+	virtual const CDemoBookmark *GetBookmark(int Index) const = 0;
+	virtual const char *GetDemoPath() const = 0;
+	virtual void SaveBookmarks() = 0;
+
+	static void DeleteBookmarkFile(class IStorage *pStorage, const char *pDemoPath);
+	static void RenameBookmarkFile(class IStorage *pStorage, const char *pOldDemoPath, const char *pNewDemoPath);
 };
 
 class IDemoRecorder : public IInterface

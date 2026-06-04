@@ -178,6 +178,10 @@ public:
 
 	virtual int OnSnapInput(int *pData) = 0;
 
+	virtual void OnReset() = 0;
+	virtual void SetSuppressEvents(bool Suppress) = 0;
+	virtual void SetLastNewPredictedTick(int Tick) = 0;
+
 	virtual const char *GetItemName(int Type) const = 0;
 	virtual const char *Version() const = 0;
 	virtual const char *NetVersion() const = 0;

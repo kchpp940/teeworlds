@@ -71,6 +71,9 @@ private:
 		POPUP_SAVE_SKIN,
 		POPUP_PASSWORD,
 		POPUP_QUIT,
+		POPUP_ADD_BOOKMARK,
+		POPUP_RENAME_BOOKMARK,
+		POPUP_CONFIRM_DELETE_BOOKMARK,
 	};
 
 	enum
@@ -310,10 +313,18 @@ private:
 	char m_aDemolistPreviousSelection[IO_MAX_PATH_LENGTH];
 	int64 m_SeekBarActivatedTime;
 	bool m_SeekBarActive;
+	float m_DemoPositionToSeek;
+
+	int m_BookmarkPopupIndex;
+	CLineInputBuffered<static_cast<int>(MAX_BOOKMARK_NAME)> m_BookmarkNameInput;
+	bool m_BookmarksListActive;
 
 	void DemolistOnUpdate(bool Reset);
 	void DemolistPopulate();
 	static int DemolistFetchCallback(const CFsFileInfo* pFileInfo, int IsDir, int StorageType, void *pUser);
+
+	void PopupConfirmDeleteBookmark();
+	float RenderDemoBookmarks(CUIRect View);
 
 	// friends
 	class CFriendItem
