@@ -265,7 +265,6 @@ public:
 	CRenderTools m_RenderTools;
 
 	void OnReset();
-	virtual void SetSuppressEvents(bool Suppress);
 
 	// hooks
 	virtual void OnConnected();

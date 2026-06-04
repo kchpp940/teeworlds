@@ -593,6 +593,13 @@ public:
 		m_InitialPickerColor = vec3(1,0,0);
 		m_SelectedPickerColor = vec3(1,0,0);
 
+		m_AutosaveEnabled = true;
+		m_LastAutosaveTime = 0;
+		m_SelectedAutosaveDraft = -1;
+		m_aActiveDraftAutosavePath[0] = 0;
+		m_aActiveDraftMetaPath[0] = 0;
+		m_AutosaveRecoverAction = AUTOSAVE_RECOVER_NONE;
+
 		ms_pUiGotContext = 0;
 	}
 
@@ -648,6 +655,8 @@ public:
 		POPEVENT_LOAD_CURRENT,
 		POPEVENT_NEW,
 		POPEVENT_SAVE,
+		POPEVENT_AUTOSAVE_RECOVER,
+		POPEVENT_AUTOSAVE_DISCARD,
 	};
 
 	int m_PopupEventType;
@@ -758,6 +767,53 @@ public:
 	static const void *ms_pUiGotContext;
 
 	CEditorMap m_Map;
+
+	enum
+	{
+		AUTOSAVE_INTERVAL = 30 * 1000,
+		AUTOSAVE_MAX_BACKUPS_PER_MAP = 3,
+	};
+
+	struct SAutosaveDraft
+	{
+		char m_aOriginalMap[IO_MAX_PATH_LENGTH];
+		char m_aAutosavePath[IO_MAX_PATH_LENGTH];
+		char m_aMetadataPath[IO_MAX_PATH_LENGTH];
+		int64 m_Timestamp;
+		bool m_IsDirty;
+		bool m_IsActive;
+
+		SAutosaveDraft() : m_Timestamp(0), m_IsDirty(false), m_IsActive(false) {}
+
+		bool operator<(const SAutosaveDraft &Other) const { return m_Timestamp > Other.m_Timestamp; }
+	};
+
+	array<SAutosaveDraft> m_lAutosaveDrafts;
+	int m_SelectedAutosaveDraft;
+	bool m_AutosaveEnabled;
+	int64 m_LastAutosaveTime;
+
+	char m_aActiveDraftAutosavePath[IO_MAX_PATH_LENGTH];
+	char m_aActiveDraftMetaPath[IO_MAX_PATH_LENGTH];
+
+	enum
+	{
+		AUTOSAVE_RECOVER_NONE = 0,
+		AUTOSAVE_RECOVER_THEN_SAVEAS,
+	};
+	int m_AutosaveRecoverAction;
+
+	void ScanForAutosaves();
+	bool LoadAutosaveMetadata(const char *pMetadataPath, SAutosaveDraft *pDraft);
+	bool SaveAutosaveMetadata(const SAutosaveDraft &Draft);
+	void DoAutosave();
+	int RecoverAutosaveDraft(int DraftIndex);
+	void DiscardAutosaveDraft(int DraftIndex);
+	void ClearMapAutosaves(const char *pOriginalMap);
+	void ClearActiveDraftFiles();
+	void GenerateAutosaveFilenames(const char *pOriginalMap, char *pAutosavePath, char *pMetadataPath, int BufSize);
+
+	static void CallbackSaveAutosaveAs(const char *pFileName, int StorageType, void *pUser);
 
 	static void EnvelopeEval(float TimeOffset, int Env, float *pChannels, void *pUser);
 	static void ConMapMagic(class IConsole::IResult *pResult, void *pUserData);

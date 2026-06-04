@@ -58,8 +58,6 @@ public:
 	virtual int SetPos(int WantedTick) = 0;
 	virtual void Pause() = 0;
 	virtual void Unpause() = 0;
-	virtual void BeginSeek() = 0;
-	virtual void EndSeek() = 0;
 	virtual const CInfo *BaseInfo() const = 0;
 	virtual void GetDemoName(char *pBuffer, int BufferSize) const = 0;
 	virtual bool GetDemoInfo(const char *pFilename, int StorageType, CDemoHeader *pDemoHeader) const = 0;

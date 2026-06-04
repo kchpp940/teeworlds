@@ -50,8 +50,6 @@ public:
 		virtual ~IListener() {}
 		virtual void OnDemoPlayerSnapshot(void *pData, int Size) = 0;
 		virtual void OnDemoPlayerMessage(void *pData, int Size) = 0;
-		virtual void OnDemoPlayerBeginSeek() = 0;
-		virtual void OnDemoPlayerEndSeek() = 0;
 	};
 
 	struct CPlaybackInfo
@@ -76,8 +74,6 @@ private:
 	static const float ms_aSpeeds[];
 
 	IListener *m_pListener;
-
-	bool m_IsSeeking;
 
 
 	// Playback
@@ -126,8 +122,6 @@ public:
 	void SetSpeedIndex(int Offset);
 	int SetPos(float Percent);
 	int SetPos(int WantedTick);
-	void BeginSeek();
-	void EndSeek();
 	const CInfo *BaseInfo() const { return &m_Info.m_Info; }
 	void GetDemoName(char *pBuffer, int BufferSize) const;
 	bool GetDemoInfo(const char *pFilename, int StorageType, CDemoHeader *pDemoHeader) const;

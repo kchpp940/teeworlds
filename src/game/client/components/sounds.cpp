@@ -96,7 +96,7 @@ void CSounds::OnInit()
 
 void CSounds::OnReset()
 {
-	if(Client()->State() >= IClient::STATE_ONLINE || Client()->State() == IClient::STATE_DEMOPLAYBACK)
+	if(Client()->State() >= IClient::STATE_ONLINE)
 	{
 		Sound()->StopAll();
 		ClearQueue();

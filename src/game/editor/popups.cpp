@@ -707,6 +707,18 @@ bool CEditor::PopupEvent(void *pContext, CUIRect View)
 		pEditor->UI()->DoLabel(&Label, "New map", 20.0f, TEXTALIGN_CENTER);
 	else if(pEditor->m_PopupEventType == POPEVENT_SAVE)
 		pEditor->UI()->DoLabel(&Label, "Save map", 20.0f, TEXTALIGN_CENTER);
+	else if(pEditor->m_PopupEventType == POPEVENT_AUTOSAVE_RECOVER)
+		pEditor->UI()->DoLabel(&Label, "Recover autosave", 20.0f, TEXTALIGN_CENTER);
+	else if(pEditor->m_PopupEventType == POPEVENT_AUTOSAVE_DISCARD)
+	{
+		bool IsActiveDraft = pEditor->m_SelectedAutosaveDraft >= 0 &&
+			pEditor->m_SelectedAutosaveDraft < pEditor->m_lAutosaveDrafts.size() &&
+			pEditor->m_lAutosaveDrafts[pEditor->m_SelectedAutosaveDraft].m_IsActive;
+		if(IsActiveDraft)
+			pEditor->UI()->DoLabel(&Label, "Unlink autosave", 20.0f, TEXTALIGN_CENTER);
+		else
+			pEditor->UI()->DoLabel(&Label, "Discard autosave", 20.0f, TEXTALIGN_CENTER);
+	}
 
 	View.HSplitBottom(10.0f, &View, 0);
 	View.HSplitBottom(20.0f, &View, &ButtonBar);
@@ -725,6 +737,18 @@ bool CEditor::PopupEvent(void *pContext, CUIRect View)
 		pEditor->UI()->DoLabel(&Label, "The map currently contains unsaved data; you may want to save it before you create a new map.\nContinue anyway?", 10.0f, TEXTALIGN_LEFT, Label.w-10.0f);
 	else if(pEditor->m_PopupEventType == POPEVENT_SAVE)
 		pEditor->UI()->DoLabel(&Label, "This file already exists.\nDo you want to overwrite it?", 10.0f, TEXTALIGN_LEFT);
+	else if(pEditor->m_PopupEventType == POPEVENT_AUTOSAVE_RECOVER)
+		pEditor->UI()->DoLabel(&Label, "An autosave draft was found from a previous session.\nDo you want to recover it? This will replace your current map.", 10.0f, TEXTALIGN_LEFT, Label.w-10.0f);
+	else if(pEditor->m_PopupEventType == POPEVENT_AUTOSAVE_DISCARD)
+	{
+		bool IsActiveDraft = pEditor->m_SelectedAutosaveDraft >= 0 &&
+			pEditor->m_SelectedAutosaveDraft < pEditor->m_lAutosaveDrafts.size() &&
+			pEditor->m_lAutosaveDrafts[pEditor->m_SelectedAutosaveDraft].m_IsActive;
+		if(IsActiveDraft)
+			pEditor->UI()->DoLabel(&Label, "Discard the autosave draft? Your current edits will be kept,\nbut the recovery link will be removed.", 10.0f, TEXTALIGN_LEFT, Label.w-10.0f);
+		else
+			pEditor->UI()->DoLabel(&Label, "Do you want to permanently discard this autosave draft?\nThis action cannot be undone.", 10.0f, TEXTALIGN_LEFT, Label.w-10.0f);
+	}
 
 	// button bar
 	ButtonBar.VSplitLeft(30.0f, 0, &ButtonBar);
@@ -745,6 +769,27 @@ bool CEditor::PopupEvent(void *pContext, CUIRect View)
 		}
 		else if(pEditor->m_PopupEventType == POPEVENT_SAVE)
 			pEditor->CallbackSaveMap(pEditor->m_aFileSaveName, IStorage::TYPE_SAVE, pEditor);
+		else if(pEditor->m_PopupEventType == POPEVENT_AUTOSAVE_RECOVER)
+		{
+			if(pEditor->m_SelectedAutosaveDraft >= 0)
+				pEditor->RecoverAutosaveDraft(pEditor->m_SelectedAutosaveDraft);
+
+			if(pEditor->m_AutosaveRecoverAction == CEditor::AUTOSAVE_RECOVER_THEN_SAVEAS)
+			{
+				char aDefaultName[128];
+				if(pEditor->m_aFileName[0])
+					pEditor->ExtractName(pEditor->m_aFileName, aDefaultName, sizeof(aDefaultName));
+				else
+					str_copy(aDefaultName, "recovered_draft", sizeof(aDefaultName));
+				pEditor->InvokeFileDialog(IStorage::TYPE_SAVE, FILETYPE_MAP, "Save recovered map", "Save", "maps", aDefaultName, pEditor->CallbackSaveAutosaveAs, pEditor);
+				pEditor->m_AutosaveRecoverAction = CEditor::AUTOSAVE_RECOVER_NONE;
+			}
+		}
+		else if(pEditor->m_PopupEventType == POPEVENT_AUTOSAVE_DISCARD)
+		{
+			if(pEditor->m_SelectedAutosaveDraft >= 0)
+				pEditor->DiscardAutosaveDraft(pEditor->m_SelectedAutosaveDraft);
+		}
 		pEditor->m_PopupEventWasActivated = false;
 		return true;
 	}
@@ -1202,6 +1247,181 @@ bool CEditor::PopupMenuFile(void *pContext, CUIRect View)
 	static int s_ExitButton = 0;
 
 	CUIRect Slot;
+
+	if(pEditor->m_lAutosaveDrafts.size() > 0)
+	{
+		View.HSplitTop(2.0f, &Slot, &View);
+		View.HSplitTop(12.0f, &Slot, &View);
+		pEditor->UI()->DoLabel(&Slot, "--- Autosave Drafts ---", 10.0f, TEXTALIGN_LEFT);
+
+		array<const char *> aMapNames;
+		for(int i = 0; i < pEditor->m_lAutosaveDrafts.size(); i++)
+		{
+			const char *pMapName = pEditor->m_lAutosaveDrafts[i].m_aOriginalMap;
+			if(!pMapName[0])
+				pMapName = "Untitled";
+
+			bool Found = false;
+			for(int j = 0; j < aMapNames.size(); j++)
+			{
+				if(!str_comp(aMapNames[j], pMapName))
+				{
+					Found = true;
+					break;
+				}
+			}
+			if(!Found)
+				aMapNames.add(pMapName);
+		}
+
+		for(int m = 0; m < aMapNames.size(); m++)
+		{
+			View.HSplitTop(2.0f, &Slot, &View);
+			View.HSplitTop(12.0f, &Slot, &View);
+
+			char aMapLabel[128];
+			char aDisplayMapName[64];
+			const char *pMapName = aMapNames[m];
+			if(str_length(pMapName) > 40)
+			{
+				str_copy(aDisplayMapName, pMapName, 40);
+				str_append(aDisplayMapName, "...", sizeof(aDisplayMapName));
+			}
+			else
+				str_copy(aDisplayMapName, pMapName, sizeof(aDisplayMapName));
+			str_format(aMapLabel, sizeof(aMapLabel), "  %s", aDisplayMapName);
+			pEditor->UI()->DoLabel(&Slot, aMapLabel, 10.0f, TEXTALIGN_LEFT);
+
+			for(int i = 0; i < pEditor->m_lAutosaveDrafts.size(); i++)
+			{
+				const char *pDraftMapName = pEditor->m_lAutosaveDrafts[i].m_aOriginalMap;
+				if(!pDraftMapName[0])
+					pDraftMapName = "Untitled";
+
+				if(str_comp(pDraftMapName, aMapNames[m]))
+					continue;
+
+				bool IsActive = pEditor->m_lAutosaveDrafts[i].m_IsActive;
+
+				View.HSplitTop(2.0f, &Slot, &View);
+				View.HSplitTop(12.0f, &Slot, &View);
+
+				time_t Timestamp = (time_t)pEditor->m_lAutosaveDrafts[i].m_Timestamp;
+				struct tm *pTm = localtime(&Timestamp);
+				char aTimeStr[96];
+				str_format(aTimeStr, sizeof(aTimeStr), "    %02d:%02d:%02d  %s%s",
+					pTm->tm_hour, pTm->tm_min, pTm->tm_sec,
+					IsActive ? "[active] " : "",
+					pEditor->m_lAutosaveDrafts[i].m_IsDirty ? "(dirty)" : "");
+
+				pEditor->UI()->DoLabel(&Slot, aTimeStr, 9.0f, TEXTALIGN_LEFT);
+
+				if(IsActive)
+				{
+					View.HSplitTop(2.0f, &Slot, &View);
+					View.HSplitTop(10.0f, &Slot, &View);
+					char aActiveLabel[96];
+					str_format(aActiveLabel, sizeof(aActiveLabel), "      currently recovered - %s", pEditor->m_aFileName[0] ? pEditor->m_aFileName : "untitled");
+					pEditor->UI()->DoLabel(&Slot, aActiveLabel, 8.0f, TEXTALIGN_LEFT);
+				}
+
+				View.HSplitTop(2.0f, &Slot, &View);
+				View.HSplitTop(12.0f, &Slot, &View);
+
+				CUIRect FirstSlot, SaveAsSlot, DiscardSlot;
+				Slot.VSplitLeft(15.0f, 0, &Slot);
+
+				static int s_RecoverButtons[100] = {0};
+				static int s_SaveAsButtons[100] = {0};
+				static int s_DiscardButtons[100] = {0};
+				int ButtonIdx = i % 100;
+
+				if(IsActive)
+				{
+					Slot.VSplitLeft(55.0f, &SaveAsSlot, &Slot);
+					Slot.VSplitLeft(5.0f, 0, &Slot);
+					Slot.VSplitLeft(55.0f, &DiscardSlot, &Slot);
+
+					if(pEditor->DoButton_MenuItem(&s_SaveAsButtons[ButtonIdx], "Save As", 0, &SaveAsSlot, 0, "Save recovered draft as a new map"))
+					{
+						char aDefaultName[128];
+						if(pEditor->m_aFileName[0])
+							pEditor->ExtractName(pEditor->m_aFileName, aDefaultName, sizeof(aDefaultName));
+						else
+							str_copy(aDefaultName, "recovered_draft", sizeof(aDefaultName));
+						pEditor->m_SelectedAutosaveDraft = i;
+						pEditor->InvokeFileDialog(IStorage::TYPE_SAVE, FILETYPE_MAP, "Save recovered map", "Save", "maps", aDefaultName, pEditor->CallbackSaveAutosaveAs, pEditor);
+						return true;
+					}
+
+					if(pEditor->DoButton_MenuItem(&s_DiscardButtons[ButtonIdx], "Discard", 0, &DiscardSlot, 0, "Discard this draft but keep current edits"))
+					{
+						pEditor->m_SelectedAutosaveDraft = i;
+						pEditor->m_PopupEventType = POPEVENT_AUTOSAVE_DISCARD;
+						pEditor->m_PopupEventActivated = true;
+						return true;
+					}
+				}
+				else
+				{
+					Slot.VSplitLeft(50.0f, &FirstSlot, &Slot);
+					Slot.VSplitLeft(5.0f, 0, &Slot);
+					Slot.VSplitLeft(55.0f, &SaveAsSlot, &Slot);
+					Slot.VSplitLeft(5.0f, 0, &Slot);
+					Slot.VSplitLeft(50.0f, &DiscardSlot, &Slot);
+
+					if(pEditor->DoButton_MenuItem(&s_RecoverButtons[ButtonIdx], "Recover", 0, &FirstSlot, 0, "Recover this draft"))
+					{
+						pEditor->m_SelectedAutosaveDraft = i;
+						pEditor->m_AutosaveRecoverAction = CEditor::AUTOSAVE_RECOVER_NONE;
+						if(pEditor->HasUnsavedData())
+						{
+							pEditor->m_PopupEventType = POPEVENT_AUTOSAVE_RECOVER;
+							pEditor->m_PopupEventActivated = true;
+						}
+						else
+						{
+							pEditor->RecoverAutosaveDraft(i);
+						}
+						return true;
+					}
+
+					if(pEditor->DoButton_MenuItem(&s_SaveAsButtons[ButtonIdx], "Save As", 0, &SaveAsSlot, 0, "Recover this draft and save as a new map"))
+					{
+						pEditor->m_SelectedAutosaveDraft = i;
+						if(pEditor->HasUnsavedData())
+						{
+							pEditor->m_AutosaveRecoverAction = CEditor::AUTOSAVE_RECOVER_THEN_SAVEAS;
+							pEditor->m_PopupEventType = POPEVENT_AUTOSAVE_RECOVER;
+							pEditor->m_PopupEventActivated = true;
+						}
+						else
+						{
+							pEditor->RecoverAutosaveDraft(i);
+							char aDefaultName[128];
+							if(pEditor->m_aFileName[0])
+								pEditor->ExtractName(pEditor->m_aFileName, aDefaultName, sizeof(aDefaultName));
+							else
+								str_copy(aDefaultName, "recovered_draft", sizeof(aDefaultName));
+							pEditor->InvokeFileDialog(IStorage::TYPE_SAVE, FILETYPE_MAP, "Save recovered map", "Save", "maps", aDefaultName, pEditor->CallbackSaveAutosaveAs, pEditor);
+						}
+						return true;
+					}
+
+					if(pEditor->DoButton_MenuItem(&s_DiscardButtons[ButtonIdx], "Discard", 0, &DiscardSlot, 0, "Permanently discard this draft"))
+					{
+						pEditor->m_SelectedAutosaveDraft = i;
+						pEditor->m_PopupEventType = POPEVENT_AUTOSAVE_DISCARD;
+						pEditor->m_PopupEventActivated = true;
+						return true;
+					}
+				}
+			}
+		}
+
+		View.HSplitTop(10.0f, &Slot, &View);
+	}
+
 	View.HSplitTop(2.0f, &Slot, &View);
 	View.HSplitTop(12.0f, &Slot, &View);
 	if(pEditor->DoButton_MenuItem(&s_NewMapButton, "New", 0, &Slot, 0, "Creates a new map"))

@@ -291,12 +291,6 @@ void CEffects::HammerHit(vec2 Pos)
 	m_pClient->m_pSounds->PlayAt(CSounds::CHN_WORLD, SOUND_HAMMER_HIT, 1.0f, Pos);
 }
 
-void CEffects::OnReset()
-{
-	mem_zero(m_aDamageTaken, sizeof(m_aDamageTaken));
-	mem_zero(m_aDamageTakenTick, sizeof(m_aDamageTakenTick));
-}
-
 void CEffects::OnRender()
 {
 	const float Speed = m_pClient->GetAnimationPlaybackSpeed();

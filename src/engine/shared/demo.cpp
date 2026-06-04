@@ -350,7 +350,6 @@ CDemoPlayer::CDemoPlayer(class CSnapshotDelta *pSnapshotDelta)
 	m_File = 0;
 	m_aErrorMsg[0] = 0;
 	m_pKeyFrames = 0;
-	m_IsSeeking = false;
 
 	m_pSnapshotDelta = pSnapshotDelta;
 	m_LastSnapshotDataSize = -1;
@@ -607,8 +606,7 @@ void CDemoPlayer::DoTick()
 			}
 			else if(ChunkType == CHUNKTYPE_MESSAGE && m_pListener && m_LastSnapshotDataSize != -1)
 			{
-				if(!m_IsSeeking)
-					m_pListener->OnDemoPlayerMessage(aData, DataSize);
+				m_pListener->OnDemoPlayerMessage(aData, DataSize);
 			}
 		}
 	}
@@ -748,26 +746,6 @@ int CDemoPlayer::SetPos(float Percent)
 	return SetPos(m_Info.m_Info.m_FirstTick + (int)((m_Info.m_Info.m_LastTick-m_Info.m_Info.m_FirstTick)*Percent));
 }
 
-void CDemoPlayer::BeginSeek()
-{
-	if(!m_File || m_IsSeeking)
-		return;
-
-	m_IsSeeking = true;
-	if(m_pListener)
-		m_pListener->OnDemoPlayerBeginSeek();
-}
-
-void CDemoPlayer::EndSeek()
-{
-	if(!m_File || !m_IsSeeking)
-		return;
-
-	m_IsSeeking = false;
-	if(m_pListener)
-		m_pListener->OnDemoPlayerEndSeek();
-}
-
 int CDemoPlayer::SetPos(int WantedTick)
 {
 	if(!m_File)
@@ -776,8 +754,6 @@ int CDemoPlayer::SetPos(int WantedTick)
 	WantedTick = clamp(WantedTick, m_Info.m_Info.m_FirstTick, m_Info.m_Info.m_LastTick);
 	int KeyframeWantedTick = WantedTick - 5; // -5 because we have to have a current tick and previous tick when we do the playback
 	const float Percent = (KeyframeWantedTick - m_Info.m_Info.m_FirstTick) / float(m_Info.m_Info.m_LastTick - m_Info.m_Info.m_FirstTick);
-
-	BeginSeek();
 
 	// get correct key frame
 	int Keyframe = clamp((int)(m_Info.m_SeekablePoints*Percent), 0, m_Info.m_SeekablePoints-1);
@@ -789,7 +765,6 @@ int CDemoPlayer::SetPos(int WantedTick)
 	// seek to the correct keyframe
 	io_seek(m_File, m_pKeyFrames[Keyframe].m_Filepos, IOSEEK_START);
 
-	m_LastSnapshotDataSize = -1;
 	m_Info.m_NextTick = -1;
 	m_Info.m_Info.m_CurrentTick = -1;
 	m_Info.m_PreviousTick = -1;
@@ -799,7 +774,6 @@ int CDemoPlayer::SetPos(int WantedTick)
 		DoTick();
 
 	Play();
-	EndSeek();
 
 	return 0;
 }

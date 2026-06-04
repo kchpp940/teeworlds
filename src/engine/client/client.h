@@ -154,9 +154,6 @@ class CClient : public IClient, public CDemoPlayer::IListener
 
 	int m_CurrentInput;
 
-	int m_LastDemoEventTick;
-	bool m_DemoSeeking;
-
 	// graphs
 	CGraph m_InputtimeMarginGraph;
 	CGraph m_GametimeMarginGraph;
@@ -282,8 +279,6 @@ public:
 
 	virtual void OnDemoPlayerSnapshot(void *pData, int Size);
 	virtual void OnDemoPlayerMessage(void *pData, int Size);
-	virtual void OnDemoPlayerBeginSeek();
-	virtual void OnDemoPlayerEndSeek();
 
 	void Update();
 
