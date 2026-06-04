@@ -55,6 +55,7 @@ CMenus::CBrowserFilter::CBrowserFilter(int Custom, const char* pName, IServerBro
 {
 	m_Extended = false;
 	m_Custom = Custom;
+	m_PresetID = -1;
 	str_copy(m_aName, pName, sizeof(m_aName));
 	m_pServerBrowser = pServerBrowser;
 	switch(m_Custom)
@@ -250,6 +251,9 @@ void CMenus::LoadFilters()
 
 		m_lFilters.add(CBrowserFilter(Type, pName, ServerBrowser()));
 
+		if(rStart["preset_id"].type == json_integer)
+			m_lFilters[m_lFilters.size() - 1].SetPresetID(rStart["preset_id"].u.integer);
+
 		if(Type == CBrowserFilter::FILTER_STANDARD) // make sure the pure filter is enabled in the Teeworlds-filter
 			FilterInfo.m_SortHash |= IServerBrowser::FILTER_PURE;
 		else if(Type == CBrowserFilter::FILTER_RACE) // make sure Race gametype is included in Race-filter
@@ -264,6 +268,64 @@ void CMenus::LoadFilters()
 	CBrowserFilter *pSelectedFilter = GetSelectedBrowserFilter();
 	if(pSelectedFilter)
 		pSelectedFilter->Switch();
+
+	LoadFilterPresets();
+
+	for(int i = 0; i < m_lFilters.size(); i++)
+	{
+		if(m_lFilters[i].Custom() == CBrowserFilter::FILTER_CUSTOM)
+		{
+			int PresetIndex = FindPresetByID(m_lFilters[i].PresetID());
+			if(PresetIndex >= 0)
+			{
+				const CFilterPreset *pPreset = &m_lFilterPresets[PresetIndex];
+				CServerFilterInfo FilterInfo;
+				m_lFilters[i].GetFilter(&FilterInfo);
+
+				FilterInfo.m_SortHash = pPreset->m_FilterHash;
+				FilterInfo.m_Ping = pPreset->m_Ping;
+				FilterInfo.m_Country = pPreset->m_Country;
+				FilterInfo.m_ServerLevel = pPreset->m_ServerLevel;
+				str_copy(FilterInfo.m_aAddress, pPreset->m_aAddress, sizeof(FilterInfo.m_aAddress));
+				for(int j = 0; j < CServerFilterInfo::MAX_GAMETYPES; j++)
+				{
+					str_copy(FilterInfo.m_aGametype[j], pPreset->m_aGametype[j], sizeof(FilterInfo.m_aGametype[j]));
+					FilterInfo.m_aGametypeExclusive[j] = pPreset->m_aGametypeExclusive[j];
+				}
+
+				m_lFilters[i].SetFilter(&FilterInfo);
+				ServerBrowser()->SetFilter(i, &FilterInfo);
+			}
+		}
+	}
+
+	if(m_LastActivePresetID >= 0)
+	{
+		const CFilterPreset *pPreset = GetPresetByID(m_LastActivePresetID);
+		if(pPreset)
+		{
+			m_ActivePresetID = m_LastActivePresetID;
+			ApplyPresetToCurrentState(pPreset);
+
+			int BrowserType = ServerBrowser()->GetType();
+			int FilterIndex = FindFilterByPresetID(m_LastActivePresetID);
+			if(FilterIndex >= 0)
+			{
+				ApplyPresetToFilter(BrowserType, FilterIndex, pPreset);
+
+				CBrowserFilter *pFilter = &m_lFilters[FilterIndex];
+				if(!pFilter->Extended())
+				{
+					pFilter->Switch();
+					if(pSelectedFilter && pSelectedFilter != pFilter && pSelectedFilter->Extended())
+						pSelectedFilter->Switch();
+				}
+			}
+
+			ServerBrowser()->RequestResort();
+			Client()->ServerBrowserUpdate();
+		}
+	}
 }
 
 void CMenus::SaveFilters()
@@ -306,6 +368,12 @@ void CMenus::SaveFilters()
 		{
 			Writer.WriteAttribute("type");
 			Writer.WriteIntValue(m_lFilters[i].Custom());
+
+			if(m_lFilters[i].PresetID() >= 0)
+			{
+				Writer.WriteAttribute("preset_id");
+				Writer.WriteIntValue(m_lFilters[i].PresetID());
+			}
 
 			// filter setting
 			CServerFilterInfo FilterInfo;
@@ -429,6 +497,446 @@ void CMenus::InitDefaultFilters()
 			m_aSelectedFilters[i] = AllFilterIndex; // default to "all" if not set
 		m_lFilters[AllFilterIndex].Switch();
 	}
+}
+
+void CMenus::RenameFilter(int FilterIndex, const char *pNewName)
+{
+	if(FilterIndex >= 0 && FilterIndex < m_lFilters.size())
+	{
+		m_lFilters[FilterIndex].SetName(pNewName);
+		SaveFilters();
+	}
+}
+
+void CMenus::LoadFilterPresets()
+{
+	CJsonParser JsonParser;
+	const json_value *pJsonData = JsonParser.ParseFile("filter_presets.json", Storage());
+	if(pJsonData == 0)
+	{
+		Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "game", "No filter presets file found, starting fresh");
+		return;
+	}
+
+	const json_value &rRoot = (*pJsonData)["presets"];
+	if(rRoot.type != json_array)
+	{
+		Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "game", JsonParser.Error());
+		return;
+	}
+
+	m_lFilterPresets.clear();
+
+	if((*pJsonData)["next_preset_id"].type == json_integer)
+		m_NextPresetID = (*pJsonData)["next_preset_id"].u.integer;
+
+	if((*pJsonData)["last_active_preset_id"].type == json_integer)
+		m_LastActivePresetID = (*pJsonData)["last_active_preset_id"].u.integer;
+
+	for(unsigned i = 0; i < rRoot.u.array.length; ++i)
+	{
+		const json_value &rPreset = rRoot[i];
+		if(rPreset.type != json_object)
+			continue;
+
+		CFilterPreset Preset;
+
+		if(rPreset["id"].type == json_integer)
+			Preset.m_ID = rPreset["id"].u.integer;
+
+		if(rPreset["name"].type == json_string)
+			Preset.SetName(rPreset["name"].u.string.ptr);
+
+		if(rPreset["filter_string"].type == json_string)
+			str_copy(Preset.m_aFilterString, rPreset["filter_string"].u.string.ptr, sizeof(Preset.m_aFilterString));
+
+		if(rPreset["sort"].type == json_integer)
+			Preset.m_Sort = rPreset["sort"].u.integer;
+
+		if(rPreset["sort_order"].type == json_integer)
+			Preset.m_SortOrder = rPreset["sort_order"].u.integer;
+
+		if(rPreset["filter_hash"].type == json_integer)
+			Preset.m_FilterHash = rPreset["filter_hash"].u.integer;
+
+		if(rPreset["ping"].type == json_integer)
+			Preset.m_Ping = rPreset["ping"].u.integer;
+
+		if(rPreset["country"].type == json_integer)
+			Preset.m_Country = rPreset["country"].u.integer;
+
+		if(rPreset["server_level"].type == json_integer)
+			Preset.m_ServerLevel = rPreset["server_level"].u.integer;
+
+		if(rPreset["address"].type == json_string)
+			str_copy(Preset.m_aAddress, rPreset["address"].u.string.ptr, sizeof(Preset.m_aAddress));
+
+		if(rPreset["selected_server_index"].type == json_integer)
+			Preset.m_SelectedServerIndex = rPreset["selected_server_index"].u.integer;
+
+		if(rPreset["selected_filter_index"].type == json_integer)
+			Preset.m_SelectedFilterIndex = rPreset["selected_filter_index"].u.integer;
+
+		if(rPreset["selected_server_address"].type == json_string)
+			str_copy(Preset.m_aSelectedServerAddress, rPreset["selected_server_address"].u.string.ptr, sizeof(Preset.m_aSelectedServerAddress));
+
+		const json_value &rGametypeEntry = rPreset["gametypes"];
+		if(rGametypeEntry.type == json_object)
+		{
+			for(unsigned j = 0; j < rGametypeEntry.u.object.length && j < CServerFilterInfo::MAX_GAMETYPES; ++j)
+			{
+				const json_value &rValue = *(rGametypeEntry.u.object.values[j].value);
+				if(rValue.type == json_boolean)
+				{
+					str_copy(Preset.m_aGametype[j], rGametypeEntry.u.object.values[j].name, sizeof(Preset.m_aGametype[j]));
+					Preset.m_aGametypeExclusive[j] = rValue.u.boolean;
+				}
+			}
+		}
+
+		m_lFilterPresets.add(Preset);
+
+		if(Preset.m_ID >= m_NextPresetID)
+			m_NextPresetID = Preset.m_ID + 1;
+	}
+
+	Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "game", "Filter presets loaded successfully");
+}
+
+void CMenus::SaveFilterPresets()
+{
+	IOHANDLE File = Storage()->OpenFile("filter_presets.json", IOFLAG_WRITE, IStorage::TYPE_SAVE);
+	if(!File)
+	{
+		Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "game", "Failed to open filter_presets.json for writing");
+		return;
+	}
+
+	CJsonWriter Writer(File);
+
+	Writer.BeginObject();
+
+	Writer.WriteAttribute("next_preset_id");
+	Writer.WriteIntValue(m_NextPresetID);
+
+	Writer.WriteAttribute("last_active_preset_id");
+	Writer.WriteIntValue(m_LastActivePresetID);
+
+	Writer.WriteAttribute("presets");
+	Writer.BeginArray();
+
+	for(int i = 0; i < m_lFilterPresets.size(); i++)
+	{
+		const CFilterPreset &Preset = m_lFilterPresets[i];
+		Writer.BeginObject();
+
+		Writer.WriteAttribute("id");
+		Writer.WriteIntValue(Preset.m_ID);
+
+		Writer.WriteAttribute("name");
+		Writer.WriteStrValue(Preset.Name());
+
+		Writer.WriteAttribute("filter_string");
+		Writer.WriteStrValue(Preset.m_aFilterString);
+
+		Writer.WriteAttribute("sort");
+		Writer.WriteIntValue(Preset.m_Sort);
+
+		Writer.WriteAttribute("sort_order");
+		Writer.WriteIntValue(Preset.m_SortOrder);
+
+		Writer.WriteAttribute("filter_hash");
+		Writer.WriteIntValue(Preset.m_FilterHash);
+
+		Writer.WriteAttribute("ping");
+		Writer.WriteIntValue(Preset.m_Ping);
+
+		Writer.WriteAttribute("country");
+		Writer.WriteIntValue(Preset.m_Country);
+
+		Writer.WriteAttribute("server_level");
+		Writer.WriteIntValue(Preset.m_ServerLevel);
+
+		Writer.WriteAttribute("address");
+		Writer.WriteStrValue(Preset.m_aAddress);
+
+		Writer.WriteAttribute("selected_server_index");
+		Writer.WriteIntValue(Preset.m_SelectedServerIndex);
+
+		Writer.WriteAttribute("selected_filter_index");
+		Writer.WriteIntValue(Preset.m_SelectedFilterIndex);
+
+		Writer.WriteAttribute("selected_server_address");
+		Writer.WriteStrValue(Preset.m_aSelectedServerAddress);
+
+		Writer.WriteAttribute("gametypes");
+		Writer.BeginObject();
+		for(int j = 0; j < CServerFilterInfo::MAX_GAMETYPES; j++)
+		{
+			if(Preset.m_aGametype[j][0])
+			{
+				Writer.WriteAttribute(Preset.m_aGametype[j]);
+				Writer.WriteBoolValue(Preset.m_aGametypeExclusive[j]);
+			}
+		}
+		Writer.EndObject();
+
+		Writer.EndObject();
+	}
+
+	Writer.EndArray();
+	Writer.EndObject();
+
+	Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "game", "Filter presets saved successfully");
+}
+
+int CMenus::FindPresetByID(int ID)
+{
+	for(int i = 0; i < m_lFilterPresets.size(); i++)
+	{
+		if(m_lFilterPresets[i].m_ID == ID)
+			return i;
+	}
+	return -1;
+}
+
+CMenus::CFilterPreset *CMenus::GetPresetByID(int ID)
+{
+	int Index = FindPresetByID(ID);
+	if(Index >= 0)
+		return &m_lFilterPresets[Index];
+	return 0;
+}
+
+const CMenus::CFilterPreset *CMenus::GetPresetByID(int ID) const
+{
+	for(int i = 0; i < m_lFilterPresets.size(); i++)
+	{
+		if(m_lFilterPresets[i].m_ID == ID)
+			return &m_lFilterPresets[i];
+	}
+	return 0;
+}
+
+int CMenus::FindFilterByPresetID(int PresetID) const
+{
+	for(int i = 0; i < m_lFilters.size(); i++)
+	{
+		if(m_lFilters[i].PresetID() == PresetID)
+			return i;
+	}
+	return -1;
+}
+
+void CMenus::CaptureCurrentStateToPreset(CFilterPreset *pPreset)
+{
+	if(!pPreset)
+		return;
+
+	int BrowserType = ServerBrowser()->GetType();
+
+	str_copy(pPreset->m_aFilterString, Config()->m_BrFilterString, sizeof(pPreset->m_aFilterString));
+	pPreset->m_Sort = Config()->m_BrSort;
+	pPreset->m_SortOrder = Config()->m_BrSortOrder;
+
+	CBrowserFilter *pSelectedFilter = GetSelectedBrowserFilter();
+	if(pSelectedFilter)
+	{
+		CServerFilterInfo FilterInfo;
+		pSelectedFilter->GetFilter(&FilterInfo);
+
+		pPreset->m_FilterHash = FilterInfo.m_SortHash;
+		pPreset->m_Ping = FilterInfo.m_Ping;
+		pPreset->m_Country = FilterInfo.m_Country;
+		pPreset->m_ServerLevel = FilterInfo.m_ServerLevel;
+		str_copy(pPreset->m_aAddress, FilterInfo.m_aAddress, sizeof(pPreset->m_aAddress));
+
+		for(int i = 0; i < CServerFilterInfo::MAX_GAMETYPES; i++)
+		{
+			str_copy(pPreset->m_aGametype[i], FilterInfo.m_aGametype[i], sizeof(pPreset->m_aGametype[i]));
+			pPreset->m_aGametypeExclusive[i] = FilterInfo.m_aGametypeExclusive[i];
+		}
+
+		pPreset->m_SelectedFilterIndex = m_aSelectedFilters[BrowserType];
+		pPreset->m_SelectedServerIndex = m_aSelectedServers[BrowserType];
+
+		if(pPreset->m_SelectedServerIndex >= 0 && pPreset->m_SelectedServerIndex < pSelectedFilter->NumSortedServers())
+		{
+			const CServerInfo *pInfo = pSelectedFilter->SortedGet(pPreset->m_SelectedServerIndex);
+			if(pInfo)
+				str_copy(pPreset->m_aSelectedServerAddress, pInfo->m_aAddress, sizeof(pPreset->m_aSelectedServerAddress));
+			else
+				pPreset->m_aSelectedServerAddress[0] = 0;
+		}
+		else
+		{
+			pPreset->m_aSelectedServerAddress[0] = 0;
+		}
+	}
+}
+
+void CMenus::ApplyPresetToCurrentState(const CFilterPreset *pPreset)
+{
+	if(!pPreset)
+		return;
+
+	str_copy(Config()->m_BrFilterString, pPreset->m_aFilterString, sizeof(Config()->m_BrFilterString));
+	Config()->m_BrSort = pPreset->m_Sort;
+	Config()->m_BrSortOrder = pPreset->m_SortOrder;
+
+	int BrowserType = ServerBrowser()->GetType();
+	m_aSelectedFilters[BrowserType] = pPreset->m_SelectedFilterIndex >= 0 ? pPreset->m_SelectedFilterIndex : 0;
+	m_aSelectedServers[BrowserType] = pPreset->m_SelectedServerIndex;
+
+	if(pPreset->m_aSelectedServerAddress[0])
+	{
+		str_copy(m_aSelectedServerAddress, pPreset->m_aSelectedServerAddress, sizeof(m_aSelectedServerAddress));
+		m_AddressSelection = ADDR_SELECTION_CHANGE | ADDR_SELECTION_REVEAL;
+	}
+	else
+	{
+		m_aSelectedServerAddress[0] = 0;
+		m_AddressSelection = ADDR_SELECTION_CHANGE;
+	}
+
+	m_ShowServerDetails = false;
+}
+
+void CMenus::ApplyPresetToFilter(int BrowserType, int FilterIndex, const CFilterPreset *pPreset)
+{
+	if(!pPreset || FilterIndex < 0 || FilterIndex >= m_lFilters.size())
+		return;
+
+	CServerFilterInfo FilterInfo;
+	m_lFilters[FilterIndex].GetFilter(&FilterInfo);
+
+	FilterInfo.m_SortHash = pPreset->m_FilterHash;
+	FilterInfo.m_Ping = pPreset->m_Ping;
+	FilterInfo.m_Country = pPreset->m_Country;
+	FilterInfo.m_ServerLevel = pPreset->m_ServerLevel;
+	str_copy(FilterInfo.m_aAddress, pPreset->m_aAddress, sizeof(FilterInfo.m_aAddress));
+
+	for(int i = 0; i < CServerFilterInfo::MAX_GAMETYPES; i++)
+	{
+		str_copy(FilterInfo.m_aGametype[i], pPreset->m_aGametype[i], sizeof(FilterInfo.m_aGametype[i]));
+		FilterInfo.m_aGametypeExclusive[i] = pPreset->m_aGametypeExclusive[i];
+	}
+
+	m_lFilters[FilterIndex].SetFilter(&FilterInfo);
+
+	ServerBrowser()->SetFilter(FilterIndex, &FilterInfo);
+}
+
+void CMenus::SaveFilterAsPreset(int FilterIndex, const char *pName)
+{
+	int NewID = m_NextPresetID++;
+
+	CFilterPreset NewPreset;
+	NewPreset.m_ID = NewID;
+	NewPreset.SetName(pName);
+	CaptureCurrentStateToPreset(&NewPreset);
+
+	m_lFilterPresets.add(NewPreset);
+	m_ActivePresetID = NewID;
+	m_LastActivePresetID = NewID;
+
+	SaveFilterPresets();
+
+	CBrowserFilter *pSourceFilter = GetSelectedBrowserFilter();
+	if(pSourceFilter)
+	{
+		CServerFilterInfo FilterInfo;
+		pSourceFilter->GetFilter(&FilterInfo);
+
+		m_lFilters.add(CBrowserFilter(CBrowserFilter::FILTER_CUSTOM, pName, ServerBrowser()));
+		int NewFilterIndex = m_lFilters.size() - 1;
+		m_lFilters[NewFilterIndex].SetPresetID(NewID);
+		m_lFilters[NewFilterIndex].SetFilter(&FilterInfo);
+
+		SaveFilters();
+	}
+
+	Client()->ServerBrowserUpdate();
+}
+
+void CMenus::SwitchFilterPreset(int BrowserType, int FilterIndex)
+{
+	if(FilterIndex < 0 || FilterIndex >= m_lFilters.size())
+		return;
+
+	CBrowserFilter *pFilter = &m_lFilters[FilterIndex];
+	if(!pFilter->Extended())
+	{
+		pFilter->Switch();
+		for(int i = 0; i < m_lFilters.size(); ++i)
+		{
+			if(i != FilterIndex && m_lFilters[i].Extended())
+				m_lFilters[i].Switch();
+		}
+	}
+
+	CServerFilterInfo FilterInfo;
+	pFilter->GetFilter(&FilterInfo);
+
+	Config()->m_BrSort = (FilterInfo.m_SortHash & 0x0F);
+	Config()->m_BrSortOrder = (FilterInfo.m_SortHash & 0x10) ? 1 : 0;
+
+	m_aSelectedFilters[BrowserType] = FilterIndex;
+	m_aSelectedServers[BrowserType] = -1;
+
+	m_aSelectedServerAddress[0] = 0;
+	m_AddressSelection = ADDR_SELECTION_CHANGE;
+	m_ShowServerDetails = false;
+
+	ServerBrowser()->SetFilter(FilterIndex, &FilterInfo);
+	ServerBrowser()->RequestResort();
+
+	int PresetID = pFilter->PresetID();
+	if(PresetID >= 0)
+	{
+		CFilterPreset *pPreset = GetPresetByID(PresetID);
+		if(pPreset)
+		{
+			ApplyPresetToCurrentState(pPreset);
+
+			if(pPreset->m_aSelectedServerAddress[0])
+			{
+				str_copy(m_aSelectedServerAddress, pPreset->m_aSelectedServerAddress, sizeof(m_aSelectedServerAddress));
+				m_AddressSelection = ADDR_SELECTION_CHANGE | ADDR_SELECTION_REVEAL | ADDR_SELECTION_UPDATE_ADDRESS;
+			}
+
+			m_ActivePresetID = PresetID;
+			m_LastActivePresetID = PresetID;
+			SaveFilterPresets();
+		}
+		else
+		{
+			m_ActivePresetID = -1;
+		}
+	}
+	else
+	{
+		m_ActivePresetID = -1;
+	}
+
+	SaveFilters();
+	Client()->ServerBrowserUpdate();
+}
+
+void CMenus::PopupRenameFilter()
+{
+	// Actual rename logic is handled in menus.cpp popup rendering
+	// This is just the callback stub for PopupMessage
+	m_FilterNameInput.Clear();
+	m_RenameFilterIndex = -1;
+}
+
+void CMenus::PopupSaveFilter()
+{
+	// Actual save logic is handled in menus.cpp popup rendering
+	// This is just the callback stub for PopupMessage
+	m_FilterNameInput.Clear();
+	m_SaveFilterIndex = -1;
 }
 
 // 1 = browser entry click, 2 = server info click
@@ -685,9 +1193,9 @@ void CMenus::RenderFilterHeader(CUIRect View, int FilterIndex)
 	Button.Margin(2.0f, &Button);
 	DoIcon(IMAGE_MENUICONS, pFilter->Extended() ? SPRITE_MENU_EXPANDED : SPRITE_MENU_COLLAPSED, &Button, &Color);
 
-	// split buttons from label
+	// split buttons from label - increased from 4 to 7 buttons for preset management
 	View.VSplitLeft(Spacing, 0, &View);
-	View.VSplitRight((ButtonHeight+Spacing)*4.0f, &View, &EditButtons);
+	View.VSplitRight((ButtonHeight+Spacing)*7.0f, &View, &EditButtons);
 
 	View.VSplitLeft(20.0f, 0, &View); // little space
 	UI()->DoLabel(&View, pFilter->Name(), ButtonHeight*CUI::ms_FontmodHeight*0.8f, TEXTALIGN_ML);
@@ -697,6 +1205,11 @@ void CMenus::RenderFilterHeader(CUIRect View, int FilterIndex)
 	str_format(aBuf, sizeof(aBuf), Localize("%d servers, %d players"), pFilter->NumSortedServers(), pFilter->NumPlayers());
 	UI()->DoLabel(&View, aBuf, ButtonHeight*CUI::ms_FontmodHeight*0.8f, TEXTALIGN_RIGHT);
 
+	static CButtonContainer s_SaveButton;
+	static CButtonContainer s_RenameButton;
+	static CButtonContainer s_SaveAsButton;
+
+	// Delete button (custom filters only)
 	EditButtons.VSplitRight(ButtonHeight, &EditButtons, &Button);
 	Button.Margin(2.0f, &Button);
 	if(pFilter->Custom() == CBrowserFilter::FILTER_CUSTOM)
@@ -706,12 +1219,44 @@ void CMenus::RenderFilterHeader(CUIRect View, int FilterIndex)
 			m_RemoveFilterIndex = FilterIndex;
 			str_format(aBuf, sizeof(aBuf), Localize("Are you sure that you want to remove the filter '%s' from the server browser?"), pFilter->Name());
 			PopupConfirm(Localize("Remove filter"), aBuf, Localize("Yes"), Localize("No"), &CMenus::PopupConfirmRemoveFilter);
+			Switch = false;
 		}
 	}
 	else
 		DoIcon(IMAGE_TOOLICONS, SPRITE_TOOL_X_B, &Button);
 
 	EditButtons.VSplitRight(Spacing, &EditButtons, 0);
+
+	// Rename button (custom filters only) - use edit icon
+	EditButtons.VSplitRight(ButtonHeight, &EditButtons, &Button);
+	Button.Margin(2.0f, &Button);
+	if(pFilter->Custom() == CBrowserFilter::FILTER_CUSTOM)
+	{
+		if(DoButton_SpriteID(&s_RenameButton, IMAGE_TOOLICONS, SPRITE_TOOL_EDIT_A, false, &Button))
+		{
+			m_RenameFilterIndex = FilterIndex;
+			PopupMessage(Localize("Rename filter"), Localize("Enter the new name for the filter preset."), Localize("Ok"), POPUP_RENAME_FILTER, &CMenus::PopupRenameFilter);
+			Switch = false;
+		}
+	}
+	else
+		DoIcon(IMAGE_TOOLICONS, SPRITE_TOOL_EDIT_B, &Button);
+
+	EditButtons.VSplitRight(Spacing, &EditButtons, 0);
+
+	// Save current filter as new preset button - use text label since no save icon
+	EditButtons.VSplitRight(ButtonHeight * 2.5f, &EditButtons, &Button);
+	Button.Margin(2.0f, &Button);
+	if(DoButton_Menu(&s_SaveAsButton, Localize("Save"), false, &Button, 0, CUIRect::CORNER_ALL, 3.0f, -0.2f))
+	{
+		m_SaveFilterIndex = FilterIndex;
+		PopupMessage(Localize("Save filter preset"), Localize("Save the current filter settings as a new preset."), Localize("Ok"), POPUP_SAVE_FILTER, &CMenus::PopupSaveFilter);
+		Switch = false;
+	}
+
+	EditButtons.VSplitRight(Spacing, &EditButtons, 0);
+
+	// Move up button
 	EditButtons.VSplitRight(ButtonHeight, &EditButtons, &Button);
 	Button.Margin(2.0f, &Button);
 	if(FilterIndex > 0)
@@ -726,6 +1271,8 @@ void CMenus::RenderFilterHeader(CUIRect View, int FilterIndex)
 		DoIcon(IMAGE_TOOLICONS, SPRITE_TOOL_UP_B, &Button);
 
 	EditButtons.VSplitRight(Spacing, &EditButtons, 0);
+
+	// Move down button
 	EditButtons.VSplitRight(ButtonHeight, &EditButtons, &Button);
 	Button.Margin(2.0f, &Button);
 	if(FilterIndex < m_lFilters.size() - 1)
@@ -741,25 +1288,82 @@ void CMenus::RenderFilterHeader(CUIRect View, int FilterIndex)
 
 	if(Switch)
 	{
-		pFilter->Switch();
-		// retract the other filters
-		if(pFilter->Extended())
-		{
-			for(int i = 0; i < m_lFilters.size(); ++i)
-			{
-				if(i != FilterIndex && m_lFilters[i].Extended())
-					m_lFilters[i].Switch();
-			}
-		}
+		int BrowserType = ServerBrowser()->GetType();
+		SwitchFilterPreset(BrowserType, FilterIndex);
 	}
 }
 
 void CMenus::PopupConfirmRemoveFilter()
 {
-	// remove filter
-	if(m_RemoveFilterIndex)
+	if(m_RemoveFilterIndex >= 0 && m_RemoveFilterIndex < m_lFilters.size())
 	{
+		int DeletedPresetID = m_lFilters[m_RemoveFilterIndex].PresetID();
+		int BrowserType = ServerBrowser()->GetType();
+		bool IsActiveFilter = (m_aSelectedFilters[BrowserType] == m_RemoveFilterIndex);
+
+		if(DeletedPresetID >= 0)
+		{
+			int PresetIndex = FindPresetByID(DeletedPresetID);
+			if(PresetIndex >= 0)
+			{
+				m_lFilterPresets.remove_index(PresetIndex);
+			}
+
+			if(m_ActivePresetID == DeletedPresetID)
+				m_ActivePresetID = -1;
+			if(m_LastActivePresetID == DeletedPresetID)
+				m_LastActivePresetID = -1;
+
+			SaveFilterPresets();
+		}
+
 		RemoveFilter(m_RemoveFilterIndex);
+
+		if(IsActiveFilter)
+		{
+			int DefaultFilterIndex = m_lFilters.size() - 1;
+			for(int i = 0; i < m_lFilters.size(); i++)
+			{
+				if(m_lFilters[i].Custom() == CBrowserFilter::FILTER_ALL)
+				{
+					DefaultFilterIndex = i;
+					break;
+				}
+			}
+
+			if(DefaultFilterIndex < 0)
+				DefaultFilterIndex = 0;
+
+			if(m_aSelectedFilters[BrowserType] >= m_lFilters.size())
+				m_aSelectedFilters[BrowserType] = DefaultFilterIndex;
+
+			m_aSelectedServers[BrowserType] = -1;
+			m_aSelectedServerAddress[0] = 0;
+			m_AddressSelection = ADDR_SELECTION_CHANGE;
+			m_ShowServerDetails = false;
+			m_ActivePresetID = -1;
+
+			Config()->m_BrFilterString[0] = 0;
+
+			for(int i = 0; i < m_lFilters.size(); i++)
+			{
+				if(m_lFilters[i].Extended() && i != DefaultFilterIndex)
+					m_lFilters[i].Switch();
+			}
+
+			if(DefaultFilterIndex < m_lFilters.size() && !m_lFilters[DefaultFilterIndex].Extended())
+				m_lFilters[DefaultFilterIndex].Switch();
+
+			ServerBrowser()->RequestResort();
+			SaveFilters();
+			Client()->ServerBrowserUpdate();
+		}
+		else
+		{
+			if(m_aSelectedFilters[BrowserType] > m_RemoveFilterIndex)
+				m_aSelectedFilters[BrowserType]--;
+			SaveFilters();
+		}
 	}
 }
 

@@ -71,9 +71,8 @@ private:
 		POPUP_SAVE_SKIN,
 		POPUP_PASSWORD,
 		POPUP_QUIT,
-		POPUP_ADD_BOOKMARK,
-		POPUP_RENAME_BOOKMARK,
-		POPUP_CONFIRM_DELETE_BOOKMARK,
+		POPUP_RENAME_FILTER,
+		POPUP_SAVE_FILTER,
 	};
 
 	enum
@@ -313,18 +312,10 @@ private:
 	char m_aDemolistPreviousSelection[IO_MAX_PATH_LENGTH];
 	int64 m_SeekBarActivatedTime;
 	bool m_SeekBarActive;
-	float m_DemoPositionToSeek;
-
-	int m_BookmarkPopupIndex;
-	CLineInputBuffered<static_cast<int>(MAX_BOOKMARK_NAME)> m_BookmarkNameInput;
-	bool m_BookmarksListActive;
 
 	void DemolistOnUpdate(bool Reset);
 	void DemolistPopulate();
 	static int DemolistFetchCallback(const CFsFileInfo* pFileInfo, int IsDir, int StorageType, void *pUser);
-
-	void PopupConfirmDeleteBookmark();
-	float RenderDemoBookmarks(CUIRect View);
 
 	// friends
 	class CFriendItem
@@ -372,6 +363,7 @@ private:
 		int m_Custom;
 		char m_aName[64];
 		int m_Filter;
+		int m_PresetID;
 		IServerBrowser *m_pServerBrowser;
 
 		static CServerFilterInfo ms_FilterStandard;
@@ -394,13 +386,16 @@ private:
 		CButtonContainer m_UpButtonContainer;
 		CButtonContainer m_DownButtonContainer;
 
-		CBrowserFilter() {}
+		CBrowserFilter() : m_PresetID(-1) {}
 		CBrowserFilter(int Custom, const char* pName, IServerBrowser *pServerBrowser);
 		void Switch();
 		bool Extended() const;
 		int Custom() const;
 		int Filter() const;
 		const char* Name() const;
+
+		int PresetID() const { return m_PresetID; }
+		void SetPresetID(int ID) { m_PresetID = ID; }
 
 		void SetFilterNum(int Num);
 
@@ -412,17 +407,86 @@ private:
 		void Reset();
 		void GetFilter(CServerFilterInfo *pFilterInfo) const;
 		void SetFilter(const CServerFilterInfo *pFilterInfo);
+		void SetName(const char *pName) { str_copy(m_aName, pName, sizeof(m_aName)); }
 	};
 
 	array<CBrowserFilter> m_lFilters;
 
 	int m_RemoveFilterIndex;
+	int m_RenameFilterIndex;
+	int m_SaveFilterIndex;
+	CLineInputBuffered<64> m_FilterNameInput;
+
+	class CFilterPreset
+	{
+	public:
+		int m_ID;
+		char m_aName[64];
+		char m_aFilterString[256];
+		int m_Sort;
+		int m_SortOrder;
+		int m_FilterHash;
+		int m_Ping;
+		int m_Country;
+		int m_ServerLevel;
+		char m_aGametype[CServerFilterInfo::MAX_GAMETYPES][16];
+		char m_aGametypeExclusive[CServerFilterInfo::MAX_GAMETYPES];
+		char m_aAddress[NETADDR_MAXSTRSIZE];
+		int m_SelectedServerIndex;
+		int m_SelectedFilterIndex;
+		char m_aSelectedServerAddress[NETADDR_MAXSTRSIZE];
+
+		CFilterPreset() : m_ID(-1)
+		{
+			m_aName[0] = 0;
+			m_aFilterString[0] = 0;
+			m_Sort = 4;
+			m_SortOrder = 1;
+			m_FilterHash = 0;
+			m_Ping = 0;
+			m_Country = -1;
+			m_ServerLevel = 0;
+			m_aAddress[0] = 0;
+			m_SelectedServerIndex = -1;
+			m_SelectedFilterIndex = -1;
+			m_aSelectedServerAddress[0] = 0;
+			for(int i = 0; i < CServerFilterInfo::MAX_GAMETYPES; i++)
+			{
+				m_aGametype[i][0] = 0;
+				m_aGametypeExclusive[i] = 0;
+			}
+		}
+
+		void SetName(const char *pName) { str_copy(m_aName, pName, sizeof(m_aName)); }
+		const char *Name() const { return m_aName; }
+	};
+
+	array<CFilterPreset> m_lFilterPresets;
+	int m_NextPresetID;
+	int m_ActivePresetID;
+	int m_LastActivePresetID;
+
+	void LoadFilterPresets();
+	void SaveFilterPresets();
+	int FindPresetByID(int ID);
+	CFilterPreset *GetPresetByID(int ID);
+	const CFilterPreset *GetPresetByID(int ID) const;
+	int FindFilterByPresetID(int PresetID) const;
+	void CaptureCurrentStateToPreset(CFilterPreset *pPreset);
+	void ApplyPresetToCurrentState(const CFilterPreset *pPreset);
+	void ApplyPresetToFilter(int BrowserType, int FilterIndex, const CFilterPreset *pPreset);
 
 	void LoadFilters();
 	void SaveFilters();
 	void RemoveFilter(int FilterIndex);
 	void MoveFilter(bool Up, int Filter);
 	void InitDefaultFilters();
+	void RenameFilter(int FilterIndex, const char *pNewName);
+	void SaveFilterAsPreset(int FilterIndex, const char *pName);
+	void SwitchFilterPreset(int BrowserType, int FilterIndex);
+
+	void PopupRenameFilter();
+	void PopupSaveFilter();
 
 	struct CColumn
 	{
@@ -469,6 +533,7 @@ private:
 	int m_aSelectedFilters[IServerBrowser::NUM_TYPES]; // -1 if none selected, -2 if not initialized
 	int m_aSelectedServers[IServerBrowser::NUM_TYPES]; // -1 if none selected
 	int m_AddressSelection;
+	char m_aSelectedServerAddress[NETADDR_MAXSTRSIZE];
 	static CColumn ms_aBrowserCols[NUM_BROWSER_COLS];
 	static CColumn ms_aDemoCols[NUM_DEMO_COLS];
 

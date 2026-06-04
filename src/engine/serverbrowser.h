@@ -183,6 +183,7 @@ public:
 	virtual void SetFilter(int Index, const CServerFilterInfo *pFilterInfo) = 0;
 	virtual void GetFilter(int Index, CServerFilterInfo *pFilterInfo) = 0;
 	virtual void RemoveFilter(int Index) = 0;
+	virtual void RequestResort() = 0;
 };
 
 #endif

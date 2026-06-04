@@ -299,7 +299,6 @@ CClient::CClient() : m_DemoPlayer(&m_SnapshotDelta), m_DemoRecorder(&m_SnapshotD
 	mem_zero(m_aSnapshots, sizeof(m_aSnapshots));
 	m_SnapshotStorage.Init();
 	m_ReceivedSnapshots = 0;
-	m_LastDemoEventTick = -1;
 
 	m_VersionInfo.m_State = CVersionInfo::STATE_INIT;
 }
@@ -1622,66 +1621,7 @@ void CClient::OnDemoPlayerMessage(void *pData, int Size)
 		return;
 
 	if(!Unpacker.System())
-	{
-		if(m_CurGameTick <= m_LastDemoEventTick)
-			return;
 		GameClient()->OnMessage(Unpacker.Type(), &Unpacker);
-	}
-}
-
-void CClient::OnBeginSeek()
-{
-	if(GameClient())
-	{
-		GameClient()->OnReset();
-		GameClient()->SetSuppressEvents(true);
-	}
-
-	if(m_aSnapshots[SNAP_CURRENT])
-	{
-		m_aSnapshots[SNAP_CURRENT]->m_SnapSize = 0;
-		m_aSnapshots[SNAP_CURRENT]->m_Tick = -1;
-	}
-	if(m_aSnapshots[SNAP_PREV])
-	{
-		m_aSnapshots[SNAP_PREV]->m_SnapSize = 0;
-		m_aSnapshots[SNAP_PREV]->m_Tick = -1;
-	}
-
-	m_CurGameTick = 0;
-	m_PrevGameTick = 0;
-	m_GameIntraTick = 0.0f;
-	m_PredTick = 0;
-	m_LastDemoEventTick = -1;
-}
-
-void CClient::OnEndSeek()
-{
-	if(GameClient())
-	{
-		bool PrevValid = m_aSnapshots[SNAP_PREV] && m_aSnapshots[SNAP_PREV]->m_SnapSize > 0 && m_aSnapshots[SNAP_PREV]->m_Tick > 0;
-		bool CurValid = m_aSnapshots[SNAP_CURRENT] && m_aSnapshots[SNAP_CURRENT]->m_SnapSize > 0;
-		bool Continuous = PrevValid && CurValid &&
-			(m_aSnapshots[SNAP_PREV]->m_Tick == m_aSnapshots[SNAP_CURRENT]->m_Tick - 1 ||
-			 m_aSnapshots[SNAP_PREV]->m_Tick == m_aSnapshots[SNAP_CURRENT]->m_Tick);
-
-		if(CurValid && !Continuous)
-		{
-			if(m_aSnapshots[SNAP_PREV])
-			{
-				mem_copy(m_aSnapshots[SNAP_PREV]->m_pSnap, m_aSnapshots[SNAP_CURRENT]->m_pSnap, m_aSnapshots[SNAP_CURRENT]->m_SnapSize);
-				mem_copy(m_aSnapshots[SNAP_PREV]->m_pAltSnap, m_aSnapshots[SNAP_CURRENT]->m_pAltSnap, m_aSnapshots[SNAP_CURRENT]->m_SnapSize);
-				m_aSnapshots[SNAP_PREV]->m_SnapSize = m_aSnapshots[SNAP_CURRENT]->m_SnapSize;
-				m_aSnapshots[SNAP_PREV]->m_Tick = m_aSnapshots[SNAP_CURRENT]->m_Tick;
-			}
-			m_PrevGameTick = m_CurGameTick;
-		}
-
-		m_GameIntraTick = 0.0f;
-		m_LastDemoEventTick = m_CurGameTick;
-		GameClient()->SetLastNewPredictedTick(m_CurGameTick);
-		GameClient()->SetSuppressEvents(false);
-	}
 }
 
 void CClient::Update()

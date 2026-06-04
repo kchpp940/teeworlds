@@ -166,8 +166,6 @@ class CClient : public IClient, public CDemoPlayer::IListener
 	int m_ReceivedSnapshots;
 	char m_aSnapshotIncomingData[CSnapshot::MAX_SIZE];
 
-	int m_LastDemoEventTick;
-
 	class CSnapshotStorage::CHolder m_aDemorecSnapshotHolders[NUM_SNAPSHOT_TYPES];
 	char *m_aDemorecSnapshotData[NUM_SNAPSHOT_TYPES][2][CSnapshot::MAX_SIZE];
 	class CSnapshotBuilder m_DemoRecSnapshotBuilder;
@@ -281,8 +279,6 @@ public:
 
 	virtual void OnDemoPlayerSnapshot(void *pData, int Size);
 	virtual void OnDemoPlayerMessage(void *pData, int Size);
-	virtual void OnBeginSeek();
-	virtual void OnEndSeek();
 
 	void Update();
 
@@ -309,7 +305,6 @@ public:
 	static void Con_StopRecord(IConsole::IResult *pResult, void *pUserData);
 	static void Con_AddDemoMarker(IConsole::IResult *pResult, void *pUserData);
 	static void ConchainServerBrowserUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
-
 	static void ConchainFullscreen(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
 	static void ConchainWindowBordered(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
 	static void ConchainWindowScreen(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);

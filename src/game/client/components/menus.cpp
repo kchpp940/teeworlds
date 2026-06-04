@@ -7,7 +7,6 @@
 #include <base/vmath.h>
 
 #include <engine/config.h>
-#include <engine/demo.h>
 #include <engine/editor.h>
 #include <engine/engine.h>
 #include <engine/contacts.h>
@@ -61,9 +60,6 @@ CMenus::CMenus()
 	m_aDemolistPreviousSelection[0] = '\0';
 	m_SeekBarActivatedTime = 0;
 	m_SeekBarActive = true;
-	m_DemoPositionToSeek = -1.0f;
-	m_BookmarkPopupIndex = -1;
-	m_BookmarksListActive = false;
 	m_SkinModified = false;
 	m_KeyReaderWasActive = false;
 	m_KeyReaderIsActive = false;
@@ -81,6 +77,13 @@ CMenus::CMenus()
 	m_ActiveListBox = ACTLB_NONE;
 
 	m_PopupCountrySelection = -2;
+	m_RemoveFilterIndex = 0;
+	m_RenameFilterIndex = -1;
+	m_SaveFilterIndex = -1;
+	m_NextPresetID = 1;
+	m_ActivePresetID = -1;
+	m_LastActivePresetID = -1;
+	m_aSelectedServerAddress[0] = 0;
 }
 
 void CMenus::DoIcon(int ImageId, int SpriteId, const CUIRect *pRect, const vec4 *pColor)
@@ -1172,20 +1175,15 @@ void CMenus::RenderMenu(CUIRect Screen)
 			pTitle = Localize("Rename demo");
 			NumOptions = 6;
 		}
-		else if(m_Popup == POPUP_ADD_BOOKMARK)
+		else if(m_Popup == POPUP_RENAME_FILTER)
 		{
-			pTitle = Localize("Add bookmark");
+			pTitle = Localize("Rename filter preset");
 			NumOptions = 6;
 		}
-		else if(m_Popup == POPUP_RENAME_BOOKMARK)
+		else if(m_Popup == POPUP_SAVE_FILTER)
 		{
-			pTitle = Localize("Rename bookmark");
+			pTitle = Localize("Save filter preset");
 			NumOptions = 6;
-		}
-		else if(m_Popup == POPUP_CONFIRM_DELETE_BOOKMARK)
-		{
-			pTitle = Localize("Delete bookmark");
-			NumOptions = 5;
 		}
 		else if(m_Popup == POPUP_SAVE_SKIN)
 		{
@@ -1495,7 +1493,6 @@ void CMenus::RenderMenu(CUIRect Screen)
 						str_format(aPathNew, sizeof(aPathNew), "%s/%s", m_aCurrentDemoFolder, m_DemoNameInput.GetString());
 						if(Storage()->RenameFile(aBufOld, aPathNew, m_lDemos[m_DemolistSelectedIndex].m_StorageType))
 						{
-							IDemoPlayer::RenameBookmarkFile(Storage(), aBufOld, aPathNew);
 							str_copy(m_aDemolistPreviousSelection, m_DemoNameInput.GetString(), sizeof(m_aDemolistPreviousSelection));
 							DemolistPopulate();
 							DemolistOnUpdate(false);
@@ -1506,66 +1503,134 @@ void CMenus::RenderMenu(CUIRect Screen)
 				}
 			}
 		}
-		else if(m_Popup == POPUP_ADD_BOOKMARK)
+		else if(m_Popup == POPUP_RENAME_FILTER)
 		{
 			Box.HSplitTop(27.0f, 0, &Box);
 			Box.VMargin(10.0f, &Box);
-			UI()->DoLabel(&Box, Localize("Enter a name for the bookmark:"), FontSize, TEXTALIGN_LEFT);
+			UI()->DoLabel(&Box, Localize("Enter the new name for the filter preset:"), FontSize, TEXTALIGN_LEFT);
 
 			CUIRect EditBox;
 			Box.HSplitBottom(Box.h/2.0f, 0, &Box);
 			Box.HSplitTop(20.0f, &EditBox, &Box);
 
-			UI()->DoEditBoxOption(&m_BookmarkNameInput, &EditBox, Localize("Name"), ButtonWidth);
+			if(m_RenameFilterIndex >= 0 && m_RenameFilterIndex < m_lFilters.size())
+			{
+				if(m_FilterNameInput.GetLength() == 0)
+				{
+					m_FilterNameInput.Set(m_lFilters[m_RenameFilterIndex].Name());
+					m_FilterNameInput.SetCursorOffset(m_FilterNameInput.GetLength());
+					m_FilterNameInput.SetSelection(0, m_FilterNameInput.GetLength());
+					UI()->SetActiveItem(&m_FilterNameInput);
+				}
+			}
+			UI()->DoEditBoxOption(&m_FilterNameInput, &EditBox, Localize("Name"), ButtonWidth);
 
+			// buttons
 			CUIRect Yes, No;
 			BottomBar.VSplitMid(&No, &Yes, SpacingW);
 
 			static CButtonContainer s_ButtonNo;
 			if(DoButton_Menu(&s_ButtonNo, Localize("Cancel"), 0, &No) || UI()->ConsumeHotkey(CUI::HOTKEY_ESCAPE))
+			{
+				m_FilterNameInput.Clear();
+				m_RenameFilterIndex = -1;
 				m_Popup = POPUP_NONE;
+			}
 
 			static CButtonContainer s_ButtonYes;
-			if(DoButton_Menu(&s_ButtonYes, Localize("Add"), !m_BookmarkNameInput.GetLength(), &Yes) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER))
+			if(DoButton_Menu(&s_ButtonYes, Localize("Ok"), !m_FilterNameInput.GetLength(), &Yes) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER))
 			{
-				if(m_BookmarkNameInput.GetLength())
+				if(m_FilterNameInput.GetLength())
 				{
-					m_Popup = POPUP_NONE;
-					const IDemoPlayer::CInfo *pInfo = DemoPlayer()->BaseInfo();
-					int Index = DemoPlayer()->AddBookmark(pInfo->m_CurrentTick, m_BookmarkNameInput.GetString());
-					if(Index >= 0)
+					const char *pNewName = m_FilterNameInput.GetString();
+
+					int PresetID = m_lFilters[m_RenameFilterIndex].PresetID();
+					CFilterPreset *pPreset = GetPresetByID(PresetID);
+					if(pPreset)
 					{
-						m_BookmarksListActive = true;
+						pPreset->SetName(pNewName);
+						SaveFilterPresets();
 					}
+
+					RenameFilter(m_RenameFilterIndex, pNewName);
+					m_FilterNameInput.Clear();
+					m_RenameFilterIndex = -1;
+					m_Popup = POPUP_NONE;
 				}
 			}
 		}
-		else if(m_Popup == POPUP_RENAME_BOOKMARK)
+		else if(m_Popup == POPUP_SAVE_FILTER)
 		{
 			Box.HSplitTop(27.0f, 0, &Box);
 			Box.VMargin(10.0f, &Box);
-			UI()->DoLabel(&Box, Localize("Enter a new name for the bookmark:"), FontSize, TEXTALIGN_LEFT);
+			UI()->DoLabel(&Box, Localize("Enter a name for the new filter preset:"), FontSize, TEXTALIGN_LEFT);
 
 			CUIRect EditBox;
 			Box.HSplitBottom(Box.h/2.0f, 0, &Box);
 			Box.HSplitTop(20.0f, &EditBox, &Box);
 
-			UI()->DoEditBoxOption(&m_BookmarkNameInput, &EditBox, Localize("Name"), ButtonWidth);
+			if(m_FilterNameInput.GetLength() == 0)
+			{
+				static int s_SaveCounter = 0;
+				char aDefaultName[64];
+				str_format(aDefaultName, sizeof(aDefaultName), "Preset %d", ++s_SaveCounter);
+				m_FilterNameInput.Set(aDefaultName);
+				m_FilterNameInput.SetCursorOffset(m_FilterNameInput.GetLength());
+				m_FilterNameInput.SetSelection(0, m_FilterNameInput.GetLength());
+				UI()->SetActiveItem(&m_FilterNameInput);
+			}
+			UI()->DoEditBoxOption(&m_FilterNameInput, &EditBox, Localize("Name"), ButtonWidth);
 
+			// buttons
 			CUIRect Yes, No;
 			BottomBar.VSplitMid(&No, &Yes, SpacingW);
 
 			static CButtonContainer s_ButtonNo;
 			if(DoButton_Menu(&s_ButtonNo, Localize("Cancel"), 0, &No) || UI()->ConsumeHotkey(CUI::HOTKEY_ESCAPE))
+			{
+				m_FilterNameInput.Clear();
+				m_SaveFilterIndex = -1;
 				m_Popup = POPUP_NONE;
+			}
 
 			static CButtonContainer s_ButtonYes;
-			if(DoButton_Menu(&s_ButtonYes, Localize("Rename"), !m_BookmarkNameInput.GetLength(), &Yes) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER))
+			if(DoButton_Menu(&s_ButtonYes, Localize("Save"), !m_FilterNameInput.GetLength(), &Yes) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER))
 			{
-				if(m_BookmarkNameInput.GetLength())
+				if(m_FilterNameInput.GetLength())
 				{
+					const char *pName = m_FilterNameInput.GetString();
+
+					int NewID = m_NextPresetID++;
+
+					CFilterPreset NewPreset;
+					NewPreset.m_ID = NewID;
+					NewPreset.SetName(pName);
+					CaptureCurrentStateToPreset(&NewPreset);
+
+					m_lFilterPresets.add(NewPreset);
+					m_ActivePresetID = NewID;
+					m_LastActivePresetID = NewID;
+
+					SaveFilterPresets();
+
+					CBrowserFilter *pSourceFilter = GetSelectedBrowserFilter();
+					if(pSourceFilter)
+					{
+						CServerFilterInfo FilterInfo;
+						pSourceFilter->GetFilter(&FilterInfo);
+
+						m_lFilters.add(CBrowserFilter(CBrowserFilter::FILTER_CUSTOM, pName, ServerBrowser()));
+						int NewFilterIndex = m_lFilters.size() - 1;
+						m_lFilters[NewFilterIndex].SetPresetID(NewID);
+						m_lFilters[NewFilterIndex].SetFilter(&FilterInfo);
+
+						int BrowserType = ServerBrowser()->GetType();
+						SwitchFilterPreset(BrowserType, NewFilterIndex);
+					}
+
+					m_FilterNameInput.Clear();
+					m_SaveFilterIndex = -1;
 					m_Popup = POPUP_NONE;
-					DemoPlayer()->RenameBookmark(m_BookmarkPopupIndex, m_BookmarkNameInput.GetString());
 				}
 			}
 		}

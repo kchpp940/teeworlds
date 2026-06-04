@@ -265,8 +265,6 @@ public:
 	CRenderTools m_RenderTools;
 
 	void OnReset();
-	void SetSuppressEvents(bool Suppress) { m_SuppressEvents = Suppress; }
-	void SetLastNewPredictedTick(int Tick) { m_LastNewPredictedTick = Tick; }
 
 	// hooks
 	virtual void OnConnected();

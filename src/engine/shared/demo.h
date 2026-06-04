@@ -50,8 +50,6 @@ public:
 		virtual ~IListener() {}
 		virtual void OnDemoPlayerSnapshot(void *pData, int Size) = 0;
 		virtual void OnDemoPlayerMessage(void *pData, int Size) = 0;
-		virtual void OnBeginSeek() = 0;
-		virtual void OnEndSeek() = 0;
 	};
 
 	struct CPlaybackInfo
@@ -109,19 +107,9 @@ private:
 	void DoTick();
 	void ScanFile();
 
-	int m_NumBookmarks;
-	CDemoBookmark m_aBookmarks[MAX_DEMO_BOOKMARKS];
-
-	void SortBookmarks();
-	void LoadBookmarks();
-
-public:
-	static void GetBookmarkFilePath(const char *pDemoPath, char *pBuffer, int BufferSize);
-
 public:
 
 	CDemoPlayer(class CSnapshotDelta *pSnapshotDelta);
-	~CDemoPlayer();
 	void Init(class IConsole *pConsole, class IStorage *pStorage);
 	void SetListener(IListener *pListener);
 
@@ -143,18 +131,6 @@ public:
 
 	const CPlaybackInfo *Info() const { return &m_Info; }
 	int IsPlaying() const { return m_File != 0; }
-
-	virtual int AddBookmark(int Tick, const char *pName);
-	virtual bool RemoveBookmark(int Index);
-	virtual bool RenameBookmark(int Index, const char *pName);
-	virtual int GotoBookmark(int Index);
-	virtual int GetNumBookmarks() const;
-	virtual const CDemoBookmark *GetBookmark(int Index) const;
-	virtual const char *GetDemoPath() const { return m_aFilename; }
-	virtual void SaveBookmarks();
-
-	static void DeleteBookmarkFile(class IStorage *pStorage, const char *pDemoPath);
-	static void RenameBookmarkFile(class IStorage *pStorage, const char *pOldDemoPath, const char *pNewDemoPath);
 };
 
 #endif
