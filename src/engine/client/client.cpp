@@ -299,6 +299,8 @@ CClient::CClient() : m_DemoPlayer(&m_SnapshotDelta), m_DemoRecorder(&m_SnapshotD
 	mem_zero(m_aSnapshots, sizeof(m_aSnapshots));
 	m_SnapshotStorage.Init();
 	m_ReceivedSnapshots = 0;
+	m_LastDemoEventTick = -1;
+	m_DemoSeeking = false;
 
 	m_VersionInfo.m_State = CVersionInfo::STATE_INIT;
 }
@@ -1600,7 +1602,8 @@ void CClient::OnDemoPlayerSnapshot(void *pData, int Size)
 	// update ticks, they could have changed
 	const CDemoPlayer::CPlaybackInfo *pInfo = m_DemoPlayer.Info();
 	CSnapshotStorage::CHolder *pTemp;
-	m_CurGameTick = pInfo->m_Info.m_CurrentTick;
+	const int SnapTick = pInfo->m_Info.m_CurrentTick;
+	m_CurGameTick = SnapTick;
 	m_PrevGameTick = pInfo->m_PreviousTick;
 
 	// handle snapshots
@@ -1610,18 +1613,95 @@ void CClient::OnDemoPlayerSnapshot(void *pData, int Size)
 
 	mem_copy(m_aSnapshots[SNAP_CURRENT]->m_pSnap, pData, Size);
 	mem_copy(m_aSnapshots[SNAP_CURRENT]->m_pAltSnap, pData, Size);
+	m_aSnapshots[SNAP_CURRENT]->m_SnapSize = Size;
+	m_aSnapshots[SNAP_CURRENT]->m_Tick = SnapTick;
+
+	// unified event suppression: only trigger events when tick actually advances
+	bool SuppressEvents = m_DemoSeeking || SnapTick <= m_LastDemoEventTick;
+	if(SuppressEvents)
+		GameClient()->SetSuppressEvents(true);
 
 	GameClient()->OnNewSnapshot();
+
+	if(!m_DemoSeeking)
+	{
+		GameClient()->SetSuppressEvents(false);
+		if(SnapTick > m_LastDemoEventTick)
+			m_LastDemoEventTick = SnapTick;
+	}
 }
 
 void CClient::OnDemoPlayerMessage(void *pData, int Size)
 {
+	const CDemoPlayer::CPlaybackInfo *pInfo = m_DemoPlayer.Info();
+	const int MsgTick = pInfo->m_Info.m_CurrentTick;
+	if(m_DemoSeeking || MsgTick <= m_LastDemoEventTick)
+		return;
+
 	CMsgUnpacker Unpacker(pData, Size);
 	if(Unpacker.Error())
 		return;
 
 	if(!Unpacker.System())
 		GameClient()->OnMessage(Unpacker.Type(), &Unpacker);
+}
+
+void CClient::OnDemoPlayerBeginSeek()
+{
+	if(m_aSnapshots[SNAP_CURRENT])
+	{
+		m_aSnapshots[SNAP_CURRENT]->m_SnapSize = 0;
+		m_aSnapshots[SNAP_CURRENT]->m_Tick = -1;
+	}
+	if(m_aSnapshots[SNAP_PREV])
+	{
+		m_aSnapshots[SNAP_PREV]->m_SnapSize = 0;
+		m_aSnapshots[SNAP_PREV]->m_Tick = -1;
+	}
+	m_ReceivedSnapshots = 0;
+	m_LastDemoEventTick = -1;
+	m_DemoSeeking = true;
+	GameClient()->SetSuppressEvents(true);
+	GameClient()->OnReset();
+}
+
+void CClient::OnDemoPlayerEndSeek()
+{
+	m_DemoSeeking = false;
+	const CDemoPlayer::CPlaybackInfo *pInfo = m_DemoPlayer.Info();
+
+	const CSnapshotStorage::CHolder *pCur = m_aSnapshots[SNAP_CURRENT];
+	const CSnapshotStorage::CHolder *pPrev = m_aSnapshots[SNAP_PREV];
+
+	const bool CurValid = pCur && pCur->m_SnapSize > 0 && pCur->m_Tick > 0;
+	const bool PrevValid = pPrev && pPrev->m_SnapSize > 0 && pPrev->m_Tick > 0
+		&& pCur->m_Tick - pPrev->m_Tick == 1;
+
+	if(CurValid)
+	{
+		m_CurGameTick = pCur->m_Tick;
+		if(PrevValid)
+		{
+			m_PrevGameTick = pPrev->m_Tick;
+			m_GameIntraTick = clamp(pInfo->m_IntraTick, 0.0f, 1.0f);
+			m_GameTickTime = pInfo->m_TickTime;
+		}
+		else
+		{
+			m_PrevGameTick = pCur->m_Tick;
+			m_GameIntraTick = 0.0f;
+			m_GameTickTime = 0.0f;
+		}
+	}
+	else
+	{
+		m_CurGameTick = pInfo->m_Info.m_CurrentTick;
+		m_PrevGameTick = pInfo->m_PreviousTick;
+		m_GameIntraTick = 0.0f;
+		m_GameTickTime = 0.0f;
+	}
+
+	m_PredIntraTick = m_GameIntraTick;
 }
 
 void CClient::Update()

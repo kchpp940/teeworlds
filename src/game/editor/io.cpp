@@ -21,72 +21,10 @@ int CEditorMap::Save(class IStorage *pStorage, const char *pFileName)
 	char aBuf[256];
 	str_format(aBuf, sizeof(aBuf), "saving to '%s'...", pFileName);
 	m_pEditor->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "editor", aBuf);
-
-	// validate image references in SaveToMap=true layers
-	for(int g = 0; g < m_lGroups.size(); g++)
-	{
-		CLayerGroup *pGroup = m_lGroups[g];
-		if(!pGroup->m_SaveToMap)
-			continue;
-
-		for(int l = 0; l < pGroup->m_lLayers.size(); l++)
-		{
-			if(!pGroup->m_lLayers[l]->m_SaveToMap)
-				continue;
-
-			int ImageIndex = -1;
-			const char *pLayerTypeName = "";
-			if(pGroup->m_lLayers[l]->m_Type == LAYERTYPE_TILES)
-			{
-				ImageIndex = ((CLayerTiles *)pGroup->m_lLayers[l])->m_Image;
-				pLayerTypeName = "tiles";
-			}
-			else if(pGroup->m_lLayers[l]->m_Type == LAYERTYPE_QUADS)
-			{
-				ImageIndex = ((CLayerQuads *)pGroup->m_lLayers[l])->m_Image;
-				pLayerTypeName = "quads";
-			}
-
-			if(ImageIndex < -1 || ImageIndex >= m_lImages.size())
-			{
-				str_format(aBuf, sizeof(aBuf), "invalid image index %d in %s layer (group %d, layer %d)", ImageIndex, pLayerTypeName, g, l);
-				m_pEditor->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "editor", aBuf);
-				return 0;
-			}
-
-			if(ImageIndex >= 0)
-			{
-				CEditorImage *pImg = m_lImages[ImageIndex];
-				if(pImg->m_External && !pImg->m_aName[0])
-				{
-					str_format(aBuf, sizeof(aBuf), "external image has empty name at index %d (group %d, layer %d)", ImageIndex, g, l);
-					m_pEditor->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "editor", aBuf);
-					return 0;
-				}
-			}
-		}
-	}
-
-	// atomically create a unique temporary file - avoid TOCTOU
-	char aTmpFileName[IO_MAX_PATH_LENGTH];
 	CDataFileWriter df;
-	bool OpenedTmp = false;
-	for(int Attempt = 0; Attempt < 100; Attempt++)
+	if(!df.Open(pStorage, pFileName))
 	{
-		char aRand[16];
-		str_format(aRand, sizeof(aRand), "%x", rand());
-		str_format(aTmpFileName, sizeof(aTmpFileName), "%s.%s.tmp", pFileName, aRand);
-
-		if(df.Open(pStorage, aTmpFileName))
-		{
-			OpenedTmp = true;
-			break;
-		}
-	}
-
-	if(!OpenedTmp)
-	{
-		str_format(aBuf, sizeof(aBuf), "failed to create unique temp file for '%s'", pFileName);
+		str_format(aBuf, sizeof(aBuf), "failed to open file '%s'...", pFileName);
 		m_pEditor->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "editor", aBuf);
 		return 0;
 	}
@@ -123,11 +61,13 @@ int CEditorMap::Save(class IStorage *pStorage, const char *pFileName)
 		df.AddItem(MAPITEMTYPE_INFO, 0, sizeof(Item), &Item);
 	}
 
-	// save images - keep all images in original order
+	// save images
 	for(int i = 0; i < m_lImages.size(); i++)
 	{
 		CEditorImage *pImg = m_lImages[i];
 
+		// analyze the image for when saving (should be done when we load the image)
+		// TODO!
 		pImg->AnalyzeTileFlags();
 
 		CMapItemImage Item;
@@ -145,12 +85,12 @@ int CEditorMap::Save(class IStorage *pStorage, const char *pFileName)
 			{
 				unsigned char *pSrc = (unsigned char *)pImg->m_pData;
 				unsigned char *pBuf = (unsigned char *)mem_alloc(Item.m_Width*Item.m_Height*4);
-				for(int y = 0; y < Item.m_Width*Item.m_Height; y++)
+				for(int i = 0; i < Item.m_Width*Item.m_Height; i++)
 				{
-					pBuf[4 * y + 0] = pSrc[3 * y + 0]; // r
-					pBuf[4 * y + 1] = pSrc[3 * y + 1]; // g
-					pBuf[4 * y + 2] = pSrc[3 * y + 2]; // b
-					pBuf[4 * y + 3] = 0xff;            // a
+					pBuf[4 * i + 0] = pSrc[3 * i + 0]; // r
+					pBuf[4 * i + 1] = pSrc[3 * i + 1]; // g
+					pBuf[4 * i + 2] = pSrc[3 * i + 2]; // b
+					pBuf[4 * i + 3] = 0xff;            // a
 				}
 				Item.m_ImageData = df.AddData(Item.m_Width*Item.m_Height*4, pBuf);
 				mem_free(pBuf);
@@ -164,7 +104,7 @@ int CEditorMap::Save(class IStorage *pStorage, const char *pFileName)
 		df.AddItem(MAPITEMTYPE_IMAGE, i, sizeof(Item), &Item);
 	}
 
-	// save layers - skip SaveToMap=false groups/layers, but keep original image indices
+	// save layers
 	int LayerCount = 0, GroupCount = 0;
 	for(int g = 0; g < m_lGroups.size(); g++)
 	{
@@ -306,22 +246,7 @@ int CEditorMap::Save(class IStorage *pStorage, const char *pFileName)
 	mem_free(pPoints);
 
 	// finish the data file
-	if(!df.Finish())
-	{
-		str_format(aBuf, sizeof(aBuf), "failed to save file '%s'...", pFileName);
-		m_pEditor->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "editor", aBuf);
-		pStorage->RemoveFile(aTmpFileName, IStorage::TYPE_SAVE);
-		return 0;
-	}
-
-	if(!pStorage->RenameFile(aTmpFileName, pFileName, IStorage::TYPE_SAVE))
-	{
-		str_format(aBuf, sizeof(aBuf), "failed to rename temp file to '%s'...", pFileName);
-		m_pEditor->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "editor", aBuf);
-		pStorage->RemoveFile(aTmpFileName, IStorage::TYPE_SAVE);
-		return 0;
-	}
-
+	df.Finish();
 	m_pEditor->Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "editor", "saving done");
 
 	// send rcon.. if we can
@@ -502,8 +427,6 @@ int CEditorMap::Load(class IStorage *pStorage, const char *pFileName, int Storag
 						pGroup->AddLayer(pTiles);
 						void *pData = DataFile.GetData(pTilemapItem->m_Data);
 						pTiles->m_Image = pTilemapItem->m_Image;
-						if(pTiles->m_Image < -1 || pTiles->m_Image >= m_lImages.size())
-							pTiles->m_Image = -1;
 						pTiles->m_Game = pTilemapItem->m_Flags&TILESLAYERFLAG_GAME;
 
 						// load layer name

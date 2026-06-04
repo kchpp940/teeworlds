@@ -272,9 +272,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 	const bool TickBackwards = UI()->KeyPress(KEY_COMMA);
 	if(PositionToSeek < 0.0f && (TickForwards || TickBackwards))
 	{
-		m_pClient->m_SuppressEvents = true;
 		DemoPlayer()->SetPos(pInfo->m_CurrentTick + (TickForwards ? 3 : 0));
-		m_pClient->m_SuppressEvents = false;
 		DemoPlayer()->Pause();
 		SeekBarActivate = true;
 	}
@@ -350,10 +348,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 
 	if(PositionToSeek >= 0.0f && PositionToSeek <= 1.0f)
 	{
-		m_pClient->OnReset();
-		m_pClient->m_SuppressEvents = true;
 		DemoPlayer()->SetPos(PositionToSeek);
-		m_pClient->m_SuppressEvents = false;
 	}
 
 	UI()->MapScreen();

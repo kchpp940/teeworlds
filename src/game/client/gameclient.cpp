@@ -469,7 +469,7 @@ void CGameClient::OnConnected()
 
 void CGameClient::OnReset()
 {
-	if(Client()->State() < IClient::STATE_ONLINE)
+	if(Client()->State() < IClient::STATE_ONLINE || Client()->State() == IClient::STATE_DEMOPLAYBACK)
 	{
 		// clear out the invalid pointers
 		m_LastNewPredictedTick = -1;
@@ -497,6 +497,11 @@ void CGameClient::OnReset()
 		m_LastFlagCarrierRed = FLAG_MISSING;
 		m_LastFlagCarrierBlue = FLAG_MISSING;
 	}
+}
+
+void CGameClient::SetSuppressEvents(bool Suppress)
+{
+	m_SuppressEvents = Suppress;
 }
 
 void CGameClient::UpdatePositions()
