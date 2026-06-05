@@ -31,7 +31,7 @@ void CSpectator::ConSpectate(IConsole::IResult *pResult, void *pUserData)
 {
 	CSpectator *pSelf = (CSpectator *)pUserData;
 	if(pSelf->CanSpectate())
-		pSelf->SendSpectate(pResult->GetInteger(0), pResult->GetInteger(1));
+		pSelf->SendSpectate(pResult->GetInteger(0), pResult->GetInteger(1), true);
 }
 
 bool CSpectator::SpecModePossible(int SpecMode, int SpectatorID)
@@ -104,7 +104,7 @@ void CSpectator::HandleSpectateNextPrev(int Direction)
 		IterateSpecMode(Direction, &NewSpecMode, &NewSpectatorID);
 		if(SpecModePossible(NewSpecMode, NewSpectatorID))
 		{
-			SendSpectate(NewSpecMode, NewSpectatorID);
+			SendSpectate(NewSpecMode, NewSpectatorID, true);
 			return;
 		}
 	}
@@ -125,12 +125,36 @@ CSpectator::CSpectator()
 	OnReset();
 }
 
+void CSpectator::ConSpecAutoFollow(IConsole::IResult *pResult, void *pUserData)
+{
+	CSpectator *pSelf = (CSpectator *)pUserData;
+	pSelf->m_AutoFollowActive = pResult->GetInteger(0) != 0;
+	if(pSelf->m_AutoFollowActive)
+	{
+		pSelf->m_AutoFollowPaused = false;
+		pSelf->m_AutoFollowPauseUntil = 0;
+	}
+}
+
+void CSpectator::ConSpecAutoFollowToggle(IConsole::IResult *pResult, void *pUserData)
+{
+	CSpectator *pSelf = (CSpectator *)pUserData;
+	pSelf->m_AutoFollowActive = !pSelf->m_AutoFollowActive;
+	if(pSelf->m_AutoFollowActive)
+	{
+		pSelf->m_AutoFollowPaused = false;
+		pSelf->m_AutoFollowPauseUntil = 0;
+	}
+}
+
 void CSpectator::OnConsoleInit()
 {
 	Console()->Register("+spectate", "", CFGFLAG_CLIENT, ConKeySpectator, this, "Open spectator mode selector");
 	Console()->Register("spectate", "i[mode] i[target]", CFGFLAG_CLIENT, ConSpectate, this, "Switch spectator mode");
 	Console()->Register("spectate_next", "", CFGFLAG_CLIENT, ConSpectateNext, this, "Spectate the next player");
 	Console()->Register("spectate_previous", "", CFGFLAG_CLIENT, ConSpectatePrevious, this, "Spectate the previous player");
+	Console()->Register("spec_auto_follow", "i[value]", CFGFLAG_CLIENT, ConSpecAutoFollow, this, "Enable/disable auto follow key players");
+	Console()->Register("spec_auto_follow_toggle", "", CFGFLAG_CLIENT, ConSpecAutoFollowToggle, this, "Toggle auto follow key players");
 }
 
 bool CSpectator::OnCursorMove(float x, float y, int CursorType)
@@ -150,12 +174,17 @@ void CSpectator::OnRelease()
 
 void CSpectator::OnRender()
 {
+	if(!m_Active && CanSpectate())
+	{
+		OnAutoFollow();
+	}
+
 	if(!m_Active)
 	{
 		if(m_WasActive)
 		{
 			if(m_SelectedSpecMode != NO_SELECTION)
-				SendSpectate(m_SelectedSpecMode, m_SelectedSpectatorID);
+				SendSpectate(m_SelectedSpecMode, m_SelectedSpectatorID, true);
 			m_WasActive = false;
 		}
 		return;
@@ -349,9 +378,127 @@ void CSpectator::OnReset()
 	m_Active = false;
 	m_SelectedSpecMode = NO_SELECTION;
 	m_SelectedSpectatorID = -1;
+	m_AutoFollowActive = false;
+	m_AutoFollowPaused = false;
+	m_AutoFollowPauseUntil = 0;
+	m_LastFollowedClientID = -1;
+	m_LastFollowChangeTime = 0;
+	m_NextFollowEvalTime = 0;
+	m_LastFlagCarrierRed = FLAG_ATSTAND;
+	m_LastFlagCarrierBlue = FLAG_ATSTAND;
+	m_RedFlagStandPos = vec2(0, 0);
+	m_BlueFlagStandPos = vec2(0, 0);
+	m_HasFlagStandPositions = false;
+
+	m_CurrentFollow.m_ClientID = -1;
+	m_CurrentFollow.m_Reason = REASON_NONE;
+	m_CurrentFollow.m_StartTime = 0;
+	m_CurrentFollowPriority = 0.0f;
+
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		m_aPlayerEvents[i].m_LastKillTime = 0;
+		m_aPlayerEvents[i].m_LastDeathTime = 0;
+		m_aPlayerEvents[i].m_LastKillCarrierTime = 0;
+		m_aPlayerEvents[i].m_LastFlagGrabTime = 0;
+		m_aPlayerEvents[i].m_RecentKills = 0;
+		m_aPlayerEvents[i].m_RecentDeaths = 0;
+	}
 }
 
-void CSpectator::SendSpectate(int SpecMode, int SpectatorID)
+void CSpectator::OnMessage(int MsgType, void *pRawMsg)
+{
+	if(MsgType == NETMSGTYPE_SV_KILLMSG)
+	{
+		CNetMsg_Sv_KillMsg *pMsg = (CNetMsg_Sv_KillMsg *)pRawMsg;
+		RecordKill(pMsg->m_Killer, pMsg->m_Victim, pMsg->m_ModeSpecial);
+	}
+}
+
+void CSpectator::UpdateFlagStates()
+{
+	if(!m_pClient->m_Snap.m_pGameDataFlag || !m_pClient->m_Snap.m_apFlags[0] || !m_pClient->m_Snap.m_apFlags[1])
+		return;
+
+	int FlagCarrierRed = m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierRed;
+	int FlagCarrierBlue = m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierBlue;
+
+	if(!m_HasFlagStandPositions)
+	{
+		if(FlagCarrierRed == FLAG_ATSTAND)
+		{
+			m_RedFlagStandPos = vec2(m_pClient->m_Snap.m_apFlags[0]->m_X, m_pClient->m_Snap.m_apFlags[0]->m_Y);
+		}
+		if(FlagCarrierBlue == FLAG_ATSTAND)
+		{
+			m_BlueFlagStandPos = vec2(m_pClient->m_Snap.m_apFlags[1]->m_X, m_pClient->m_Snap.m_apFlags[1]->m_Y);
+		}
+		if(FlagCarrierRed == FLAG_ATSTAND && FlagCarrierBlue == FLAG_ATSTAND)
+		{
+			m_HasFlagStandPositions = true;
+		}
+	}
+
+	if(m_LastFlagCarrierRed == FLAG_ATSTAND && FlagCarrierRed >= 0 && FlagCarrierRed < MAX_CLIENTS)
+	{
+		RecordFlagGrab(FlagCarrierRed, TEAM_RED);
+	}
+	if(m_LastFlagCarrierBlue == FLAG_ATSTAND && FlagCarrierBlue >= 0 && FlagCarrierBlue < MAX_CLIENTS)
+	{
+		RecordFlagGrab(FlagCarrierBlue, TEAM_BLUE);
+	}
+
+	m_LastFlagCarrierRed = FlagCarrierRed;
+	m_LastFlagCarrierBlue = FlagCarrierBlue;
+}
+
+void CSpectator::RecordKill(int KillerID, int VictimID, int ModeSpecial)
+{
+	int64 Now = time_get();
+
+	if(VictimID >= 0 && VictimID < MAX_CLIENTS)
+	{
+		m_aPlayerEvents[VictimID].m_LastDeathTime = Now;
+		m_aPlayerEvents[VictimID].m_RecentDeaths++;
+	}
+
+	if(KillerID >= 0 && KillerID < MAX_CLIENTS && KillerID != VictimID)
+	{
+		m_aPlayerEvents[KillerID].m_LastKillTime = Now;
+		m_aPlayerEvents[KillerID].m_RecentKills++;
+
+		if(ModeSpecial & 1)
+		{
+			m_aPlayerEvents[KillerID].m_LastKillCarrierTime = Now;
+		}
+	}
+}
+
+void CSpectator::RecordFlagGrab(int ClientID, int Team)
+{
+	if(ClientID >= 0 && ClientID < MAX_CLIENTS)
+	{
+		m_aPlayerEvents[ClientID].m_LastFlagGrabTime = time_get();
+	}
+}
+
+const char *CSpectator::FollowReasonToString(EFollowReason Reason)
+{
+	switch(Reason)
+	{
+	case REASON_FLAG_CARRIER: return "Flag Carrier";
+	case REASON_FLAG_CARRIER_SCORING: return "Scoring Carrier";
+	case REASON_FLAG_AT_STAND: return "Flag at Stand";
+	case REASON_RECENT_KILL: return "Recent Kill";
+	case REASON_RECENT_DEATH: return "Recent Death";
+	case REASON_HIGH_SCORE: return "High Score";
+	case REASON_ACTIVE_PLAYER: return "Active Player";
+	case REASON_KILLED_FLAG_CARRIER: return "Killed Carrier";
+	default: return "";
+	}
+}
+
+void CSpectator::SendSpectate(int SpecMode, int SpectatorID, bool Manual)
 {
 	if(Client()->State() == IClient::STATE_DEMOPLAYBACK)
 	{
@@ -363,8 +510,408 @@ void CSpectator::SendSpectate(int SpecMode, int SpectatorID)
 	if(m_pClient->m_Snap.m_SpecInfo.m_SpecMode == SpecMode && (SpecMode != SPEC_PLAYER || m_pClient->m_Snap.m_SpecInfo.m_SpectatorID == SpectatorID))
 		return;
 
+	if(Manual && Config()->m_ClSpecAutoFollowPause)
+	{
+		PauseAutoFollow();
+	}
+
+	if(!Manual && SpecMode == SPEC_PLAYER)
+	{
+		m_LastFollowedClientID = SpectatorID;
+		m_LastFollowChangeTime = time_get();
+	}
+
 	CNetMsg_Cl_SetSpectatorMode Msg;
 	Msg.m_SpecMode = SpecMode;
 	Msg.m_SpectatorID = SpectatorID;
 	Client()->SendPackMsg(&Msg, MSGFLAG_VITAL);
+}
+
+void CSpectator::PauseAutoFollow()
+{
+	m_AutoFollowPaused = true;
+	m_AutoFollowPauseUntil = time_get() + time_freq() * 15;
+}
+
+bool CSpectator::IsTargetValid(int ClientID)
+{
+	return SpecModePossible(SPEC_PLAYER, ClientID);
+}
+
+bool CSpectator::CanSwitchFollowTarget(int NewTargetID)
+{
+	if(m_AutoFollowPaused)
+		return false;
+
+	if(!Config()->m_ClSpecAutoFollow && !m_AutoFollowActive)
+		return false;
+
+	if(NewTargetID == m_pClient->m_Snap.m_SpecInfo.m_SpectatorID)
+		return false;
+
+	if(!IsTargetValid(NewTargetID))
+		return false;
+
+	int64 Now = time_get();
+	if(Now < m_NextFollowEvalTime)
+		return false;
+
+	const int64 MinFollowTime = time_freq() * 5;
+	if(m_CurrentFollow.m_ClientID != -1 && (Now - m_CurrentFollow.m_StartTime) < MinFollowTime)
+	{
+		if(IsTargetValid(m_CurrentFollow.m_ClientID))
+			return false;
+	}
+
+	return true;
+}
+
+void CSpectator::OnRefreshSkins()
+{
+	if(!CanSpectate())
+		return;
+
+	OnAutoFollow();
+}
+
+void CSpectator::OnAutoFollow()
+{
+	int64 Now = time_get();
+
+	UpdateFlagStates();
+
+	if((Config()->m_ClSpecAutoFollow || m_AutoFollowActive) && m_AutoFollowPaused)
+	{
+		if(Now > m_AutoFollowPauseUntil)
+		{
+			m_AutoFollowPaused = false;
+		}
+		else
+		{
+			return;
+		}
+	}
+
+	if(m_CurrentFollow.m_ClientID != -1 && !IsTargetValid(m_CurrentFollow.m_ClientID))
+	{
+		m_CurrentFollow.m_ClientID = -1;
+		m_CurrentFollow.m_Reason = REASON_NONE;
+	}
+
+	if(Now < m_NextFollowEvalTime)
+		return;
+
+	m_NextFollowEvalTime = Now + time_freq() / 2;
+
+	int BestTarget = FindBestFollowTarget();
+	if(BestTarget == -1)
+		return;
+
+	if(CanSwitchFollowTarget(BestTarget))
+	{
+		SendSpectate(SPEC_PLAYER, BestTarget, false);
+	}
+}
+
+bool CSpectator::IsHighPriorityReason(EFollowReason Reason)
+{
+	return Reason == REASON_FLAG_CARRIER
+		|| Reason == REASON_FLAG_CARRIER_SCORING
+		|| Reason == REASON_KILLED_FLAG_CARRIER;
+}
+
+bool CSpectator::ShouldSwitchTarget(int NewTargetID, float NewTargetPriority, EFollowReason NewTargetReason)
+{
+	if(m_CurrentFollow.m_ClientID == -1)
+		return true;
+
+	if(NewTargetID == m_CurrentFollow.m_ClientID)
+		return false;
+
+	if(!IsTargetValid(m_CurrentFollow.m_ClientID))
+		return true;
+
+	if(IsHighPriorityReason(NewTargetReason) && !IsHighPriorityReason(m_CurrentFollow.m_Reason))
+		return true;
+
+	const float PRIORITY_THRESHOLD = 500.0f;
+	if(NewTargetPriority > m_CurrentFollowPriority + PRIORITY_THRESHOLD)
+		return true;
+
+	return false;
+}
+
+int CSpectator::FindBestFollowTarget()
+{
+	CFollowCandidate aCandidates[MAX_SPEC_AUTO_FOLLOW_CANDIDATES];
+	int NumCandidates = 0;
+	int64 Now = time_get();
+	const int64 EventWindow = time_freq() * 10;
+
+	float CurrentTargetPriority = 0.0f;
+	bool CurrentTargetFound = false;
+
+	for(int i = 0; i < MAX_CLIENTS && NumCandidates < MAX_SPEC_AUTO_FOLLOW_CANDIDATES; i++)
+	{
+		if(!SpecModePossible(SPEC_PLAYER, i))
+			continue;
+
+		aCandidates[NumCandidates].m_ClientID = i;
+		aCandidates[NumCandidates].m_Score = 0;
+		aCandidates[NumCandidates].m_Kills = 0;
+		aCandidates[NumCandidates].m_Deaths = 0;
+		aCandidates[NumCandidates].m_FlagState = 0;
+		aCandidates[NumCandidates].m_FlagTeam = m_pClient->m_aClients[i].m_Team;
+		aCandidates[NumCandidates].m_Alive = true;
+		aCandidates[NumCandidates].m_Active = false;
+		aCandidates[NumCandidates].m_DistanceToScore = 0.0f;
+		aCandidates[NumCandidates].m_Reason = REASON_NONE;
+		aCandidates[NumCandidates].m_Priority = 0.0f;
+
+		if(m_pClient->m_Snap.m_apPlayerInfos[i])
+		{
+			aCandidates[NumCandidates].m_Score = m_pClient->m_Snap.m_apPlayerInfos[i]->m_Score;
+			int Flags = m_pClient->m_Snap.m_apPlayerInfos[i]->m_PlayerFlags;
+			aCandidates[NumCandidates].m_Alive = !(Flags & PLAYERFLAG_DEAD);
+		}
+
+		int64 LastAction = m_aPlayerEvents[i].m_LastKillTime;
+		if(m_aPlayerEvents[i].m_LastDeathTime > LastAction) LastAction = m_aPlayerEvents[i].m_LastDeathTime;
+		if(m_aPlayerEvents[i].m_LastKillCarrierTime > LastAction) LastAction = m_aPlayerEvents[i].m_LastKillCarrierTime;
+		if(m_aPlayerEvents[i].m_LastFlagGrabTime > LastAction) LastAction = m_aPlayerEvents[i].m_LastFlagGrabTime;
+		aCandidates[NumCandidates].m_Active = (Now - LastAction) < EventWindow;
+
+		NumCandidates++;
+	}
+
+	if(NumCandidates == 0)
+		return -1;
+
+	if(m_pClient->m_GameInfo.m_GameFlags & GAMEFLAG_FLAGS)
+	{
+		EvaluateCandidatesCTF(aCandidates, NumCandidates);
+	}
+	else
+	{
+		EvaluateCandidatesDM(aCandidates, NumCandidates);
+	}
+
+	SortCandidates(aCandidates, NumCandidates);
+
+	for(int i = 0; i < NumCandidates; i++)
+	{
+		if(aCandidates[i].m_ClientID == m_CurrentFollow.m_ClientID)
+		{
+			CurrentTargetPriority = aCandidates[i].m_Priority;
+			CurrentTargetFound = true;
+			break;
+		}
+	}
+
+	m_CurrentFollowPriority = CurrentTargetFound ? CurrentTargetPriority : 0.0f;
+
+	int BestTargetID = aCandidates[0].m_ClientID;
+	float BestTargetPriority = aCandidates[0].m_Priority;
+	EFollowReason BestTargetReason = aCandidates[0].m_Reason;
+
+	if(ShouldSwitchTarget(BestTargetID, BestTargetPriority, BestTargetReason))
+	{
+		m_CurrentFollow.m_ClientID = BestTargetID;
+		m_CurrentFollow.m_Reason = BestTargetReason;
+		m_CurrentFollow.m_StartTime = time_get();
+	}
+
+	return m_CurrentFollow.m_ClientID;
+}
+
+void CSpectator::EvaluateCandidatesCTF(CFollowCandidate *pCandidates, int &NumCandidates)
+{
+	if(!m_pClient->m_Snap.m_pGameDataFlag || !m_pClient->m_Snap.m_apFlags[0] || !m_pClient->m_Snap.m_apFlags[1])
+		return;
+
+	int64 Now = time_get();
+	const int64 EventWindow = time_freq() * 15;
+	int FlagCarrierRed = m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierRed;
+	int FlagCarrierBlue = m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierBlue;
+
+	vec2 RedStandPos = m_RedFlagStandPos;
+	vec2 BlueStandPos = m_BlueFlagStandPos;
+
+	if(!m_HasFlagStandPositions)
+	{
+		RedStandPos = vec2(m_pClient->m_Snap.m_apFlags[0]->m_X, m_pClient->m_Snap.m_apFlags[0]->m_Y);
+		BlueStandPos = vec2(m_pClient->m_Snap.m_apFlags[1]->m_X, m_pClient->m_Snap.m_apFlags[1]->m_Y);
+	}
+
+	float MapWidth = fabsf(BlueStandPos.x - RedStandPos.x);
+	if(MapWidth < 100.0f) MapWidth = 2000.0f;
+
+	bool RedFlagAtStand = (FlagCarrierRed == FLAG_ATSTAND);
+	bool BlueFlagAtStand = (FlagCarrierBlue == FLAG_ATSTAND);
+
+	for(int i = 0; i < NumCandidates; i++)
+	{
+		float Priority = 0.0f;
+		int ClientID = pCandidates[i].m_ClientID;
+		int PlayerTeam = pCandidates[i].m_FlagTeam;
+		EFollowReason BestReason = REASON_NONE;
+
+		if(ClientID == FlagCarrierRed || ClientID == FlagCarrierBlue)
+		{
+			Priority += 2000.0f;
+			BestReason = REASON_FLAG_CARRIER;
+
+			vec2 CarrierPos = m_pClient->GetCharPos(ClientID);
+			bool IsRedCarrier = (ClientID == FlagCarrierRed);
+
+			bool OwnFlagAtStand = IsRedCarrier ? RedFlagAtStand : BlueFlagAtStand;
+			vec2 OwnStandPos = IsRedCarrier ? RedStandPos : BlueStandPos;
+
+			if(OwnFlagAtStand)
+			{
+				float DistToOwnStand = distance(CarrierPos, OwnStandPos);
+
+				if(DistToOwnStand < MapWidth * 0.3f)
+				{
+					float ScoringBonus = 1000.0f * (1.0f - DistToOwnStand / (MapWidth * 0.3f));
+					Priority += ScoringBonus;
+					BestReason = REASON_FLAG_CARRIER_SCORING;
+				}
+			}
+		}
+		else
+		{
+			if(PlayerTeam == TEAM_RED && BlueFlagAtStand && pCandidates[i].m_Alive)
+			{
+				vec2 PlayerPos = m_pClient->GetCharPos(ClientID);
+				float DistToBlueFlag = distance(PlayerPos, BlueStandPos);
+				if(DistToBlueFlag < MapWidth * 0.3f)
+				{
+					Priority += 200.0f * (1.0f - DistToBlueFlag / (MapWidth * 0.3f));
+					BestReason = REASON_FLAG_AT_STAND;
+				}
+			}
+			else if(PlayerTeam == TEAM_BLUE && RedFlagAtStand && pCandidates[i].m_Alive)
+			{
+				vec2 PlayerPos = m_pClient->GetCharPos(ClientID);
+				float DistToRedFlag = distance(PlayerPos, RedStandPos);
+				if(DistToRedFlag < MapWidth * 0.3f)
+				{
+					Priority += 200.0f * (1.0f - DistToRedFlag / (MapWidth * 0.3f));
+					BestReason = REASON_FLAG_AT_STAND;
+				}
+			}
+		}
+
+		int64 TimeSinceKillCarrier = Now - m_aPlayerEvents[ClientID].m_LastKillCarrierTime;
+		if(TimeSinceKillCarrier < EventWindow)
+		{
+			float Bonus = 800.0f * (1.0f - (float)TimeSinceKillCarrier / (float)EventWindow);
+			Priority += Bonus;
+			if(BestReason == REASON_NONE) BestReason = REASON_KILLED_FLAG_CARRIER;
+		}
+
+		int64 TimeSinceKill = Now - m_aPlayerEvents[ClientID].m_LastKillTime;
+		if(TimeSinceKill < EventWindow)
+		{
+			float Bonus = 400.0f * (1.0f - (float)TimeSinceKill / (float)EventWindow);
+			Priority += Bonus;
+			if(BestReason == REASON_NONE) BestReason = REASON_RECENT_KILL;
+		}
+
+		int64 TimeSinceFlagGrab = Now - m_aPlayerEvents[ClientID].m_LastFlagGrabTime;
+		if(TimeSinceFlagGrab < EventWindow)
+		{
+			float Bonus = 300.0f * (1.0f - (float)TimeSinceFlagGrab / (float)EventWindow);
+			Priority += Bonus;
+		}
+
+		Priority += pCandidates[i].m_Score * 5.0f;
+		if(pCandidates[i].m_Score > 0 && BestReason == REASON_NONE)
+		{
+			BestReason = REASON_HIGH_SCORE;
+		}
+
+		if(pCandidates[i].m_Alive)
+		{
+			Priority += 50.0f;
+			if(pCandidates[i].m_Active && BestReason == REASON_NONE)
+			{
+				BestReason = REASON_ACTIVE_PLAYER;
+			}
+		}
+
+		pCandidates[i].m_Priority = Priority;
+		pCandidates[i].m_Reason = BestReason;
+	}
+}
+
+void CSpectator::EvaluateCandidatesDM(CFollowCandidate *pCandidates, int &NumCandidates)
+{
+	int64 Now = time_get();
+	const int64 EventWindow = time_freq() * 10;
+	int Mode = Config()->m_ClSpecAutoFollowMode;
+
+	for(int i = 0; i < NumCandidates; i++)
+	{
+		float Priority = 0.0f;
+		int ClientID = pCandidates[i].m_ClientID;
+		EFollowReason BestReason = REASON_NONE;
+
+		if(Mode == 0 || Mode == 1)
+		{
+			Priority += pCandidates[i].m_Score * 10.0f;
+			if(pCandidates[i].m_Score > 0)
+			{
+				BestReason = REASON_HIGH_SCORE;
+			}
+		}
+
+		if(Mode == 0 || Mode == 2)
+		{
+			int64 TimeSinceKill = Now - m_aPlayerEvents[ClientID].m_LastKillTime;
+			if(TimeSinceKill < EventWindow)
+			{
+				float Bonus = 500.0f * (1.0f - (float)TimeSinceKill / (float)EventWindow);
+				Priority += Bonus;
+				BestReason = REASON_RECENT_KILL;
+			}
+
+			int64 TimeSinceDeath = Now - m_aPlayerEvents[ClientID].m_LastDeathTime;
+			if(TimeSinceDeath < EventWindow && TimeSinceDeath < time_freq() * 3)
+			{
+				float Bonus = 300.0f * (1.0f - (float)TimeSinceDeath / (float)EventWindow);
+				Priority += Bonus;
+				if(BestReason == REASON_NONE) BestReason = REASON_RECENT_DEATH;
+			}
+
+			if(pCandidates[i].m_Alive)
+			{
+				Priority += 100.0f;
+				if(pCandidates[i].m_Active && BestReason == REASON_NONE)
+				{
+					BestReason = REASON_ACTIVE_PLAYER;
+				}
+			}
+		}
+
+		pCandidates[i].m_Priority = Priority;
+		pCandidates[i].m_Reason = BestReason;
+	}
+}
+
+void CSpectator::SortCandidates(CFollowCandidate *pCandidates, int NumCandidates)
+{
+	for(int i = 0; i < NumCandidates - 1; i++)
+	{
+		for(int j = i + 1; j < NumCandidates; j++)
+		{
+			if(pCandidates[j].m_Priority > pCandidates[i].m_Priority)
+			{
+				CFollowCandidate Temp = pCandidates[i];
+				pCandidates[i] = pCandidates[j];
+				pCandidates[j] = Temp;
+			}
+		}
+	}
 }

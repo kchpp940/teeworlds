@@ -77,13 +77,6 @@ CMenus::CMenus()
 	m_ActiveListBox = ACTLB_NONE;
 
 	m_PopupCountrySelection = -2;
-	m_RemoveFilterIndex = 0;
-	m_RenameFilterIndex = -1;
-	m_SaveFilterIndex = -1;
-	m_NextPresetID = 1;
-	m_ActivePresetID = -1;
-	m_LastActivePresetID = -1;
-	m_aSelectedServerAddress[0] = 0;
 }
 
 void CMenus::DoIcon(int ImageId, int SpriteId, const CUIRect *pRect, const vec4 *pColor)
@@ -1175,16 +1168,6 @@ void CMenus::RenderMenu(CUIRect Screen)
 			pTitle = Localize("Rename demo");
 			NumOptions = 6;
 		}
-		else if(m_Popup == POPUP_RENAME_FILTER)
-		{
-			pTitle = Localize("Rename filter preset");
-			NumOptions = 6;
-		}
-		else if(m_Popup == POPUP_SAVE_FILTER)
-		{
-			pTitle = Localize("Save filter preset");
-			NumOptions = 6;
-		}
 		else if(m_Popup == POPUP_SAVE_SKIN)
 		{
 			pTitle = Localize("Save skin");
@@ -1500,137 +1483,6 @@ void CMenus::RenderMenu(CUIRect Screen)
 						else
 							PopupMessage(Localize("Error"), Localize("Unable to rename the demo"), Localize("Ok"), POPUP_RENAME_DEMO);
 					}
-				}
-			}
-		}
-		else if(m_Popup == POPUP_RENAME_FILTER)
-		{
-			Box.HSplitTop(27.0f, 0, &Box);
-			Box.VMargin(10.0f, &Box);
-			UI()->DoLabel(&Box, Localize("Enter the new name for the filter preset:"), FontSize, TEXTALIGN_LEFT);
-
-			CUIRect EditBox;
-			Box.HSplitBottom(Box.h/2.0f, 0, &Box);
-			Box.HSplitTop(20.0f, &EditBox, &Box);
-
-			if(m_RenameFilterIndex >= 0 && m_RenameFilterIndex < m_lFilters.size())
-			{
-				if(m_FilterNameInput.GetLength() == 0)
-				{
-					m_FilterNameInput.Set(m_lFilters[m_RenameFilterIndex].Name());
-					m_FilterNameInput.SetCursorOffset(m_FilterNameInput.GetLength());
-					m_FilterNameInput.SetSelection(0, m_FilterNameInput.GetLength());
-					UI()->SetActiveItem(&m_FilterNameInput);
-				}
-			}
-			UI()->DoEditBoxOption(&m_FilterNameInput, &EditBox, Localize("Name"), ButtonWidth);
-
-			// buttons
-			CUIRect Yes, No;
-			BottomBar.VSplitMid(&No, &Yes, SpacingW);
-
-			static CButtonContainer s_ButtonNo;
-			if(DoButton_Menu(&s_ButtonNo, Localize("Cancel"), 0, &No) || UI()->ConsumeHotkey(CUI::HOTKEY_ESCAPE))
-			{
-				m_FilterNameInput.Clear();
-				m_RenameFilterIndex = -1;
-				m_Popup = POPUP_NONE;
-			}
-
-			static CButtonContainer s_ButtonYes;
-			if(DoButton_Menu(&s_ButtonYes, Localize("Ok"), !m_FilterNameInput.GetLength(), &Yes) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER))
-			{
-				if(m_FilterNameInput.GetLength())
-				{
-					const char *pNewName = m_FilterNameInput.GetString();
-
-					int PresetID = m_lFilters[m_RenameFilterIndex].PresetID();
-					CFilterPreset *pPreset = GetPresetByID(PresetID);
-					if(pPreset)
-					{
-						pPreset->SetName(pNewName);
-						SaveFilterPresets();
-					}
-
-					RenameFilter(m_RenameFilterIndex, pNewName);
-					m_FilterNameInput.Clear();
-					m_RenameFilterIndex = -1;
-					m_Popup = POPUP_NONE;
-				}
-			}
-		}
-		else if(m_Popup == POPUP_SAVE_FILTER)
-		{
-			Box.HSplitTop(27.0f, 0, &Box);
-			Box.VMargin(10.0f, &Box);
-			UI()->DoLabel(&Box, Localize("Enter a name for the new filter preset:"), FontSize, TEXTALIGN_LEFT);
-
-			CUIRect EditBox;
-			Box.HSplitBottom(Box.h/2.0f, 0, &Box);
-			Box.HSplitTop(20.0f, &EditBox, &Box);
-
-			if(m_FilterNameInput.GetLength() == 0)
-			{
-				static int s_SaveCounter = 0;
-				char aDefaultName[64];
-				str_format(aDefaultName, sizeof(aDefaultName), "Preset %d", ++s_SaveCounter);
-				m_FilterNameInput.Set(aDefaultName);
-				m_FilterNameInput.SetCursorOffset(m_FilterNameInput.GetLength());
-				m_FilterNameInput.SetSelection(0, m_FilterNameInput.GetLength());
-				UI()->SetActiveItem(&m_FilterNameInput);
-			}
-			UI()->DoEditBoxOption(&m_FilterNameInput, &EditBox, Localize("Name"), ButtonWidth);
-
-			// buttons
-			CUIRect Yes, No;
-			BottomBar.VSplitMid(&No, &Yes, SpacingW);
-
-			static CButtonContainer s_ButtonNo;
-			if(DoButton_Menu(&s_ButtonNo, Localize("Cancel"), 0, &No) || UI()->ConsumeHotkey(CUI::HOTKEY_ESCAPE))
-			{
-				m_FilterNameInput.Clear();
-				m_SaveFilterIndex = -1;
-				m_Popup = POPUP_NONE;
-			}
-
-			static CButtonContainer s_ButtonYes;
-			if(DoButton_Menu(&s_ButtonYes, Localize("Save"), !m_FilterNameInput.GetLength(), &Yes) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER))
-			{
-				if(m_FilterNameInput.GetLength())
-				{
-					const char *pName = m_FilterNameInput.GetString();
-
-					int NewID = m_NextPresetID++;
-
-					CFilterPreset NewPreset;
-					NewPreset.m_ID = NewID;
-					NewPreset.SetName(pName);
-					CaptureCurrentStateToPreset(&NewPreset);
-
-					m_lFilterPresets.add(NewPreset);
-					m_ActivePresetID = NewID;
-					m_LastActivePresetID = NewID;
-
-					SaveFilterPresets();
-
-					CBrowserFilter *pSourceFilter = GetSelectedBrowserFilter();
-					if(pSourceFilter)
-					{
-						CServerFilterInfo FilterInfo;
-						pSourceFilter->GetFilter(&FilterInfo);
-
-						m_lFilters.add(CBrowserFilter(CBrowserFilter::FILTER_CUSTOM, pName, ServerBrowser()));
-						int NewFilterIndex = m_lFilters.size() - 1;
-						m_lFilters[NewFilterIndex].SetPresetID(NewID);
-						m_lFilters[NewFilterIndex].SetFilter(&FilterInfo);
-
-						int BrowserType = ServerBrowser()->GetType();
-						SwitchFilterPreset(BrowserType, NewFilterIndex);
-					}
-
-					m_FilterNameInput.Clear();
-					m_SaveFilterIndex = -1;
-					m_Popup = POPUP_NONE;
 				}
 			}
 		}

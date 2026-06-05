@@ -109,6 +109,10 @@ MACRO_CONFIG_INT(ClShowLocalTimeAlways, cl_show_local_time_always, 0, 0, 1, CFGF
 
 MACRO_CONFIG_INT(ClLastVersionPlayed, cl_last_version_played, PREV_CLIENT_VERSION, 0, 0, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Last version of the game that was played")
 
+MACRO_CONFIG_INT(ClSpecAutoFollow, cl_spec_auto_follow, 0, 0, 1, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Auto follow key players in spectator mode")
+MACRO_CONFIG_INT(ClSpecAutoFollowPause, cl_spec_auto_follow_pause, 0, 0, 1, CFGFLAG_CLIENT, "Pause auto follow after manual switch")
+MACRO_CONFIG_INT(ClSpecAutoFollowMode, cl_spec_auto_follow_mode, 0, 0, 2, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Auto follow mode: 0=smart, 1=score, 2=action")
+
 // server
 MACRO_CONFIG_INT(SvWarmup, sv_warmup, 0, -1, 1000, CFGFLAG_SAVE|CFGFLAG_SERVER, "Number of seconds to do warmup before match starts (0 disables, -1 all players ready)")
 MACRO_CONFIG_INT(SvCountdown, sv_countdown, 0, -1, 1000, CFGFLAG_SAVE|CFGFLAG_SERVER, "Number of seconds to freeze the game in a countdown before match starts (0 enables only for survival gamemodes, -1 disables)")
