@@ -39,11 +39,17 @@ void CMatchEvents::OnReset()
 
 	m_KillEventCount = 0;
 	m_KillEventNext = 0;
+	m_KillEventGeneration = 0;
 	m_RaceFinishEventCount = 0;
 	m_RaceFinishEventNext = 0;
+	m_RaceFinishEventGeneration = 0;
+	m_CheckpointEventCount = 0;
+	m_CheckpointEventNext = 0;
+	m_CheckpointEventGeneration = 0;
 
 	m_LastFlagCarrierRed = -1;
 	m_LastFlagCarrierBlue = -1;
+	m_GameStartTick = 0;
 }
 
 bool CMatchEvents::IsCarryingFlag(int ClientID, int FlagCarrierRed, int FlagCarrierBlue)
@@ -70,18 +76,50 @@ const CMatchEvents::CRaceFinishEvent *CMatchEvents::GetRaceFinishEvent(int Index
 	return &m_aRaceFinishEvents[(m_RaceFinishEventNext + MAX_RACE_EVENTS - NumRaceFinishEvents() + Index) % MAX_RACE_EVENTS];
 }
 
+const CMatchEvents::CCheckpointEvent *CMatchEvents::GetCheckpointEvent(int Index) const
+{
+	if(Index < 0 || Index >= NumCheckpointEvents())
+		return 0;
+	return &m_aCheckpointEvents[(m_CheckpointEventNext + MAX_CHECKPOINT_EVENTS - NumCheckpointEvents() + Index) % MAX_CHECKPOINT_EVENTS];
+}
+
+const CMatchEvents::CCheckpointEvent *CMatchEvents::LatestCheckpoint(int ClientID) const
+{
+	for(int i = NumCheckpointEvents() - 1; i >= 0; i--)
+	{
+		const CCheckpointEvent *pEvent = GetCheckpointEvent(i);
+		if(pEvent && pEvent->m_ClientID == ClientID)
+			return pEvent;
+	}
+	return 0;
+}
+
+void CMatchEvents::OnNewSnapshot()
+{
+	if(m_pClient->m_Snap.m_pGameData)
+	{
+		m_GameStartTick = m_pClient->m_Snap.m_pGameData->m_GameStartTick;
+	}
+
+	if(m_pClient->m_Snap.m_pGameDataFlag)
+	{
+		m_LastFlagCarrierRed = m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierRed;
+		m_LastFlagCarrierBlue = m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierBlue;
+	}
+	else
+	{
+		m_LastFlagCarrierRed = -1;
+		m_LastFlagCarrierBlue = -1;
+	}
+}
+
 void CMatchEvents::OnMessage(int MsgType, void *pRawMsg)
 {
 	if(m_pClient->m_SuppressEvents)
 		return;
 
-	int FlagCarrierRed = -1;
-	int FlagCarrierBlue = -1;
-	if(m_pClient->m_Snap.m_pGameDataFlag)
-	{
-		FlagCarrierRed = m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierRed;
-		FlagCarrierBlue = m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierBlue;
-	}
+	int FlagCarrierRed = m_LastFlagCarrierRed;
+	int FlagCarrierBlue = m_LastFlagCarrierBlue;
 
 	if(MsgType == NETMSGTYPE_SV_KILLMSG)
 	{
@@ -104,6 +142,7 @@ void CMatchEvents::OnMessage(int MsgType, void *pRawMsg)
 		m_aKillEvents[m_KillEventNext] = Kill;
 		m_KillEventNext = (m_KillEventNext + 1) % MAX_KILL_EVENTS;
 		m_KillEventCount++;
+		m_KillEventGeneration++;
 
 		if(!Kill.m_TeamSwitch)
 			m_aPlayerStats[Kill.m_VictimID].m_Deaths++;
@@ -145,6 +184,22 @@ void CMatchEvents::OnMessage(int MsgType, void *pRawMsg)
 		m_aRaceFinishEvents[m_RaceFinishEventNext] = Finish;
 		m_RaceFinishEventNext = (m_RaceFinishEventNext + 1) % MAX_RACE_EVENTS;
 		m_RaceFinishEventCount++;
+		m_RaceFinishEventGeneration++;
+	}
+	else if(MsgType == NETMSGTYPE_SV_CHECKPOINT)
+	{
+		CNetMsg_Sv_Checkpoint *pMsg = (CNetMsg_Sv_Checkpoint *)pRawMsg;
+
+		CCheckpointEvent Checkpoint;
+		Checkpoint.m_Tick = Client()->GameTick();
+		Checkpoint.m_TimeStamp = time_get();
+		Checkpoint.m_ClientID = m_pClient->m_LocalClientID;
+		Checkpoint.m_Diff = pMsg->m_Diff;
+
+		m_aCheckpointEvents[m_CheckpointEventNext] = Checkpoint;
+		m_CheckpointEventNext = (m_CheckpointEventNext + 1) % MAX_CHECKPOINT_EVENTS;
+		m_CheckpointEventCount++;
+		m_CheckpointEventGeneration++;
 	}
 }
 

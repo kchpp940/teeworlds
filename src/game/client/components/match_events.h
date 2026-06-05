@@ -12,6 +12,7 @@ public:
 	{
 		MAX_KILL_EVENTS = 32,
 		MAX_RACE_EVENTS = 16,
+		MAX_CHECKPOINT_EVENTS = 16,
 	};
 
 	struct CKillEvent
@@ -36,6 +37,14 @@ public:
 		int m_Diff;
 		bool m_RecordPersonal;
 		bool m_RecordServer;
+	};
+
+	struct CCheckpointEvent
+	{
+		int m_Tick;
+		int64 m_TimeStamp;
+		int m_ClientID;
+		int m_Diff;
 	};
 
 	class CPlayerMatchStats
@@ -66,15 +75,24 @@ private:
 	CKillEvent m_aKillEvents[MAX_KILL_EVENTS];
 	int m_KillEventCount;
 	int m_KillEventNext;
+	int m_KillEventGeneration;
 
 	CRaceFinishEvent m_aRaceFinishEvents[MAX_RACE_EVENTS];
 	int m_RaceFinishEventCount;
 	int m_RaceFinishEventNext;
+	int m_RaceFinishEventGeneration;
+
+	CCheckpointEvent m_aCheckpointEvents[MAX_CHECKPOINT_EVENTS];
+	int m_CheckpointEventCount;
+	int m_CheckpointEventNext;
+	int m_CheckpointEventGeneration;
 
 	CPlayerMatchStats m_aPlayerStats[MAX_CLIENTS];
 
 	int m_LastFlagCarrierRed;
 	int m_LastFlagCarrierBlue;
+
+	int m_GameStartTick;
 
 	static bool IsCarryingFlag(int ClientID, int FlagCarrierRed, int FlagCarrierBlue);
 
@@ -83,12 +101,21 @@ public:
 
 	virtual void OnReset();
 	virtual void OnMessage(int MsgType, void *pRawMsg);
+	virtual void OnNewSnapshot();
 
 	const CKillEvent *GetKillEvent(int Index) const;
 	int NumKillEvents() const { return m_KillEventCount > MAX_KILL_EVENTS ? MAX_KILL_EVENTS : m_KillEventCount; }
+	int KillEventGeneration() const { return m_KillEventGeneration; }
 
 	const CRaceFinishEvent *GetRaceFinishEvent(int Index) const;
 	int NumRaceFinishEvents() const { return m_RaceFinishEventCount > MAX_RACE_EVENTS ? MAX_RACE_EVENTS : m_RaceFinishEventCount; }
+	int RaceFinishEventGeneration() const { return m_RaceFinishEventGeneration; }
+
+	const CCheckpointEvent *GetCheckpointEvent(int Index) const;
+	int NumCheckpointEvents() const { return m_CheckpointEventCount > MAX_CHECKPOINT_EVENTS ? MAX_CHECKPOINT_EVENTS : m_CheckpointEventCount; }
+	int CheckpointEventGeneration() const { return m_CheckpointEventGeneration; }
+
+	const CCheckpointEvent *LatestCheckpoint(int ClientID) const;
 
 	const CPlayerMatchStats *GetPlayerStats(int ClientID) const { return &m_aPlayerStats[ClientID]; }
 	CPlayerMatchStats *PlayerStats(int ClientID) { return &m_aPlayerStats[ClientID]; }
@@ -105,6 +132,8 @@ public:
 	bool IsFlagCarrierBlue(int ClientID) const { return m_LastFlagCarrierBlue == ClientID; }
 	int GetFlagCarrierRed() const { return m_LastFlagCarrierRed; }
 	int GetFlagCarrierBlue() const { return m_LastFlagCarrierBlue; }
+
+	int GameStartTick() const { return m_GameStartTick; }
 };
 
 #endif

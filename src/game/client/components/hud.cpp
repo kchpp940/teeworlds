@@ -20,6 +20,7 @@
 #include "motd.h"
 #include "scoreboard.h"
 #include "stats.h"
+#include "match_events.h"
 
 CHud::CHud()
 {
@@ -28,12 +29,60 @@ CHud::CHud()
 
 	m_WarmupHideTick = 0;
 	m_CheckpointTime = 0;
+	m_LastCheckpointEventGeneration = 0;
+	m_LastKillEventGeneration = 0;
 }
 
 void CHud::OnReset()
 {
 	m_WarmupHideTick = 0;
 	m_CheckpointTime = 0;
+	m_LastCheckpointEventGeneration = 0;
+	m_LastKillEventGeneration = 0;
+}
+
+void CHud::ProcessNewEvents()
+{
+	CMatchEvents *pME = m_pClient->m_pMatchEvents;
+	bool Race = m_pClient->m_GameInfo.m_GameFlags&GAMEFLAG_RACE;
+
+	int CurCpGen = pME->CheckpointEventGeneration();
+	if(CurCpGen != m_LastCheckpointEventGeneration)
+	{
+		int Diff = CurCpGen - m_LastCheckpointEventGeneration;
+		int Start = pME->NumCheckpointEvents() - Diff;
+		if(Start < 0) Start = 0;
+		for(int i = Start; i < pME->NumCheckpointEvents(); i++)
+		{
+			const CMatchEvents::CCheckpointEvent *pEvent = pME->GetCheckpointEvent(i);
+			if(pEvent && pEvent->m_ClientID == m_pClient->m_LocalClientID)
+			{
+				m_CheckpointDiff = pEvent->m_Diff;
+				m_CheckpointTime = pEvent->m_TimeStamp;
+			}
+		}
+		m_LastCheckpointEventGeneration = CurCpGen;
+	}
+
+	if(Race)
+	{
+		int CurKillGen = pME->KillEventGeneration();
+		if(CurKillGen != m_LastKillEventGeneration)
+		{
+			int Diff = CurKillGen - m_LastKillEventGeneration;
+			int Start = pME->NumKillEvents() - Diff;
+			if(Start < 0) Start = 0;
+			for(int i = Start; i < pME->NumKillEvents(); i++)
+			{
+				const CMatchEvents::CKillEvent *pEvent = pME->GetKillEvent(i);
+				if(pEvent && pEvent->m_VictimID == m_pClient->m_LocalClientID)
+				{
+					m_CheckpointTime = 0;
+				}
+			}
+			m_LastKillEventGeneration = CurKillGen;
+		}
+	}
 }
 
 bool CHud::IsLargeWarmupTimerShown()
@@ -955,27 +1004,12 @@ void CHud::RenderLocalTime(float x)
 	TextRender()->TextOutlined(&s_Cursor, aTimeStr, -1);
 }
 
-void CHud::OnMessage(int MsgType, void *pRawMsg)
-{
-	if(MsgType == NETMSGTYPE_SV_CHECKPOINT)
-	{
-		CNetMsg_Sv_Checkpoint *pMsg = (CNetMsg_Sv_Checkpoint *)pRawMsg;
-		m_CheckpointDiff = pMsg->m_Diff;
-		m_CheckpointTime = time_get();
-	}
-	else if(MsgType == NETMSGTYPE_SV_KILLMSG && (m_pClient->m_GameInfo.m_GameFlags&GAMEFLAG_RACE))
-	{
-		// reset checkpoint time on death
-		CNetMsg_Sv_KillMsg *pMsg = (CNetMsg_Sv_KillMsg *)pRawMsg;
-		if(pMsg->m_Victim == m_pClient->m_LocalClientID)
-			m_CheckpointTime = 0;
-	}
-}
-
 void CHud::OnRender()
 {
 	if(!m_pClient->m_Snap.m_pGameData)
 		return;
+
+	ProcessNewEvents();
 
 	// dont render hud if the menu is active
 	if(m_pClient->m_pMenus->IsActive())
