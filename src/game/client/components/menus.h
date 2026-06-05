@@ -629,7 +629,7 @@ private:
 		CTrainerServer();
 		~CTrainerServer();
 		
-		void Init(class IStorage *pStorage);
+		void Init(class IStorage *pStorage, const char *pAppDir);
 		
 		bool Start(const char *pMap, bool InfiniteJumps, bool NoDamage, bool FastRespawn, bool UnlimitedAmmo, bool NoHooks);
 		EStopResult Stop();
@@ -644,7 +644,9 @@ private:
 		int m_State;
 		int m_Port;
 		int m_Pid;
+		char m_aAppDir[IO_MAX_PATH_LENGTH];
 		char m_aConfigPath[IO_MAX_PATH_LENGTH];
+		char m_aRconPassword[32];
 		char m_aErrorString[256];
 		
 		bool FindAvailablePort();
@@ -654,8 +656,11 @@ private:
 		bool WaitForReady(int TimeoutMs);
 		bool GracefulShutdown();
 		void ForceKill();
+		bool WaitForProcessExit(int TimeoutMs);
+		bool SendRconCommand(const char *pCmd);
 		bool TestPortConnection();
 		void SetError(const char *pError);
+		void GenerateRandomPassword(char *pBuf, int BufSize);
 	};
 	
 	enum

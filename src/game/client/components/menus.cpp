@@ -7,7 +7,14 @@
 #include <base/math.h>
 #include <base/vmath.h>
 
-#if defined(CONF_FAMILY_UNIX)
+#if defined(__APPLE__)
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <mach-o/dyld.h>
+#elif defined(CONF_FAMILY_UNIX)
 #include <unistd.h>
 #include <signal.h>
 #include <sys/wait.h>
@@ -26,6 +33,7 @@
 #include <engine/storage.h>
 #include <engine/textrender.h>
 #include <engine/shared/config.h>
+#include <engine/shared/packer.h>
 
 #include <game/version.h>
 #include <generated/protocol.h>
@@ -1915,7 +1923,9 @@ CMenus::CTrainerServer::CTrainerServer()
 	m_State = STATE_IDLE;
 	m_Port = TRAINING_PORT_BASE;
 	m_Pid = -1;
+	m_aAppDir[0] = 0;
 	m_aConfigPath[0] = 0;
+	m_aRconPassword[0] = 0;
 	m_aErrorString[0] = 0;
 }
 
@@ -1924,9 +1934,25 @@ CMenus::CTrainerServer::~CTrainerServer()
 	Cleanup();
 }
 
-void CMenus::CTrainerServer::Init(class IStorage *pStorage)
+void CMenus::CTrainerServer::Init(class IStorage *pStorage, const char *pAppDir)
 {
 	m_pStorage = pStorage;
+	if(pAppDir)
+		str_copy(m_aAppDir, pAppDir, sizeof(m_aAppDir));
+	else
+		m_aAppDir[0] = 0;
+}
+
+void CMenus::CTrainerServer::GenerateRandomPassword(char *pBuf, int BufSize)
+{
+	static const char CHARS[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	int64 Seed = time_get();
+	for(int i = 0; i < BufSize - 1; i++)
+	{
+		Seed = (Seed * 1103515245 + 12345) & 0x7fffffff;
+		pBuf[i] = CHARS[Seed % (sizeof(CHARS)-1)];
+	}
+	pBuf[BufSize-1] = 0;
 }
 
 void CMenus::CTrainerServer::SetError(const char *pError)
@@ -1965,6 +1991,8 @@ bool CMenus::CTrainerServer::GenerateConfig(const char *pMap, bool InfiniteJumps
 	char aPath[IO_MAX_PATH_LENGTH];
 	char aBuf[1024];
 	
+	GenerateRandomPassword(m_aRconPassword, sizeof(m_aRconPassword));
+	
 	m_pStorage->CreateFolder("training", IStorage::TYPE_SAVE);
 	str_format(m_aConfigPath, sizeof(m_aConfigPath), "training/training_%d.cfg", m_Port);
 	m_pStorage->GetCompletePath(IStorage::TYPE_SAVE, m_aConfigPath, aPath, sizeof(aPath));
@@ -1977,6 +2005,9 @@ bool CMenus::CTrainerServer::GenerateConfig(const char *pMap, bool InfiniteJumps
 	}
 	
 	str_format(aBuf, sizeof(aBuf), "sv_port %d\n", m_Port);
+	io_write(File, aBuf, str_length(aBuf));
+	
+	str_format(aBuf, sizeof(aBuf), "sv_rcon_password \"%s\"\n", m_aRconPassword);
 	io_write(File, aBuf, str_length(aBuf));
 	
 	str_format(aBuf, sizeof(aBuf), "sv_map \"%s\"\n", pMap);
@@ -2026,11 +2057,26 @@ bool CMenus::CTrainerServer::FindServerExecutable(char *pPath, int PathSize)
 	const char *pExeName = "teeworlds_srv";
 #endif
 	
+	if(m_aAppDir[0])
+	{
+		str_copy(pPath, m_aAppDir, PathSize);
+		str_append(pPath, "/", PathSize);
+		str_append(pPath, pExeName, PathSize);
+		IOHANDLE File = io_open(pPath, IOFLAG_READ);
+		if(File)
+		{
+			io_close(File);
+			dbg_msg("training", "found server in app dir: %s", pPath);
+			return true;
+		}
+	}
+	
 	if(m_pStorage->FindFile(pExeName, "", IStorage::TYPE_SAVE, pPath, PathSize))
 	{
 		char aFullPath[IO_MAX_PATH_LENGTH];
 		m_pStorage->GetCompletePath(IStorage::TYPE_SAVE, pExeName, aFullPath, sizeof(aFullPath));
 		str_copy(pPath, aFullPath, PathSize);
+		dbg_msg("training", "found server in storage: %s", pPath);
 		return true;
 	}
 	
@@ -2053,6 +2099,7 @@ bool CMenus::CTrainerServer::FindServerExecutable(char *pPath, int PathSize)
 				if(File)
 				{
 					io_close(File);
+					dbg_msg("training", "found server in client dir: %s", pPath);
 					return true;
 				}
 			}
@@ -2064,6 +2111,7 @@ bool CMenus::CTrainerServer::FindServerExecutable(char *pPath, int PathSize)
 	if(File)
 	{
 		io_close(File);
+		dbg_msg("training", "found server in cwd: %s", pPath);
 		return true;
 	}
 	return false;
@@ -2191,8 +2239,93 @@ bool CMenus::CTrainerServer::WaitForReady(int TimeoutMs)
 	return false;
 }
 
+bool CMenus::CTrainerServer::WaitForProcessExit(int TimeoutMs)
+{
+	if(m_Pid <= 0)
+		return true;
+	
+	int64 StartTime = time_get();
+	int64 Timeout = (int64)TimeoutMs * time_freq() / 1000;
+	
+	while(time_get() - StartTime < Timeout)
+	{
+#if defined(CONF_FAMILY_UNIX)
+		int Status;
+		pid_t Result = waitpid(m_Pid, &Status, WNOHANG);
+		if(Result > 0)
+		{
+			dbg_msg("training", "server process %d exited", m_Pid);
+			m_Pid = -1;
+			return true;
+		}
+		else if(Result < 0)
+		{
+			m_Pid = -1;
+			return true;
+		}
+#elif defined(CONF_FAMILY_WINDOWS)
+		HANDLE hProcess = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_INFORMATION, FALSE, m_Pid);
+		if(hProcess)
+		{
+			DWORD WaitResult = WaitForSingleObject(hProcess, 100);
+			CloseHandle(hProcess);
+			if(WaitResult == WAIT_OBJECT_0)
+			{
+				dbg_msg("training", "server process %d exited", m_Pid);
+				m_Pid = -1;
+				return true;
+			}
+		}
+		else
+		{
+			m_Pid = -1;
+			return true;
+		}
+#endif
+		thread_sleep(50);
+	}
+	return false;
+}
+
 bool CMenus::CTrainerServer::GracefulShutdown()
 {
+	if(m_Pid <= 0)
+		return true;
+	
+	dbg_msg("training", "attempting graceful shutdown of server %d", m_Pid);
+	
+	if(SendRconCommand("shutdown"))
+	{
+		if(WaitForProcessExit(TRAINING_SHUTDOWN_TIMEOUT_MS / 2))
+		{
+			dbg_msg("training", "server shutdown gracefully via rcon");
+			return true;
+		}
+		dbg_msg("training", "rcon shutdown timeout, trying signal");
+	}
+	else
+	{
+		dbg_msg("training", "rcon not available, using signal termination");
+	}
+	
+#if defined(CONF_FAMILY_UNIX)
+	if(kill(m_Pid, SIGTERM) == 0)
+	{
+		return WaitForProcessExit(TRAINING_SHUTDOWN_TIMEOUT_MS / 2);
+	}
+#elif defined(CONF_FAMILY_WINDOWS)
+	HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, m_Pid);
+	if(hProcess)
+	{
+		if(TerminateProcess(hProcess, 0))
+		{
+			CloseHandle(hProcess);
+			return WaitForProcessExit(TRAINING_SHUTDOWN_TIMEOUT_MS / 2);
+		}
+		CloseHandle(hProcess);
+	}
+#endif
+	
 	return false;
 }
 
@@ -2201,11 +2334,13 @@ void CMenus::CTrainerServer::ForceKill()
 	if(m_Pid <= 0)
 		return;
 	
+	dbg_msg("training", "force killing server %d", m_Pid);
+	
 #if defined(CONF_FAMILY_UNIX)
 	kill(m_Pid, SIGKILL);
-	waitpid(m_Pid, NULL, WNOHANG);
+	waitpid(m_Pid, NULL, 0);
 #elif defined(CONF_FAMILY_WINDOWS)
-	HANDLE hProcess = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION, FALSE, m_Pid);
+	HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, m_Pid);
 	if(hProcess)
 	{
 		TerminateProcess(hProcess, 0);
@@ -2213,8 +2348,48 @@ void CMenus::CTrainerServer::ForceKill()
 	}
 #endif
 	
-	dbg_msg("training", "killed server %d", m_Pid);
 	m_Pid = -1;
+}
+
+bool CMenus::CTrainerServer::SendRconCommand(const char *pCmd)
+{
+	if(!m_aRconPassword[0])
+		return false;
+	
+	NETADDR Addr;
+	if(net_host_lookup("localhost", &Addr, NETTYPE_IPV4) != 0)
+		return false;
+	Addr.port = m_Port;
+	
+	NETADDR BindAddr;
+	mem_zero(&BindAddr, sizeof(BindAddr));
+	BindAddr.type = NETTYPE_IPV4;
+	BindAddr.port = 0;
+	NETSOCKET Socket = net_udp_create(BindAddr, 1);
+	if(Socket.type == NETTYPE_INVALID)
+		return false;
+	
+	{
+		CPacker Packer;
+		Packer.Reset();
+		Packer.AddInt(NETMSG_RCON_AUTH);
+		Packer.AddString(m_aRconPassword);
+		net_udp_send(Socket, &Addr, Packer.Data(), Packer.Size());
+	}
+	
+	thread_sleep(50);
+	
+	{
+		CPacker Packer;
+		Packer.Reset();
+		Packer.AddInt(NETMSG_RCON_CMD);
+		Packer.AddString(pCmd);
+		net_udp_send(Socket, &Addr, Packer.Data(), Packer.Size());
+	}
+	
+	net_udp_close(Socket);
+	dbg_msg("training", "sent rcon command: %s", pCmd);
+	return true;
 }
 
 bool CMenus::CTrainerServer::Start(const char *pMap, bool InfiniteJumps, bool NoDamage, bool FastRespawn, bool UnlimitedAmmo, bool NoHooks)
@@ -2260,22 +2435,22 @@ CMenus::CTrainerServer::EStopResult CMenus::CTrainerServer::Stop()
 		return STOP_OK;
 	
 	m_State = STATE_STOPPING;
+	EStopResult Result = STOP_FAILED;
 	
-	GracefulShutdown();
-	
-	int64 StartTime = time_get();
-	int64 Timeout = TRAINING_SHUTDOWN_TIMEOUT_MS * time_freq() / 1000;
-	
-	while(time_get() - StartTime < Timeout)
+	if(GracefulShutdown())
 	{
-		thread_sleep(100);
+		Result = STOP_GRACEFUL;
+	}
+	else
+	{
+		dbg_msg("training", "graceful shutdown timeout, forcing kill");
+		ForceKill();
+		Result = STOP_FORCED;
 	}
 	
-	ForceKill();
 	Cleanup();
-	
 	m_State = STATE_IDLE;
-	return STOP_FORCED;
+	return Result;
 }
 
 void CMenus::CTrainerServer::Cleanup()
@@ -2333,7 +2508,47 @@ void CMenus::StartTrainingMode()
 	m_TrainingSavedState.m_Saved = true;
 	Config()->m_ClTrainingMode = 1;
 	
-	m_TrainerServer.Init(Storage());
+	char aAppDir[IO_MAX_PATH_LENGTH];
+	aAppDir[0] = 0;
+#if defined(__APPLE__)
+	{
+		uint32_t Size = sizeof(aAppDir);
+		if(_NSGetExecutablePath(aAppDir, &Size) == 0)
+		{
+			char *pLastSlash = strrchr(aAppDir, '/');
+			if(pLastSlash)
+				*pLastSlash = 0;
+		}
+		else
+		{
+			aAppDir[0] = 0;
+		}
+	}
+#elif defined(CONF_FAMILY_UNIX)
+	{
+		ssize_t Len = readlink("/proc/self/exe", aAppDir, sizeof(aAppDir)-1);
+		if(Len > 0)
+		{
+			aAppDir[Len] = 0;
+			char *pLastSlash = strrchr(aAppDir, '/');
+			if(pLastSlash)
+				*pLastSlash = 0;
+		}
+		else
+		{
+			aAppDir[0] = 0;
+		}
+	}
+#elif defined(CONF_FAMILY_WINDOWS)
+	{
+		GetModuleFileNameA(NULL, aAppDir, sizeof(aAppDir));
+		char *pLastSlash = strrchr(aAppDir, '\\');
+		if(pLastSlash)
+			*pLastSlash = 0;
+	}
+#endif
+	
+	m_TrainerServer.Init(Storage(), aAppDir);
 
 	if(m_TrainerServer.Start(Config()->m_ClTrainingMap,
 		Config()->m_ClTrainingInfiniteJumps != 0,
