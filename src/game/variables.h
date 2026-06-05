@@ -150,19 +150,4 @@ MACRO_CONFIG_INT(SvVoteKickBantime, sv_vote_kick_bantime, 5, 0, 1440, CFGFLAG_SA
 
 MACRO_CONFIG_INT(DbgFocus, dbg_focus, 0, 0, 1, CFGFLAG_CLIENT, "")
 MACRO_CONFIG_INT(DbgTuning, dbg_tuning, 0, 0, 1, CFGFLAG_CLIENT, "")
-
-// training mode
-MACRO_CONFIG_INT(ClTrainingMode, cl_training_mode, 0, 0, 1, CFGFLAG_CLIENT, "Whether training mode is active")
-MACRO_CONFIG_STR(ClTrainingMap, cl_training_map, 128, "dm1", CFGFLAG_CLIENT|CFGFLAG_SAVE, "Map to use for training mode")
-MACRO_CONFIG_INT(ClTrainingInfiniteJumps, cl_training_infinite_jumps, 1, 0, 1, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Enable infinite jumps in training mode")
-MACRO_CONFIG_INT(ClTrainingNoDamage, cl_training_no_damage, 1, 0, 1, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Disable damage in training mode")
-MACRO_CONFIG_INT(ClTrainingFastRespawn, cl_training_fast_respawn, 1, 0, 1, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Enable fast respawn in training mode")
-MACRO_CONFIG_INT(ClTrainingUnlimitedAmmo, cl_training_unlimited_ammo, 1, 0, 1, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Enable unlimited ammo in training mode")
-MACRO_CONFIG_INT(ClTrainingNoHooks, cl_training_no_hooks, 0, 0, 1, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Disable player hooking in training mode")
-MACRO_CONFIG_INT(SvTrainingMode, sv_training_mode, 0, 0, 1, CFGFLAG_SERVER, "Whether training mode is active on server")
-MACRO_CONFIG_INT(SvInfiniteJumps, sv_infinite_jumps, 0, 0, 1, CFGFLAG_SERVER, "Enable infinite jumps")
-MACRO_CONFIG_INT(SvNoDamage, sv_no_damage, 0, 0, 1, CFGFLAG_SERVER, "Disable damage")
-MACRO_CONFIG_INT(SvFastRespawn, sv_fast_respawn, 0, 0, 1, CFGFLAG_SERVER, "Enable fast respawn")
-MACRO_CONFIG_INT(SvUnlimitedAmmo, sv_unlimited_ammo, 0, 0, 1, CFGFLAG_SERVER, "Enable unlimited ammo")
-MACRO_CONFIG_INT(SvNoPlayerHooking, sv_no_player_hooking, 0, 0, 1, CFGFLAG_SERVER, "Disable player hooking")
 #endif

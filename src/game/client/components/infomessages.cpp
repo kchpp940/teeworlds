@@ -8,6 +8,7 @@
 
 #include <game/client/gameclient.h>
 #include <game/client/animstate.h>
+#include <game/client/components/match_events.h>
 #include "infomessages.h"
 
 #include "chat.h"

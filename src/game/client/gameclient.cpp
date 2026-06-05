@@ -51,6 +51,7 @@
 #include "components/sounds.h"
 #include "components/spectator.h"
 #include "components/stats.h"
+#include "components/match_events.h"
 #include "components/voting.h"
 
 inline void AppendDecimals(char *pBuf, int Size, int Time, int Precision)
@@ -114,6 +115,7 @@ static CDamageInd gsDamageInd;
 static CVoting gs_Voting;
 static CSpectator gs_Spectator;
 static CStats gs_Stats;
+static CMatchEvents gs_MatchEvents;
 
 static CPlayers gs_Players;
 static CNamePlates gs_NamePlates;
@@ -255,6 +257,7 @@ void CGameClient::OnConsoleInit()
 	m_pMapLayersBackGround = &::gs_MapLayersBackGround;
 	m_pMapLayersForeGround = &::gs_MapLayersForeGround;
 	m_pStats = &::gs_Stats;
+	m_pMatchEvents = &::gs_MatchEvents;
 
 	// make a list of all the systems, make sure to add them in the corrent render order
 	m_All.Add(m_pSkins);
@@ -286,6 +289,7 @@ void CGameClient::OnConsoleInit()
 	m_All.Add(&gs_Broadcast);
 	m_All.Add(&gs_DebugHud);
 	m_All.Add(&gs_Notifications);
+	m_All.Add(m_pMatchEvents);
 	m_All.Add(&gs_Scoreboard);
 	m_All.Add(m_pStats);
 	m_All.Add(m_pMotd);

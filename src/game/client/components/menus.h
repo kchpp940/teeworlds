@@ -86,7 +86,6 @@ private:
 		PAGE_SETTINGS,
 		PAGE_SYSTEM,
 		PAGE_START,
-		PAGE_TRAINING,
 
 		SETTINGS_GENERAL=0,
 		SETTINGS_PLAYER,
@@ -603,100 +602,6 @@ private:
 	// loading
 	int m_LoadCurrent;
 	int m_LoadTotal;
-
-	// training mode
-	class CTrainerServer
-	{
-	public:
-		enum EState
-		{
-			STATE_IDLE = 0,
-			STATE_CONFIG_GENERATED,
-			STATE_STARTING,
-			STATE_READY,
-			STATE_STOPPING,
-			STATE_ERROR,
-		};
-		
-		enum EStopResult
-		{
-			STOP_OK = 0,
-			STOP_GRACEFUL,
-			STOP_FORCED,
-			STOP_FAILED,
-		};
-		
-		CTrainerServer();
-		~CTrainerServer();
-		
-		void Init(class IStorage *pStorage, const char *pAppDir);
-		
-		bool Start(const char *pMap, bool InfiniteJumps, bool NoDamage, bool FastRespawn, bool UnlimitedAmmo, bool NoHooks);
-		EStopResult Stop();
-		void Cleanup();
-		
-		int State() const { return m_State; }
-		int Port() const { return m_Port; }
-		const char *ErrorString() const { return m_aErrorString; }
-		
-	private:
-		class IStorage *m_pStorage;
-		int m_State;
-		int m_Port;
-		int m_Pid;
-		char m_aAppDir[IO_MAX_PATH_LENGTH];
-		char m_aConfigPath[IO_MAX_PATH_LENGTH];
-		char m_aRconPassword[32];
-		char m_aErrorString[256];
-		
-		bool FindAvailablePort();
-		bool GenerateConfig(const char *pMap, bool InfiniteJumps, bool NoDamage, bool FastRespawn, bool UnlimitedAmmo, bool NoHooks);
-		bool FindServerExecutable(char *pPath, int PathSize);
-		bool LaunchProcess();
-		bool WaitForReady(int TimeoutMs);
-		bool GracefulShutdown();
-		void ForceKill();
-		bool WaitForProcessExit(int TimeoutMs);
-		bool SendRconCommand(const char *pCmd);
-		bool TestPortConnection();
-		void SetError(const char *pError);
-		void GenerateRandomPassword(char *pBuf, int BufSize);
-	};
-	
-	enum
-	{
-		TRAINING_PORT_BASE = 8310,
-		TRAINING_PORT_END = 8399,
-		TRAINING_READY_TIMEOUT_MS = 5000,
-		TRAINING_SHUTDOWN_TIMEOUT_MS = 2000,
-	};
-	struct CSavedServerConfig
-	{
-		char m_aMap[128];
-		int m_SvInfiniteJumps;
-		int m_SvNoDamage;
-		int m_SvFastRespawn;
-		int m_SvUnlimitedAmmo;
-		int m_SvNoPlayerHooking;
-		int m_SvTrainingMode;
-		int m_SvPort;
-	};
-	struct CSavedState
-	{
-		char m_aServerAddress[256];
-		int m_OldState;
-		CSavedServerConfig m_ServerConfig;
-		bool m_WasOnline;
-		bool m_Saved;
-	} m_TrainingSavedState;
-	CTrainerServer m_TrainerServer;
-	void SaveServerConfig(CSavedServerConfig *pConfig);
-	void RestoreServerConfig(const CSavedServerConfig *pConfig);
-	void StartTrainingMode();
-	void StopTrainingMode();
-	void RenderTrainingMenu(CUIRect MainView);
-	static void Con_Training(IConsole::IResult *pResult, void *pUserData);
-	static void Con_TrainingStop(IConsole::IResult *pResult, void *pUserData);
 
 	void SetMenuPage(int NewPage);
 

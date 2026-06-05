@@ -1,0 +1,110 @@
+/* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
+/* If you are missing that file, acquire a complete release at teeworlds.com.                */
+#ifndef GAME_CLIENT_COMPONENTS_MATCH_EVENTS_H
+#define GAME_CLIENT_COMPONENTS_MATCH_EVENTS_H
+
+#include <game/client/component.h>
+
+class CMatchEvents : public CComponent
+{
+public:
+	enum
+	{
+		MAX_KILL_EVENTS = 32,
+		MAX_RACE_EVENTS = 16,
+	};
+
+	struct CKillEvent
+	{
+		int m_Tick;
+		int m_VictimID;
+		int m_KillerID;
+		int m_Weapon;
+		int m_ModeSpecial;
+		bool m_TeamSwitch;
+
+		bool m_VictimCarryingFlag;
+		bool m_KillerCarryingFlag;
+		bool m_SameTeamKill;
+	};
+
+	struct CRaceFinishEvent
+	{
+		int m_Tick;
+		int m_ClientID;
+		int m_Time;
+		int m_Diff;
+		bool m_RecordPersonal;
+		bool m_RecordServer;
+	};
+
+	class CPlayerMatchStats
+	{
+	public:
+		CPlayerMatchStats() { Reset(); }
+
+		void Reset();
+
+		int m_Kills;
+		int m_Deaths;
+		int m_Suicides;
+		int m_BestSpree;
+		int m_CurrentSpree;
+		int m_aKillsWith[NUM_WEAPONS];
+		int m_aDeathsFrom[NUM_WEAPONS];
+
+		int m_FlagGrabs;
+		int m_FlagCaptures;
+		int m_CarriersKilled;
+		int m_KillsCarrying;
+		int m_DeathsCarrying;
+
+		int m_IngameTicks;
+	};
+
+private:
+	CKillEvent m_aKillEvents[MAX_KILL_EVENTS];
+	int m_KillEventCount;
+	int m_KillEventNext;
+
+	CRaceFinishEvent m_aRaceFinishEvents[MAX_RACE_EVENTS];
+	int m_RaceFinishEventCount;
+	int m_RaceFinishEventNext;
+
+	CPlayerMatchStats m_aPlayerStats[MAX_CLIENTS];
+
+	int m_LastFlagCarrierRed;
+	int m_LastFlagCarrierBlue;
+
+	static bool IsCarryingFlag(int ClientID, int FlagCarrierRed, int FlagCarrierBlue);
+
+public:
+	CMatchEvents();
+
+	virtual void OnReset();
+	virtual void OnMessage(int MsgType, void *pRawMsg);
+
+	const CKillEvent *GetKillEvent(int Index) const;
+	int NumKillEvents() const { return m_KillEventCount > MAX_KILL_EVENTS ? MAX_KILL_EVENTS : m_KillEventCount; }
+
+	const CRaceFinishEvent *GetRaceFinishEvent(int Index) const;
+	int NumRaceFinishEvents() const { return m_RaceFinishEventCount > MAX_RACE_EVENTS ? MAX_RACE_EVENTS : m_RaceFinishEventCount; }
+
+	const CPlayerMatchStats *GetPlayerStats(int ClientID) const { return &m_aPlayerStats[ClientID]; }
+	CPlayerMatchStats *PlayerStats(int ClientID) { return &m_aPlayerStats[ClientID]; }
+
+	void OnFlagGrab(int ClientID);
+	void OnFlagCapture(int ClientID);
+	void OnPlayerEnter(int ClientID, int Team);
+	void OnPlayerLeave(int ClientID);
+	void UpdatePlayTime(int Ticks);
+	void OnMatchStart();
+
+	bool IsFlagCarrier(int ClientID) const;
+	bool IsFlagCarrierRed(int ClientID) const { return m_LastFlagCarrierRed == ClientID; }
+	bool IsFlagCarrierBlue(int ClientID) const { return m_LastFlagCarrierBlue == ClientID; }
+	int GetFlagCarrierRed() const { return m_LastFlagCarrierRed; }
+	int GetFlagCarrierBlue() const { return m_LastFlagCarrierBlue; }
+};
+
+#endif

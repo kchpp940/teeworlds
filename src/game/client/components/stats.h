@@ -4,6 +4,7 @@
 #define GAME_CLIENT_COMPONENTS_STATS_H
 
 #include <game/client/component.h>
+#include <game/client/components/match_events.h>
 
 enum
 {
@@ -24,33 +25,9 @@ enum
 class CStats: public CComponent
 {
 private:
-// stats
-	class CPlayerStats
-	{
-	public:
-		CPlayerStats()
-		{
-			Reset();
-		}
+	typedef class CMatchEvents::CPlayerMatchStats CPlayerStats;
 
-		int m_IngameTicks;
-		int m_aKillsWith[NUM_WEAPONS];
-		int m_aDeathsFrom[NUM_WEAPONS];
-		int m_Kills;
-		int m_Deaths;
-		int m_Suicides;
-		int m_BestSpree;
-		int m_CurrentSpree;
-
-		int m_FlagGrabs;
-		int m_FlagCaptures;
-		int m_CarriersKilled;
-		int m_KillsCarrying;
-		int m_DeathsCarrying;
-
-		void Reset();
-	};
-	CPlayerStats m_aStats[MAX_CLIENTS];
+	const CPlayerStats *PlayerStats(int ClientID) const;
 
 	bool m_Active;
 	bool m_Activate;
@@ -68,7 +45,6 @@ public:
 	virtual void OnConsoleInit();
 	virtual void OnRender();
 	virtual void OnRelease();
-	virtual void OnMessage(int MsgType, void *pRawMsg);
 
 	void UpdatePlayTime(int Ticks);
 	void OnMatchStart();
@@ -77,7 +53,7 @@ public:
 	void OnPlayerEnter(int ClientID, int Team);
 	void OnPlayerLeave(int ClientID);
 
-	const CPlayerStats *GetPlayerStats(int ClientID) const { return &m_aStats[ClientID]; }
+	const CPlayerStats *GetPlayerStats(int ClientID) const;
 };
 
 #endif

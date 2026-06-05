@@ -87,12 +87,6 @@ void CMenus::RenderStartMenu(CUIRect MainView)
 
 	TopMenu.HSplitBottom(5.0f, &TopMenu, 0); // little space
 	TopMenu.HSplitBottom(40.0f, &TopMenu, &Button);
-	static CButtonContainer s_TrainingButton;
-	if(DoButton_Menu(&s_TrainingButton, Localize("Training Mode"), 0, &Button, 0, CUIRect::CORNER_ALL, Rounding, 0.5f) || CheckHotKey(KEY_T))
-		NewPage = PAGE_TRAINING;
-
-	TopMenu.HSplitBottom(5.0f, &TopMenu, 0); // little space
-	TopMenu.HSplitBottom(40.0f, &TopMenu, &Button);
 	static CButtonContainer s_PlayButton;
 	if(DoButton_Menu(&s_PlayButton, Localize("Play"), 0, &Button, Config()->m_ClShowStartMenuImages ? "play_game" : 0, CUIRect::CORNER_ALL, Rounding, 0.5f) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER) || CheckHotKey(KEY_P))
 		NewPage = Config()->m_UiBrowserPage;
