@@ -605,6 +605,11 @@ private:
 	int m_LoadTotal;
 
 	// training mode
+	enum
+	{
+		TRAINING_PORT_BASE = 8310,
+		TRAINING_CONFIG_SLOTS = 10,
+	};
 	struct CSavedServerConfig
 	{
 		char m_aMap[128];
@@ -614,17 +619,26 @@ private:
 		int m_SvUnlimitedAmmo;
 		int m_SvNoPlayerHooking;
 		int m_SvTrainingMode;
+		int m_SvPort;
 	};
 	struct CSavedState
 	{
 		char m_aServerAddress[256];
 		int m_OldState;
 		CSavedServerConfig m_ServerConfig;
+		char m_aTrainingConfigPath[512];
+		int m_TrainingServerPid;
+		int m_TrainingPort;
 		bool m_WasOnline;
 		bool m_Saved;
+		bool m_ServerStarted;
 	} m_TrainingSavedState;
 	void SaveServerConfig(CSavedServerConfig *pConfig);
 	void RestoreServerConfig(const CSavedServerConfig *pConfig);
+	bool GenerateTrainingConfig(char *pConfigPath, int ConfigPathSize, int Port);
+	int StartTrainingServerProcess(const char *pConfigPath, int Port);
+	void StopTrainingServerProcess(int Pid);
+	void CleanupTrainingFiles(const char *pConfigPath);
 	void StartTrainingMode();
 	void StopTrainingMode();
 	void RenderTrainingMenu(CUIRect MainView);
