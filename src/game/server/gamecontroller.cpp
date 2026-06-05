@@ -739,6 +739,11 @@ void IGameController::Snap(int SnappingClient)
 
 void IGameController::Tick()
 {
+	if(Config()->m_SvNoPlayerHooking)
+		GameServer()->Tuning()->m_PlayerHooking = 0;
+	else
+		GameServer()->Tuning()->m_PlayerHooking = 1;
+
 	// handle game states
 	if(m_GameState != IGS_GAME_RUNNING)
 	{

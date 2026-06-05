@@ -270,7 +270,7 @@ void CCharacter::FireWeapon()
 		return;
 
 	// check for ammo
-	if(!m_aWeapons[m_ActiveWeapon].m_Ammo)
+	if(!m_aWeapons[m_ActiveWeapon].m_Ammo && !Config()->m_SvUnlimitedAmmo)
 	{
 		// 125ms is a magical limit of how fast a human can click
 		m_ReloadTimer = 125 * Server()->TickSpeed() / 1000;
@@ -399,7 +399,7 @@ void CCharacter::FireWeapon()
 
 	m_AttackTick = Server()->Tick();
 
-	if(m_aWeapons[m_ActiveWeapon].m_Ammo > 0) // -1 == unlimited
+	if(m_aWeapons[m_ActiveWeapon].m_Ammo > 0 && !Config()->m_SvUnlimitedAmmo) // -1 == unlimited
 		m_aWeapons[m_ActiveWeapon].m_Ammo--;
 
 	if(!m_ReloadTimer)
@@ -526,6 +526,9 @@ void CCharacter::Tick()
 {
 	m_Core.m_Input = m_Input;
 	m_Core.Tick(true);
+
+	if(Config()->m_SvInfiniteJumps)
+		m_Core.m_Jumped &= ~2;
 
 	// handle leaving gamelayer
 	if(GameLayerClipped(m_Pos))
@@ -714,6 +717,9 @@ void CCharacter::Die(int Killer, int Weapon)
 bool CCharacter::TakeDamage(vec2 Force, vec2 Source, int Dmg, int From, int Weapon)
 {
 	m_Core.m_Vel += Force;
+
+	if(Config()->m_SvNoDamage)
+		return false;
 
 	if(From >= 0)
 	{

@@ -185,11 +185,19 @@ void CMenus::RenderGame(CUIRect MainView)
 			}
 		}
 
-		// disconnect button
+		// disconnect / stop training button
 		ButtonRow.VSplitRight(ButtonWidth, &ButtonRow, &Button);
 		static CButtonContainer s_DisconnectButton;
-		if(DoButton_Menu(&s_DisconnectButton, Localize("Disconnect"), 0, &Button))
-			Client()->Disconnect();
+		if(Config()->m_ClTrainingMode)
+		{
+			if(DoButton_Menu(&s_DisconnectButton, Localize("Stop Training"), 0, &Button))
+				StopTrainingMode();
+		}
+		else
+		{
+			if(DoButton_Menu(&s_DisconnectButton, Localize("Disconnect"), 0, &Button))
+				Client()->Disconnect();
+		}
 
 		// Record button
 		ButtonRow.VSplitRight(50.0f, &ButtonRow, 0);

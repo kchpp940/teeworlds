@@ -1,6 +1,8 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 
+#include <engine/shared/config.h>
+
 #include "entities/character.h"
 #include "entities/flag.h"
 #include "gamecontext.h"
@@ -81,7 +83,8 @@ void CPlayer::Tick()
 		if(!m_pCharacter && m_Team == TEAM_SPECTATORS && m_SpecMode == SPEC_FREEVIEW)
 			m_ViewPos -= vec2(clamp(m_ViewPos.x-m_LatestActivity.m_TargetX, -500.0f, 500.0f), clamp(m_ViewPos.y-m_LatestActivity.m_TargetY, -400.0f, 400.0f));
 
-		if(!m_pCharacter && m_DieTick+Server()->TickSpeed()*3 <= Server()->Tick() && !m_DeadSpecMode)
+		int RespawnDelay = GameServer()->Config()->m_SvFastRespawn ? 0 : 3;
+		if(!m_pCharacter && m_DieTick+Server()->TickSpeed()*RespawnDelay <= Server()->Tick() && !m_DeadSpecMode)
 			Respawn();
 
 		if(!m_pCharacter && m_Team == TEAM_SPECTATORS && m_pSpecFlag)

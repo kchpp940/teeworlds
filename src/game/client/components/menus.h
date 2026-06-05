@@ -86,6 +86,7 @@ private:
 		PAGE_SETTINGS,
 		PAGE_SYSTEM,
 		PAGE_START,
+		PAGE_TRAINING,
 
 		SETTINGS_GENERAL=0,
 		SETTINGS_PLAYER,
@@ -602,6 +603,19 @@ private:
 	// loading
 	int m_LoadCurrent;
 	int m_LoadTotal;
+
+	// training mode
+	struct CSavedState
+	{
+		char m_aServerAddress[256];
+		int m_OldState;
+		bool m_Saved;
+	} m_TrainingSavedState;
+	void StartTrainingMode();
+	void StopTrainingMode();
+	void RenderTrainingMenu(CUIRect MainView);
+	static void Con_Training(IConsole::IResult *pResult, void *pUserData);
+	static void Con_TrainingStop(IConsole::IResult *pResult, void *pUserData);
 
 	void SetMenuPage(int NewPage);
 

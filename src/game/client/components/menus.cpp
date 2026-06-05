@@ -77,6 +77,10 @@ CMenus::CMenus()
 	m_ActiveListBox = ACTLB_NONE;
 
 	m_PopupCountrySelection = -2;
+
+	m_TrainingSavedState.m_Saved = false;
+	m_TrainingSavedState.m_aServerAddress[0] = 0;
+	m_TrainingSavedState.m_OldState = IClient::STATE_OFFLINE;
 }
 
 void CMenus::DoIcon(int ImageId, int SpriteId, const CUIRect *pRect, const vec4 *pColor)
@@ -1123,6 +1127,8 @@ void CMenus::RenderMenu(CUIRect Screen)
 					RenderDemoList(MainView);
 				else if(m_MenuPage == PAGE_SETTINGS)
 					RenderSettings(MainView);
+				else if(m_MenuPage == PAGE_TRAINING)
+					RenderTrainingMenu(MainView);
 			}
 		}
 
@@ -1663,6 +1669,8 @@ bool CMenus::OnInput(IInput::CEvent e)
 void CMenus::OnConsoleInit()
 {
 	Console()->Register("play", "r[file]", CFGFLAG_CLIENT|CFGFLAG_STORE, Con_Play, this, "Play the file specified");
+	Console()->Register("training", "?s[map]", CFGFLAG_CLIENT|CFGFLAG_STORE, Con_Training, this, "Start training mode on specified map (default: dm1)");
+	Console()->Register("training_stop", "", CFGFLAG_CLIENT, Con_TrainingStop, this, "Stop training mode and restore previous state");
 }
 
 void CMenus::OnShutdown()
@@ -1864,9 +1872,140 @@ void CMenus::SetMenuPage(int NewPage)
 		case PAGE_SETTINGS: CameraPos = CCamera::POS_SETTINGS_GENERAL+Config()->m_UiSettingsPage; break;
 		case PAGE_INTERNET: CameraPos = CCamera::POS_INTERNET; break;
 		case PAGE_LAN: CameraPos = CCamera::POS_LAN;
+		case PAGE_TRAINING: CameraPos = CCamera::POS_SETTINGS_GENERAL; break;
 		}
 
 		if(CameraPos != -1 && m_pClient && m_pClient->m_pCamera)
 			m_pClient->m_pCamera->ChangePosition(CameraPos);
+	}
+}
+
+void CMenus::Con_Training(IConsole::IResult *pResult, void *pUserData)
+{
+	CMenus *pSelf = (CMenus *)pUserData;
+	if(pResult->NumArguments() > 0)
+	{
+		str_copy(pSelf->Config()->m_ClTrainingMap, pResult->GetString(0), sizeof(pSelf->Config()->m_ClTrainingMap));
+	}
+	pSelf->StartTrainingMode();
+}
+
+void CMenus::Con_TrainingStop(IConsole::IResult *pResult, void *pUserData)
+{
+	CMenus *pSelf = (CMenus *)pUserData;
+	pSelf->StopTrainingMode();
+}
+
+void CMenus::StartTrainingMode()
+{
+	if(Client()->State() == IClient::STATE_ONLINE && Config()->m_ClTrainingMode)
+		return;
+
+	if(Client()->State() == IClient::STATE_ONLINE)
+	{
+		str_copy(m_TrainingSavedState.m_aServerAddress, Client()->ServerAddress(), sizeof(m_TrainingSavedState.m_aServerAddress));
+		m_TrainingSavedState.m_OldState = Client()->State();
+		m_TrainingSavedState.m_Saved = true;
+		Client()->Disconnect();
+	}
+
+	Config()->m_ClTrainingMode = 1;
+
+	char aBuf[512];
+	str_format(aBuf, sizeof(aBuf), "sv_map \"%s\"", Config()->m_ClTrainingMap);
+	Console()->ExecuteLine(aBuf);
+
+	str_format(aBuf, sizeof(aBuf), "sv_training_mode %d", Config()->m_ClTrainingMode);
+	Console()->ExecuteLine(aBuf);
+
+	str_format(aBuf, sizeof(aBuf), "sv_infinite_jumps %d", Config()->m_ClTrainingInfiniteJumps);
+	Console()->ExecuteLine(aBuf);
+
+	str_format(aBuf, sizeof(aBuf), "sv_no_damage %d", Config()->m_ClTrainingNoDamage);
+	Console()->ExecuteLine(aBuf);
+
+	str_format(aBuf, sizeof(aBuf), "sv_fast_respawn %d", Config()->m_ClTrainingFastRespawn);
+	Console()->ExecuteLine(aBuf);
+
+	str_format(aBuf, sizeof(aBuf), "sv_unlimited_ammo %d", Config()->m_ClTrainingUnlimitedAmmo);
+	Console()->ExecuteLine(aBuf);
+
+	Client()->Connect("localhost");
+}
+
+void CMenus::StopTrainingMode()
+{
+	if(!Config()->m_ClTrainingMode)
+		return;
+
+	Config()->m_ClTrainingMode = 0;
+	Client()->Disconnect();
+
+	if(m_TrainingSavedState.m_Saved && m_TrainingSavedState.m_aServerAddress[0])
+	{
+		Client()->Connect(m_TrainingSavedState.m_aServerAddress);
+		m_TrainingSavedState.m_Saved = false;
+		m_TrainingSavedState.m_aServerAddress[0] = 0;
+	}
+}
+
+void CMenus::RenderTrainingMenu(CUIRect MainView)
+{
+	RenderBackButton(MainView);
+
+	MainView.Margin(20.0f, &MainView);
+
+	CUIRect Label, CheckBox, Button, Row;
+	MainView.HSplitTop(40.0f, &Label, &MainView);
+	UI()->DoLabel(&Label, Localize("Training Mode"), 32.0f, TEXTALIGN_CENTER);
+
+	MainView.HSplitTop(30.0f, 0, &MainView);
+
+	MainView.HSplitTop(25.0f, &Label, &MainView);
+	UI()->DoLabel(&Label, Localize("Map:"), 16.0f, TEXTALIGN_LEFT);
+
+	MainView.HSplitTop(30.0f, &Row, &MainView);
+	CUIRect MapInput;
+	Row.VSplitLeft(300.0f, &MapInput, 0);
+	static CLineInput s_MapInput(Config()->m_ClTrainingMap, sizeof(Config()->m_ClTrainingMap));
+	UI()->DoEditBoxOption(&s_MapInput, &MapInput, Localize("Map"), 100.0f);
+
+	MainView.HSplitTop(20.0f, 0, &MainView);
+
+	MainView.HSplitTop(25.0f, &CheckBox, &MainView);
+	if(DoButton_CheckBox(&Config()->m_ClTrainingInfiniteJumps, Localize("Infinite Jumps"), Config()->m_ClTrainingInfiniteJumps, &CheckBox))
+		Config()->m_ClTrainingInfiniteJumps ^= 1;
+
+	MainView.HSplitTop(5.0f, 0, &MainView);
+
+	MainView.HSplitTop(25.0f, &CheckBox, &MainView);
+	if(DoButton_CheckBox(&Config()->m_ClTrainingNoDamage, Localize("No Damage"), Config()->m_ClTrainingNoDamage, &CheckBox))
+		Config()->m_ClTrainingNoDamage ^= 1;
+
+	MainView.HSplitTop(5.0f, 0, &MainView);
+
+	MainView.HSplitTop(25.0f, &CheckBox, &MainView);
+	if(DoButton_CheckBox(&Config()->m_ClTrainingFastRespawn, Localize("Fast Respawn"), Config()->m_ClTrainingFastRespawn, &CheckBox))
+		Config()->m_ClTrainingFastRespawn ^= 1;
+
+	MainView.HSplitTop(5.0f, 0, &MainView);
+
+	MainView.HSplitTop(25.0f, &CheckBox, &MainView);
+	if(DoButton_CheckBox(&Config()->m_ClTrainingUnlimitedAmmo, Localize("Unlimited Ammo"), Config()->m_ClTrainingUnlimitedAmmo, &CheckBox))
+		Config()->m_ClTrainingUnlimitedAmmo ^= 1;
+
+	MainView.HSplitTop(5.0f, 0, &MainView);
+
+	MainView.HSplitTop(25.0f, &CheckBox, &MainView);
+	if(DoButton_CheckBox(&Config()->m_ClTrainingNoHooks, Localize("No Player Hooking"), Config()->m_ClTrainingNoHooks, &CheckBox))
+		Config()->m_ClTrainingNoHooks ^= 1;
+
+	MainView.HSplitTop(30.0f, 0, &MainView);
+
+	MainView.HSplitTop(40.0f, &Button, &MainView);
+	static CButtonContainer s_StartButton;
+	if(DoButton_Menu(&s_StartButton, Localize("Start Training"), 0, &Button, 0, CUIRect::CORNER_ALL, 10.0f, 0.5f))
+	{
+		StartTrainingMode();
 	}
 }

@@ -20,7 +20,6 @@
 #include "motd.h"
 #include "scoreboard.h"
 #include "stats.h"
-#include "spectator.h"
 
 CHud::CHud()
 {
@@ -782,78 +781,9 @@ void CHud::RenderSpectatorHud()
 	const int SpecID = m_pClient->m_Snap.m_SpecInfo.m_SpectatorID;
 	const int SpecMode = m_pClient->m_Snap.m_SpecInfo.m_SpecMode;
 
-	const float BoxHeight = 15.0f;
-	float BoxY = m_Height - BoxHeight;
-	float AutoFollowOffset = 0.0f;
-
-	bool AutoFollowEnabled = Config()->m_ClSpecAutoFollow || (m_pClient->m_pSpectator && m_pClient->m_pSpectator->IsAutoFollowActive());
-	bool AutoFollowActive = m_pClient->m_pSpectator && m_pClient->m_pSpectator->IsAutoFollowActive();
-	bool AutoFollowPaused = m_pClient->m_pSpectator && m_pClient->m_pSpectator->IsAutoFollowPaused();
-
-	if(AutoFollowEnabled)
-	{
-		const float AutoFollowWidth = 200.0f;
-		float ReasonY = BoxY - BoxHeight - 2.0f;
-		float StatusY = ReasonY - BoxHeight - 2.0f;
-
-		if(SpecMode == SPEC_PLAYER && SpecID != -1 && m_pClient->m_pSpectator)
-		{
-			int FollowClientID = m_pClient->m_pSpectator->GetCurrentFollowClientID();
-			const char *pReason = m_pClient->m_pSpectator->GetCurrentFollowReasonString();
-
-			if(FollowClientID == SpecID && pReason && pReason[0] != '\0')
-			{
-				CUIRect ReasonRect = {m_Width - AutoFollowWidth - 10.0f, ReasonY, AutoFollowWidth, BoxHeight};
-				ReasonRect.Draw(vec4(0.0f, 0.0f, 0.0f, 0.4f), 5.0f, CUIRect::CORNER_TL);
-
-				static CTextCursor s_ReasonCursor(7.0f);
-				s_ReasonCursor.MoveTo(m_Width - AutoFollowWidth - 4.0f, ReasonY + 2.0f);
-				s_ReasonCursor.Reset();
-
-				const char *pTargetName = Config()->m_ClShowsocial ? m_pClient->m_aClients[SpecID].m_aName : "";
-				char aReasonBuf[128];
-				str_format(aReasonBuf, sizeof(aReasonBuf), "Following: %s - %s", pTargetName, Localize(pReason));
-
-				TextRender()->TextColor(0.5f, 0.8f, 1.0f, 1.0f);
-				TextRender()->TextOutlined(&s_ReasonCursor, aReasonBuf, -1);
-				TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-
-				AutoFollowOffset = BoxHeight + 2.0f;
-			}
-		}
-
-		{
-			CUIRect StatusRect = {m_Width - AutoFollowWidth - 10.0f, StatusY, AutoFollowWidth, BoxHeight};
-			StatusRect.Draw(vec4(0.0f, 0.0f, 0.0f, 0.4f), 5.0f, CUIRect::CORNER_TL);
-
-			static CTextCursor s_StatusCursor(7.0f);
-			s_StatusCursor.MoveTo(m_Width - AutoFollowWidth - 4.0f, StatusY + 2.0f);
-			s_StatusCursor.Reset();
-
-			if(AutoFollowPaused)
-			{
-				TextRender()->TextColor(1.0f, 0.7f, 0.3f, 1.0f);
-				TextRender()->TextOutlined(&s_StatusCursor, Localize("Auto-Follow (Paused - manual override)"), -1);
-			}
-			else if(AutoFollowActive)
-			{
-				TextRender()->TextColor(0.5f, 1.0f, 0.5f, 1.0f);
-				TextRender()->TextOutlined(&s_StatusCursor, Localize("Auto-Follow (Active)"), -1);
-			}
-			else
-			{
-				TextRender()->TextColor(0.7f, 0.7f, 0.7f, 1.0f);
-				TextRender()->TextOutlined(&s_StatusCursor, Localize("Auto-Follow (Standby)"), -1);
-			}
-			TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-
-			AutoFollowOffset += BoxHeight + 2.0f;
-		}
-	}
-
 	// draw the box
 	const float Width = m_Width * 0.25f - 2.0f;
-	CUIRect Rect = {m_Width-Width, BoxY - AutoFollowOffset, Width, BoxHeight};
+	CUIRect Rect = {m_Width-Width, m_Height-15.0f, Width, 15.0f};
 	Rect.Draw(vec4(0.0f, 0.0f, 0.0f, 0.4f), 5.0f, CUIRect::CORNER_TL);
 
 	// draw the text
@@ -861,7 +791,7 @@ void CHud::RenderSpectatorHud()
 	char aBuf[128];
 
 	static CTextCursor s_SpectateLabelCursor(8.0f);
-	s_SpectateLabelCursor.MoveTo(m_Width-Width+6.0f, BoxY - AutoFollowOffset + 2.0f);
+	s_SpectateLabelCursor.MoveTo(m_Width-Width+6.0f, m_Height-13.0f);
 	s_SpectateLabelCursor.Reset(g_Localization.Version());
 	str_format(aBuf, sizeof(aBuf), "%s: ", Localize("Spectate"));
 	TextRender()->TextOutlined(&s_SpectateLabelCursor, aBuf, -1);
@@ -889,7 +819,7 @@ void CHud::RenderSpectatorHud()
 		break;
 	}
 
-	vec2 NamePosition = vec2(s_SpectateLabelCursor.BoundingBox().Right()+3.0f, BoxY - AutoFollowOffset + 2.0f);
+	vec2 NamePosition = vec2(s_SpectateLabelCursor.BoundingBox().Right()+3.0f, m_Height-13.0f);
 	if(SpecMode == SPEC_PLAYER || SpecID != -1)
 		NamePosition.x += UI()->DrawClientID(s_SpectateTargetCursor.m_FontSize, NamePosition, SpecID);
 

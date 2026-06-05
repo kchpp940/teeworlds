@@ -109,10 +109,6 @@ MACRO_CONFIG_INT(ClShowLocalTimeAlways, cl_show_local_time_always, 0, 0, 1, CFGF
 
 MACRO_CONFIG_INT(ClLastVersionPlayed, cl_last_version_played, PREV_CLIENT_VERSION, 0, 0, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Last version of the game that was played")
 
-MACRO_CONFIG_INT(ClSpecAutoFollow, cl_spec_auto_follow, 0, 0, 1, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Auto follow key players in spectator mode")
-MACRO_CONFIG_INT(ClSpecAutoFollowPause, cl_spec_auto_follow_pause, 0, 0, 1, CFGFLAG_CLIENT, "Pause auto follow after manual switch")
-MACRO_CONFIG_INT(ClSpecAutoFollowMode, cl_spec_auto_follow_mode, 0, 0, 2, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Auto follow mode: 0=smart, 1=score, 2=action")
-
 // server
 MACRO_CONFIG_INT(SvWarmup, sv_warmup, 0, -1, 1000, CFGFLAG_SAVE|CFGFLAG_SERVER, "Number of seconds to do warmup before match starts (0 disables, -1 all players ready)")
 MACRO_CONFIG_INT(SvCountdown, sv_countdown, 0, -1, 1000, CFGFLAG_SAVE|CFGFLAG_SERVER, "Number of seconds to freeze the game in a countdown before match starts (0 enables only for survival gamemodes, -1 disables)")
@@ -154,4 +150,19 @@ MACRO_CONFIG_INT(SvVoteKickBantime, sv_vote_kick_bantime, 5, 0, 1440, CFGFLAG_SA
 
 MACRO_CONFIG_INT(DbgFocus, dbg_focus, 0, 0, 1, CFGFLAG_CLIENT, "")
 MACRO_CONFIG_INT(DbgTuning, dbg_tuning, 0, 0, 1, CFGFLAG_CLIENT, "")
+
+// training mode
+MACRO_CONFIG_INT(ClTrainingMode, cl_training_mode, 0, 0, 1, CFGFLAG_CLIENT, "Whether training mode is active")
+MACRO_CONFIG_STR(ClTrainingMap, cl_training_map, 128, "dm1", CFGFLAG_CLIENT|CFGFLAG_SAVE, "Map to use for training mode")
+MACRO_CONFIG_INT(ClTrainingInfiniteJumps, cl_training_infinite_jumps, 1, 0, 1, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Enable infinite jumps in training mode")
+MACRO_CONFIG_INT(ClTrainingNoDamage, cl_training_no_damage, 1, 0, 1, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Disable damage in training mode")
+MACRO_CONFIG_INT(ClTrainingFastRespawn, cl_training_fast_respawn, 1, 0, 1, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Enable fast respawn in training mode")
+MACRO_CONFIG_INT(ClTrainingUnlimitedAmmo, cl_training_unlimited_ammo, 1, 0, 1, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Enable unlimited ammo in training mode")
+MACRO_CONFIG_INT(ClTrainingNoHooks, cl_training_no_hooks, 0, 0, 1, CFGFLAG_CLIENT|CFGFLAG_SAVE, "Disable player hooking in training mode")
+MACRO_CONFIG_INT(SvTrainingMode, sv_training_mode, 0, 0, 1, CFGFLAG_SERVER, "Whether training mode is active on server")
+MACRO_CONFIG_INT(SvInfiniteJumps, sv_infinite_jumps, 0, 0, 1, CFGFLAG_SERVER, "Enable infinite jumps")
+MACRO_CONFIG_INT(SvNoDamage, sv_no_damage, 0, 0, 1, CFGFLAG_SERVER, "Disable damage")
+MACRO_CONFIG_INT(SvFastRespawn, sv_fast_respawn, 0, 0, 1, CFGFLAG_SERVER, "Enable fast respawn")
+MACRO_CONFIG_INT(SvUnlimitedAmmo, sv_unlimited_ammo, 0, 0, 1, CFGFLAG_SERVER, "Enable unlimited ammo")
+MACRO_CONFIG_INT(SvNoPlayerHooking, sv_no_player_hooking, 0, 0, 1, CFGFLAG_SERVER, "Disable player hooking")
 #endif
