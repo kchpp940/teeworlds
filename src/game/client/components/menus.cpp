@@ -79,8 +79,10 @@ CMenus::CMenus()
 	m_PopupCountrySelection = -2;
 
 	m_TrainingSavedState.m_Saved = false;
+	m_TrainingSavedState.m_WasOnline = false;
 	m_TrainingSavedState.m_aServerAddress[0] = 0;
 	m_TrainingSavedState.m_OldState = IClient::STATE_OFFLINE;
+	mem_zero(&m_TrainingSavedState.m_ServerConfig, sizeof(m_TrainingSavedState.m_ServerConfig));
 }
 
 void CMenus::DoIcon(int ImageId, int SpriteId, const CUIRect *pRect, const vec4 *pColor)
@@ -1896,39 +1898,52 @@ void CMenus::Con_TrainingStop(IConsole::IResult *pResult, void *pUserData)
 	pSelf->StopTrainingMode();
 }
 
+void CMenus::SaveServerConfig(CSavedServerConfig *pConfig)
+{
+	str_copy(pConfig->m_aMap, Config()->m_SvMap, sizeof(pConfig->m_aMap));
+	pConfig->m_SvTrainingMode = Config()->m_SvTrainingMode;
+	pConfig->m_SvInfiniteJumps = Config()->m_SvInfiniteJumps;
+	pConfig->m_SvNoDamage = Config()->m_SvNoDamage;
+	pConfig->m_SvFastRespawn = Config()->m_SvFastRespawn;
+	pConfig->m_SvUnlimitedAmmo = Config()->m_SvUnlimitedAmmo;
+	pConfig->m_SvNoPlayerHooking = Config()->m_SvNoPlayerHooking;
+}
+
+void CMenus::RestoreServerConfig(const CSavedServerConfig *pConfig)
+{
+	str_copy(Config()->m_SvMap, pConfig->m_aMap, sizeof(Config()->m_SvMap));
+	Config()->m_SvTrainingMode = pConfig->m_SvTrainingMode;
+	Config()->m_SvInfiniteJumps = pConfig->m_SvInfiniteJumps;
+	Config()->m_SvNoDamage = pConfig->m_SvNoDamage;
+	Config()->m_SvFastRespawn = pConfig->m_SvFastRespawn;
+	Config()->m_SvUnlimitedAmmo = pConfig->m_SvUnlimitedAmmo;
+	Config()->m_SvNoPlayerHooking = pConfig->m_SvNoPlayerHooking;
+}
+
 void CMenus::StartTrainingMode()
 {
-	if(Client()->State() == IClient::STATE_ONLINE && Config()->m_ClTrainingMode)
+	if(Config()->m_ClTrainingMode)
 		return;
 
-	if(Client()->State() == IClient::STATE_ONLINE)
+	m_TrainingSavedState.m_WasOnline = (Client()->State() == IClient::STATE_ONLINE);
+	if(m_TrainingSavedState.m_WasOnline)
 	{
 		str_copy(m_TrainingSavedState.m_aServerAddress, Client()->ServerAddress(), sizeof(m_TrainingSavedState.m_aServerAddress));
 		m_TrainingSavedState.m_OldState = Client()->State();
-		m_TrainingSavedState.m_Saved = true;
 		Client()->Disconnect();
 	}
 
+	SaveServerConfig(&m_TrainingSavedState.m_ServerConfig);
+	m_TrainingSavedState.m_Saved = true;
 	Config()->m_ClTrainingMode = 1;
 
-	char aBuf[512];
-	str_format(aBuf, sizeof(aBuf), "sv_map \"%s\"", Config()->m_ClTrainingMap);
-	Console()->ExecuteLine(aBuf);
-
-	str_format(aBuf, sizeof(aBuf), "sv_training_mode %d", Config()->m_ClTrainingMode);
-	Console()->ExecuteLine(aBuf);
-
-	str_format(aBuf, sizeof(aBuf), "sv_infinite_jumps %d", Config()->m_ClTrainingInfiniteJumps);
-	Console()->ExecuteLine(aBuf);
-
-	str_format(aBuf, sizeof(aBuf), "sv_no_damage %d", Config()->m_ClTrainingNoDamage);
-	Console()->ExecuteLine(aBuf);
-
-	str_format(aBuf, sizeof(aBuf), "sv_fast_respawn %d", Config()->m_ClTrainingFastRespawn);
-	Console()->ExecuteLine(aBuf);
-
-	str_format(aBuf, sizeof(aBuf), "sv_unlimited_ammo %d", Config()->m_ClTrainingUnlimitedAmmo);
-	Console()->ExecuteLine(aBuf);
+	Config()->m_SvTrainingMode = 1;
+	str_copy(Config()->m_SvMap, Config()->m_ClTrainingMap, sizeof(Config()->m_SvMap));
+	Config()->m_SvInfiniteJumps = Config()->m_ClTrainingInfiniteJumps;
+	Config()->m_SvNoDamage = Config()->m_ClTrainingNoDamage;
+	Config()->m_SvFastRespawn = Config()->m_ClTrainingFastRespawn;
+	Config()->m_SvUnlimitedAmmo = Config()->m_ClTrainingUnlimitedAmmo;
+	Config()->m_SvNoPlayerHooking = Config()->m_ClTrainingNoHooks;
 
 	Client()->Connect("localhost");
 }
@@ -1941,10 +1956,17 @@ void CMenus::StopTrainingMode()
 	Config()->m_ClTrainingMode = 0;
 	Client()->Disconnect();
 
-	if(m_TrainingSavedState.m_Saved && m_TrainingSavedState.m_aServerAddress[0])
+	if(m_TrainingSavedState.m_Saved)
 	{
-		Client()->Connect(m_TrainingSavedState.m_aServerAddress);
+		RestoreServerConfig(&m_TrainingSavedState.m_ServerConfig);
+
+		if(m_TrainingSavedState.m_WasOnline && m_TrainingSavedState.m_aServerAddress[0])
+		{
+			Client()->Connect(m_TrainingSavedState.m_aServerAddress);
+		}
+
 		m_TrainingSavedState.m_Saved = false;
+		m_TrainingSavedState.m_WasOnline = false;
 		m_TrainingSavedState.m_aServerAddress[0] = 0;
 	}
 }

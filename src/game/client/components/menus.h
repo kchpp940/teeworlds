@@ -605,12 +605,26 @@ private:
 	int m_LoadTotal;
 
 	// training mode
+	struct CSavedServerConfig
+	{
+		char m_aMap[128];
+		int m_SvInfiniteJumps;
+		int m_SvNoDamage;
+		int m_SvFastRespawn;
+		int m_SvUnlimitedAmmo;
+		int m_SvNoPlayerHooking;
+		int m_SvTrainingMode;
+	};
 	struct CSavedState
 	{
 		char m_aServerAddress[256];
 		int m_OldState;
+		CSavedServerConfig m_ServerConfig;
+		bool m_WasOnline;
 		bool m_Saved;
 	} m_TrainingSavedState;
+	void SaveServerConfig(CSavedServerConfig *pConfig);
+	void RestoreServerConfig(const CSavedServerConfig *pConfig);
 	void StartTrainingMode();
 	void StopTrainingMode();
 	void RenderTrainingMenu(CUIRect MainView);
