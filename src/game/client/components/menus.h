@@ -605,10 +605,65 @@ private:
 	int m_LoadTotal;
 
 	// training mode
+	class CTrainerServer
+	{
+	public:
+		enum EState
+		{
+			STATE_IDLE = 0,
+			STATE_CONFIG_GENERATED,
+			STATE_STARTING,
+			STATE_READY,
+			STATE_STOPPING,
+			STATE_ERROR,
+		};
+		
+		enum EStopResult
+		{
+			STOP_OK = 0,
+			STOP_GRACEFUL,
+			STOP_FORCED,
+			STOP_FAILED,
+		};
+		
+		CTrainerServer();
+		~CTrainerServer();
+		
+		void Init(class IStorage *pStorage);
+		
+		bool Start(const char *pMap, bool InfiniteJumps, bool NoDamage, bool FastRespawn, bool UnlimitedAmmo, bool NoHooks);
+		EStopResult Stop();
+		void Cleanup();
+		
+		int State() const { return m_State; }
+		int Port() const { return m_Port; }
+		const char *ErrorString() const { return m_aErrorString; }
+		
+	private:
+		class IStorage *m_pStorage;
+		int m_State;
+		int m_Port;
+		int m_Pid;
+		char m_aConfigPath[IO_MAX_PATH_LENGTH];
+		char m_aErrorString[256];
+		
+		bool FindAvailablePort();
+		bool GenerateConfig(const char *pMap, bool InfiniteJumps, bool NoDamage, bool FastRespawn, bool UnlimitedAmmo, bool NoHooks);
+		bool FindServerExecutable(char *pPath, int PathSize);
+		bool LaunchProcess();
+		bool WaitForReady(int TimeoutMs);
+		bool GracefulShutdown();
+		void ForceKill();
+		bool TestPortConnection();
+		void SetError(const char *pError);
+	};
+	
 	enum
 	{
 		TRAINING_PORT_BASE = 8310,
-		TRAINING_CONFIG_SLOTS = 10,
+		TRAINING_PORT_END = 8399,
+		TRAINING_READY_TIMEOUT_MS = 5000,
+		TRAINING_SHUTDOWN_TIMEOUT_MS = 2000,
 	};
 	struct CSavedServerConfig
 	{
@@ -626,19 +681,12 @@ private:
 		char m_aServerAddress[256];
 		int m_OldState;
 		CSavedServerConfig m_ServerConfig;
-		char m_aTrainingConfigPath[512];
-		int m_TrainingServerPid;
-		int m_TrainingPort;
 		bool m_WasOnline;
 		bool m_Saved;
-		bool m_ServerStarted;
 	} m_TrainingSavedState;
+	CTrainerServer m_TrainerServer;
 	void SaveServerConfig(CSavedServerConfig *pConfig);
 	void RestoreServerConfig(const CSavedServerConfig *pConfig);
-	bool GenerateTrainingConfig(char *pConfigPath, int ConfigPathSize, int Port);
-	int StartTrainingServerProcess(const char *pConfigPath, int Port);
-	void StopTrainingServerProcess(int Pid);
-	void CleanupTrainingFiles(const char *pConfigPath);
 	void StartTrainingMode();
 	void StopTrainingMode();
 	void RenderTrainingMenu(CUIRect MainView);

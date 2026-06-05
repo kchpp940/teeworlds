@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <sys/types.h>
+#include <fcntl.h>
 #elif defined(CONF_FAMILY_WINDOWS)
 #include <windows.h>
 #endif
@@ -89,12 +91,8 @@ CMenus::CMenus()
 
 	m_TrainingSavedState.m_Saved = false;
 	m_TrainingSavedState.m_WasOnline = false;
-	m_TrainingSavedState.m_ServerStarted = false;
 	m_TrainingSavedState.m_aServerAddress[0] = 0;
-	m_TrainingSavedState.m_aTrainingConfigPath[0] = 0;
 	m_TrainingSavedState.m_OldState = IClient::STATE_OFFLINE;
-	m_TrainingSavedState.m_TrainingServerPid = -1;
-	m_TrainingSavedState.m_TrainingPort = TRAINING_PORT_BASE;
 	mem_zero(&m_TrainingSavedState.m_ServerConfig, sizeof(m_TrainingSavedState.m_ServerConfig));
 }
 
@@ -1911,6 +1909,389 @@ void CMenus::Con_TrainingStop(IConsole::IResult *pResult, void *pUserData)
 	pSelf->StopTrainingMode();
 }
 
+CMenus::CTrainerServer::CTrainerServer()
+{
+	m_pStorage = 0;
+	m_State = STATE_IDLE;
+	m_Port = TRAINING_PORT_BASE;
+	m_Pid = -1;
+	m_aConfigPath[0] = 0;
+	m_aErrorString[0] = 0;
+}
+
+CMenus::CTrainerServer::~CTrainerServer()
+{
+	Cleanup();
+}
+
+void CMenus::CTrainerServer::Init(class IStorage *pStorage)
+{
+	m_pStorage = pStorage;
+}
+
+void CMenus::CTrainerServer::SetError(const char *pError)
+{
+	str_copy(m_aErrorString, pError, sizeof(m_aErrorString));
+	dbg_msg("training", "error: %s", pError);
+}
+
+bool CMenus::CTrainerServer::FindAvailablePort()
+{
+	for(int TestPort = TRAINING_PORT_BASE; TestPort <= TRAINING_PORT_END; TestPort++)
+	{
+		char aTestPath[IO_MAX_PATH_LENGTH];
+		str_format(aTestPath, sizeof(aTestPath), "training/training_%d.cfg", TestPort);
+		if(!m_pStorage->FindFile(aTestPath, "", IStorage::TYPE_SAVE, 0, 0))
+		{
+			NETADDR BindAddr;
+			mem_zero(&BindAddr, sizeof(BindAddr));
+			BindAddr.type = NETTYPE_IPV4;
+			BindAddr.port = TestPort;
+			NETSOCKET Socket = net_udp_create(BindAddr, 0);
+			if(Socket.type != NETTYPE_INVALID)
+			{
+				net_udp_close(Socket);
+				m_Port = TestPort;
+				return true;
+			}
+		}
+	}
+	SetError("no available port");
+	return false;
+}
+
+bool CMenus::CTrainerServer::GenerateConfig(const char *pMap, bool InfiniteJumps, bool NoDamage, bool FastRespawn, bool UnlimitedAmmo, bool NoHooks)
+{
+	char aPath[IO_MAX_PATH_LENGTH];
+	char aBuf[1024];
+	
+	m_pStorage->CreateFolder("training", IStorage::TYPE_SAVE);
+	str_format(m_aConfigPath, sizeof(m_aConfigPath), "training/training_%d.cfg", m_Port);
+	m_pStorage->GetCompletePath(IStorage::TYPE_SAVE, m_aConfigPath, aPath, sizeof(aPath));
+	
+	IOHANDLE File = io_open(aPath, IOFLAG_WRITE);
+	if(!File)
+	{
+		SetError("failed to create training config");
+		return false;
+	}
+	
+	str_format(aBuf, sizeof(aBuf), "sv_port %d\n", m_Port);
+	io_write(File, aBuf, str_length(aBuf));
+	
+	str_format(aBuf, sizeof(aBuf), "sv_map \"%s\"\n", pMap);
+	io_write(File, aBuf, str_length(aBuf));
+	
+	str_format(aBuf, sizeof(aBuf), "sv_training_mode 1\n");
+	io_write(File, aBuf, str_length(aBuf));
+	
+	str_format(aBuf, sizeof(aBuf), "sv_infinite_jumps %d\n", InfiniteJumps ? 1 : 0);
+	io_write(File, aBuf, str_length(aBuf));
+	
+	str_format(aBuf, sizeof(aBuf), "sv_no_damage %d\n", NoDamage ? 1 : 0);
+	io_write(File, aBuf, str_length(aBuf));
+	
+	str_format(aBuf, sizeof(aBuf), "sv_fast_respawn %d\n", FastRespawn ? 1 : 0);
+	io_write(File, aBuf, str_length(aBuf));
+	
+	str_format(aBuf, sizeof(aBuf), "sv_unlimited_ammo %d\n", UnlimitedAmmo ? 1 : 0);
+	io_write(File, aBuf, str_length(aBuf));
+	
+	str_format(aBuf, sizeof(aBuf), "sv_no_player_hooking %d\n", NoHooks ? 1 : 0);
+	io_write(File, aBuf, str_length(aBuf));
+	
+	str_format(aBuf, sizeof(aBuf), "sv_register 0\n");
+	io_write(File, aBuf, str_length(aBuf));
+	
+	str_format(aBuf, sizeof(aBuf), "sv_max_clients 8\n");
+	io_write(File, aBuf, str_length(aBuf));
+	
+	str_format(aBuf, sizeof(aBuf), "sv_name \"Training Server\"\n");
+	io_write(File, aBuf, str_length(aBuf));
+	
+	io_close(File);
+	
+	m_State = STATE_CONFIG_GENERATED;
+	dbg_msg("training", "config generated: %s", aPath);
+	return true;
+}
+
+bool CMenus::CTrainerServer::FindServerExecutable(char *pPath, int PathSize)
+{
+#if defined(CONF_FAMILY_UNIX)
+	const char *pExeName = "teeworlds_srv";
+#elif defined(CONF_FAMILY_WINDOWS)
+	const char *pExeName = "teeworlds_srv.exe";
+#else
+	const char *pExeName = "teeworlds_srv";
+#endif
+	
+	if(m_pStorage->FindFile(pExeName, "", IStorage::TYPE_SAVE, pPath, PathSize))
+	{
+		char aFullPath[IO_MAX_PATH_LENGTH];
+		m_pStorage->GetCompletePath(IStorage::TYPE_SAVE, pExeName, aFullPath, sizeof(aFullPath));
+		str_copy(pPath, aFullPath, PathSize);
+		return true;
+	}
+	
+	#if defined(CONF_FAMILY_UNIX)
+		char aExeDir[IO_MAX_PATH_LENGTH];
+		if(m_pStorage->FindFile("teeworlds", "", IStorage::TYPE_SAVE, aExeDir, sizeof(aExeDir)))
+		{
+			char aFullPath[IO_MAX_PATH_LENGTH];
+			m_pStorage->GetCompletePath(IStorage::TYPE_SAVE, "teeworlds", aFullPath, sizeof(aFullPath));
+			unsigned int Pos = ~0U;
+			for(unsigned i = 0; aFullPath[i]; ++i)
+				if(aFullPath[i] == '/' || aFullPath[i] == '\\')
+					Pos = i;
+			
+			if(Pos < IO_MAX_PATH_LENGTH)
+			{
+				str_copy(pPath, aFullPath, Pos+1);
+				str_append(pPath, pExeName, PathSize);
+				IOHANDLE File = io_open(pPath, IOFLAG_READ);
+				if(File)
+				{
+					io_close(File);
+					return true;
+				}
+			}
+		}
+	#endif
+	
+	str_copy(pPath, pExeName, PathSize);
+	IOHANDLE File = io_open(pPath, IOFLAG_READ);
+	if(File)
+	{
+		io_close(File);
+		return true;
+	}
+	return false;
+}
+
+bool CMenus::CTrainerServer::LaunchProcess()
+{
+	char aExePath[IO_MAX_PATH_LENGTH];
+	char aFullConfigPath[IO_MAX_PATH_LENGTH];
+	
+	if(!FindServerExecutable(aExePath, sizeof(aExePath)))
+	{
+		SetError("teeworlds_srv executable not found");
+		return false;
+	}
+	
+	m_pStorage->GetCompletePath(IStorage::TYPE_SAVE, m_aConfigPath, aFullConfigPath, sizeof(aFullConfigPath));
+	
+	dbg_msg("training", "launching: %s -f %s", aExePath, aFullConfigPath);
+	
+#if defined(CONF_FAMILY_UNIX)
+	pid_t Pid = fork();
+	if(Pid == 0)
+	{
+		setsid();
+		
+		int FdNull = open("/dev/null", O_RDWR);
+		if(FdNull >= 0)
+		{
+			dup2(FdNull, STDIN_FILENO);
+			dup2(FdNull, STDOUT_FILENO);
+			dup2(FdNull, STDERR_FILENO);
+			if(FdNull > 2)
+				close(FdNull);
+		}
+		
+		char *argv[] = {
+			(char *)"teeworlds_srv",
+			(char *)"-f",
+			aFullConfigPath,
+			NULL
+		};
+		execvp(aExePath, argv);
+		_exit(1);
+	}
+	else if(Pid > 0)
+	{
+		m_Pid = (int)Pid;
+		return true;
+	}
+	SetError("fork failed");
+	return false;
+#elif defined(CONF_FAMILY_WINDOWS)
+	STARTUPINFO si = {0};
+	PROCESS_INFORMATION pi = {0};
+	si.cb = sizeof(si);
+	si.dwFlags = STARTF_USESHOWWINDOW;
+	si.wShowWindow = SW_HIDE;
+	
+	char aCmdLine[1024];
+	str_format(aCmdLine, sizeof(aCmdLine), "\"%s\" -f \"%s\"", aExePath, aFullConfigPath);
+	
+	if(CreateProcess(NULL, aCmdLine, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+	{
+		CloseHandle(pi.hThread);
+		CloseHandle(pi.hProcess);
+		m_Pid = (int)pi.dwProcessId;
+		return true;
+	}
+	SetError("CreateProcess failed");
+	return false;
+#else
+	SetError("process launch not supported");
+	return false;
+#endif
+}
+
+bool CMenus::CTrainerServer::TestPortConnection()
+{
+	NETADDR Addr;
+	if(net_host_lookup("localhost", &Addr, NETTYPE_IPV4) != 0)
+		return false;
+	Addr.port = m_Port;
+	
+	NETADDR BindAddr;
+	mem_zero(&BindAddr, sizeof(BindAddr));
+	BindAddr.type = NETTYPE_IPV4;
+	BindAddr.port = 0;
+	NETSOCKET Socket = net_udp_create(BindAddr, 1);
+	if(Socket.type == NETTYPE_INVALID)
+		return false;
+	
+	unsigned char aBuf[128];
+	mem_zero(aBuf, sizeof(aBuf));
+	aBuf[0] = 0xff;
+	aBuf[1] = 0xff;
+	aBuf[2] = 0xff;
+	aBuf[3] = 0xff;
+	str_copy((char *)&aBuf[4], "getinfo", sizeof(aBuf)-4);
+	
+	net_udp_send(Socket, &Addr, aBuf, 4+7);
+	
+	NETADDR RecvAddr;
+	int Result = net_udp_recv(Socket, &RecvAddr, aBuf, sizeof(aBuf));
+	
+	net_udp_close(Socket);
+	return Result > 0;
+}
+
+bool CMenus::CTrainerServer::WaitForReady(int TimeoutMs)
+{
+	int64 StartTime = time_get();
+	int64 Timeout = TimeoutMs * time_freq() / 1000;
+	
+	while(time_get() - StartTime < Timeout)
+	{
+		if(TestPortConnection())
+		{
+			dbg_msg("training", "server ready on port %d", m_Port);
+			return true;
+		}
+		thread_sleep(100);
+	}
+	SetError("server startup timeout");
+	return false;
+}
+
+bool CMenus::CTrainerServer::GracefulShutdown()
+{
+	return false;
+}
+
+void CMenus::CTrainerServer::ForceKill()
+{
+	if(m_Pid <= 0)
+		return;
+	
+#if defined(CONF_FAMILY_UNIX)
+	kill(m_Pid, SIGKILL);
+	waitpid(m_Pid, NULL, WNOHANG);
+#elif defined(CONF_FAMILY_WINDOWS)
+	HANDLE hProcess = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION, FALSE, m_Pid);
+	if(hProcess)
+	{
+		TerminateProcess(hProcess, 0);
+		CloseHandle(hProcess);
+	}
+#endif
+	
+	dbg_msg("training", "killed server %d", m_Pid);
+	m_Pid = -1;
+}
+
+bool CMenus::CTrainerServer::Start(const char *pMap, bool InfiniteJumps, bool NoDamage, bool FastRespawn, bool UnlimitedAmmo, bool NoHooks)
+{
+	if(m_State != STATE_IDLE && m_State != STATE_ERROR)
+	{
+		SetError("server already running");
+		return false;
+	}
+	
+	m_aErrorString[0] = 0;
+	m_State = STATE_STARTING;
+	
+	if(!FindAvailablePort())
+		return false;
+	
+	if(!GenerateConfig(pMap, InfiniteJumps, NoDamage, FastRespawn, UnlimitedAmmo, NoHooks))
+	{
+		Cleanup();
+		return false;
+	}
+	
+	if(!LaunchProcess())
+	{
+		Cleanup();
+		return false;
+	}
+	
+	if(!WaitForReady(TRAINING_READY_TIMEOUT_MS))
+	{
+		Cleanup();
+		return false;
+	}
+	
+	m_State = STATE_READY;
+	dbg_msg("training", "training server ready (pid=%d, port=%d)", m_Pid, m_Port);
+	return true;
+}
+
+CMenus::CTrainerServer::EStopResult CMenus::CTrainerServer::Stop()
+{
+	if(m_State == STATE_IDLE)
+		return STOP_OK;
+	
+	m_State = STATE_STOPPING;
+	
+	GracefulShutdown();
+	
+	int64 StartTime = time_get();
+	int64 Timeout = TRAINING_SHUTDOWN_TIMEOUT_MS * time_freq() / 1000;
+	
+	while(time_get() - StartTime < Timeout)
+	{
+		thread_sleep(100);
+	}
+	
+	ForceKill();
+	Cleanup();
+	
+	m_State = STATE_IDLE;
+	return STOP_FORCED;
+}
+
+void CMenus::CTrainerServer::Cleanup()
+{
+	if(m_Pid > 0)
+	{
+		ForceKill();
+	}
+	
+	if(m_aConfigPath[0])
+	{
+		m_pStorage->RemoveFile(m_aConfigPath, IStorage::TYPE_SAVE);
+		m_aConfigPath[0] = 0;
+	}
+}
+
 void CMenus::SaveServerConfig(CSavedServerConfig *pConfig)
 {
 	str_copy(pConfig->m_aMap, Config()->m_SvMap, sizeof(pConfig->m_aMap));
@@ -1935,149 +2316,6 @@ void CMenus::RestoreServerConfig(const CSavedServerConfig *pConfig)
 	Config()->m_SvPort = pConfig->m_SvPort;
 }
 
-bool CMenus::GenerateTrainingConfig(char *pConfigPath, int ConfigPathSize, int Port)
-{
-	char aBuf[1024];
-	char aPath[IO_MAX_PATH_LENGTH];
-	
-	Storage()->GetCompletePath(IStorage::TYPE_SAVE, "training", aPath, sizeof(aPath));
-	Storage()->CreateFolder("training", IStorage::TYPE_SAVE);
-	
-	str_format(pConfigPath, ConfigPathSize, "training/training_%d.cfg", Port);
-	Storage()->GetCompletePath(IStorage::TYPE_SAVE, pConfigPath, aPath, sizeof(aPath));
-	
-	IOHANDLE File = io_open(aPath, IOFLAG_WRITE);
-	if(!File)
-	{
-		dbg_msg("training", "failed to create training config file");
-		return false;
-	}
-	
-	str_format(aBuf, sizeof(aBuf), "sv_port %d\n", Port);
-	io_write(File, aBuf, str_length(aBuf));
-	
-	str_format(aBuf, sizeof(aBuf), "sv_map \"%s\"\n", Config()->m_ClTrainingMap);
-	io_write(File, aBuf, str_length(aBuf));
-	
-	str_format(aBuf, sizeof(aBuf), "sv_training_mode %d\n", 1);
-	io_write(File, aBuf, str_length(aBuf));
-	
-	str_format(aBuf, sizeof(aBuf), "sv_infinite_jumps %d\n", Config()->m_ClTrainingInfiniteJumps);
-	io_write(File, aBuf, str_length(aBuf));
-	
-	str_format(aBuf, sizeof(aBuf), "sv_no_damage %d\n", Config()->m_ClTrainingNoDamage);
-	io_write(File, aBuf, str_length(aBuf));
-	
-	str_format(aBuf, sizeof(aBuf), "sv_fast_respawn %d\n", Config()->m_ClTrainingFastRespawn);
-	io_write(File, aBuf, str_length(aBuf));
-	
-	str_format(aBuf, sizeof(aBuf), "sv_unlimited_ammo %d\n", Config()->m_ClTrainingUnlimitedAmmo);
-	io_write(File, aBuf, str_length(aBuf));
-	
-	str_format(aBuf, sizeof(aBuf), "sv_no_player_hooking %d\n", Config()->m_ClTrainingNoHooks);
-	io_write(File, aBuf, str_length(aBuf));
-	
-	str_format(aBuf, sizeof(aBuf), "sv_register 0\n");
-	io_write(File, aBuf, str_length(aBuf));
-	
-	str_format(aBuf, sizeof(aBuf), "sv_max_clients 8\n");
-	io_write(File, aBuf, str_length(aBuf));
-	
-	str_format(aBuf, sizeof(aBuf), "sv_name \"Training Server\"\n");
-	io_write(File, aBuf, str_length(aBuf));
-	
-	io_close(File);
-	
-	dbg_msg("training", "generated training config: %s", aPath);
-	return true;
-}
-
-int CMenus::StartTrainingServerProcess(const char *pConfigPath, int Port)
-{
-	char aExePath[IO_MAX_PATH_LENGTH];
-	char aFullConfigPath[IO_MAX_PATH_LENGTH];
-	
-#if defined(CONF_FAMILY_UNIX)
-	if(!Storage()->FindFile("teeworlds_srv", "", IStorage::TYPE_SAVE, aExePath, sizeof(aExePath)))
-	{
-		str_copy(aExePath, "./teeworlds_srv", sizeof(aExePath));
-	}
-#elif defined(CONF_FAMILY_WINDOWS)
-	if(!Storage()->FindFile("teeworlds_srv.exe", "", IStorage::TYPE_SAVE, aExePath, sizeof(aExePath)))
-	{
-		str_copy(aExePath, "teeworlds_srv.exe", sizeof(aExePath));
-	}
-#endif
-	
-	Storage()->GetCompletePath(IStorage::TYPE_SAVE, pConfigPath, aFullConfigPath, sizeof(aFullConfigPath));
-	
-	dbg_msg("training", "starting server: %s -f %s", aExePath, aFullConfigPath);
-	
-#if defined(CONF_FAMILY_UNIX)
-	pid_t Pid = fork();
-	if(Pid == 0)
-	{
-		char *argv[] = {
-			(char *)"teeworlds_srv",
-			(char *)"-f",
-			aFullConfigPath,
-			NULL
-		};
-		execvp(aExePath, argv);
-		_exit(1);
-	}
-	else if(Pid > 0)
-	{
-		return (int)Pid;
-	}
-	return -1;
-#elif defined(CONF_FAMILY_WINDOWS)
-	STARTUPINFO si = {0};
-	PROCESS_INFORMATION pi = {0};
-	si.cb = sizeof(si);
-	
-	char aCmdLine[1024];
-	str_format(aCmdLine, sizeof(aCmdLine), "\"%s\" -f \"%s\"", aExePath, aFullConfigPath);
-	
-	if(CreateProcess(NULL, aCmdLine, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
-	{
-		CloseHandle(pi.hThread);
-		CloseHandle(pi.hProcess);
-		return (int)pi.dwProcessId;
-	}
-	return -1;
-#else
-	return -1;
-#endif
-}
-
-void CMenus::StopTrainingServerProcess(int Pid)
-{
-	if(Pid <= 0)
-		return;
-	
-#if defined(CONF_FAMILY_UNIX)
-	kill(Pid, SIGTERM);
-#elif defined(CONF_FAMILY_WINDOWS)
-	HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, Pid);
-	if(hProcess)
-	{
-		TerminateProcess(hProcess, 0);
-		CloseHandle(hProcess);
-	}
-#endif
-	dbg_msg("training", "stopped server process %d", Pid);
-}
-
-void CMenus::CleanupTrainingFiles(const char *pConfigPath)
-{
-	if(pConfigPath && pConfigPath[0])
-	{
-		Storage()->RemoveFile(pConfigPath, IStorage::TYPE_SAVE);
-		dbg_msg("training", "cleaned up config: %s", pConfigPath);
-	}
-}
-
 void CMenus::StartTrainingMode()
 {
 	if(Config()->m_ClTrainingMode)
@@ -2094,41 +2332,33 @@ void CMenus::StartTrainingMode()
 	SaveServerConfig(&m_TrainingSavedState.m_ServerConfig);
 	m_TrainingSavedState.m_Saved = true;
 	Config()->m_ClTrainingMode = 1;
+	
+	m_TrainerServer.Init(Storage());
 
-	int Port = TRAINING_PORT_BASE;
-	for(int i = 0; i < TRAINING_CONFIG_SLOTS; i++)
+	if(m_TrainerServer.Start(Config()->m_ClTrainingMap,
+		Config()->m_ClTrainingInfiniteJumps != 0,
+		Config()->m_ClTrainingNoDamage != 0,
+		Config()->m_ClTrainingFastRespawn != 0,
+		Config()->m_ClTrainingUnlimitedAmmo != 0,
+		Config()->m_ClTrainingNoHooks != 0))
 	{
-		char aTestPath[512];
-		str_format(aTestPath, sizeof(aTestPath), "training/training_%d.cfg", Port + i);
-		if(!Storage()->FindFile(aTestPath, "", IStorage::TYPE_SAVE, 0, 0))
-		{
-			Port = Port + i;
-			break;
-		}
+		char aAddr[64];
+		str_format(aAddr, sizeof(aAddr), "localhost:%d", m_TrainerServer.Port());
+		Client()->Connect(aAddr);
 	}
-	m_TrainingSavedState.m_TrainingPort = Port;
-
-	if(GenerateTrainingConfig(m_TrainingSavedState.m_aTrainingConfigPath, sizeof(m_TrainingSavedState.m_aTrainingConfigPath), Port))
+	else
 	{
-		int Pid = StartTrainingServerProcess(m_TrainingSavedState.m_aTrainingConfigPath, Port);
-		if(Pid > 0)
+		Config()->m_ClTrainingMode = 0;
+		RestoreServerConfig(&m_TrainingSavedState.m_ServerConfig);
+		m_TrainingSavedState.m_Saved = false;
+		
+		if(m_TrainingSavedState.m_WasOnline && m_TrainingSavedState.m_aServerAddress[0])
 		{
-			m_TrainingSavedState.m_TrainingServerPid = Pid;
-			m_TrainingSavedState.m_ServerStarted = true;
-			dbg_msg("training", "server started, pid=%d, port=%d", Pid, Port);
-			
-			thread_sleep(500);
-			
-			char aAddr[64];
-			str_format(aAddr, sizeof(aAddr), "localhost:%d", Port);
-			Client()->Connect(aAddr);
+			Client()->Connect(m_TrainingSavedState.m_aServerAddress);
 		}
-		else
-		{
-			dbg_msg("training", "failed to start server process");
-			CleanupTrainingFiles(m_TrainingSavedState.m_aTrainingConfigPath);
-			m_TrainingSavedState.m_aTrainingConfigPath[0] = 0;
-		}
+		
+		m_TrainingSavedState.m_WasOnline = false;
+		m_TrainingSavedState.m_aServerAddress[0] = 0;
 	}
 }
 
@@ -2142,18 +2372,7 @@ void CMenus::StopTrainingMode()
 
 	if(m_TrainingSavedState.m_Saved)
 	{
-		if(m_TrainingSavedState.m_ServerStarted)
-		{
-			StopTrainingServerProcess(m_TrainingSavedState.m_TrainingServerPid);
-			m_TrainingSavedState.m_ServerStarted = false;
-			m_TrainingSavedState.m_TrainingServerPid = -1;
-		}
-		
-		if(m_TrainingSavedState.m_aTrainingConfigPath[0])
-		{
-			CleanupTrainingFiles(m_TrainingSavedState.m_aTrainingConfigPath);
-			m_TrainingSavedState.m_aTrainingConfigPath[0] = 0;
-		}
+		m_TrainerServer.Stop();
 		
 		RestoreServerConfig(&m_TrainingSavedState.m_ServerConfig);
 
