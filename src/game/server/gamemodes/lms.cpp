@@ -31,20 +31,6 @@ void CGameControllerLMS::OnCharacterSpawn(CCharacter *pChr)
 // game
 void CGameControllerLMS::DoWincheckRound()
 {
-	CGameResult Result = BuildRoundTimeLimitResult();
-	if(Result.m_Result != WIN_RESULT_NONE || Result.m_pCustomMessage)
-	{
-		for(int i = 0; i < MAX_CLIENTS; ++i)
-		{
-			if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS &&
-				(!GameServer()->m_apPlayers[i]->m_RespawnDisabled ||
-				(GameServer()->m_apPlayers[i]->GetCharacter() && GameServer()->m_apPlayers[i]->GetCharacter()->IsAlive())))
-				GameServer()->m_apPlayers[i]->m_Score++;
-		}
-		ApplyRoundResult(Result);
-		return;
-	}
-
-	Result = BuildSurvivalSoloResult();
-	ApplyRoundResult(Result);
+	ApplyRoundResult(BuildRoundTimeLimitResult());
+	ApplyRoundResult(BuildSurvivalSoloResult());
 }

@@ -31,13 +31,6 @@ void CGameControllerLTS::OnCharacterSpawn(class CCharacter *pChr)
 // game
 void CGameControllerLTS::DoWincheckRound()
 {
-	CGameResult Result = BuildRoundTimeLimitResult();
-	if(Result.m_Result != WIN_RESULT_NONE)
-	{
-		ApplyRoundResult(Result);
-		return;
-	}
-
-	Result = BuildSurvivalTeamResult();
-	ApplyRoundResult(Result);
+	ApplyRoundResult(BuildRoundTimeLimitResult());
+	ApplyRoundResult(BuildSurvivalTeamResult());
 }

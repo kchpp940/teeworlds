@@ -124,13 +124,17 @@ protected:
 		int m_WinningTeam;
 		bool m_SuddenDeath;
 		bool m_ShouldAddScore;
+		bool m_BonusAllSurvivors;
 		bool m_ShouldRestart;
 		const char *m_pCustomMessage;
 
 		CGameResult()
 		: m_Result(WIN_RESULT_NONE), m_pWinner(0), m_WinningTeam(-1),
-		  m_SuddenDeath(false), m_ShouldAddScore(true), m_ShouldRestart(true),
-		  m_pCustomMessage(0) {}
+		  m_SuddenDeath(false), m_ShouldAddScore(true), m_BonusAllSurvivors(false),
+		  m_ShouldRestart(true), m_pCustomMessage(0) {}
+
+		bool HasResult() const { return m_Result != WIN_RESULT_NONE || m_SuddenDeath || m_pCustomMessage; }
+		bool ShouldApply() const { return HasResult(); }
 	};
 
 	// unified result application
@@ -146,6 +150,7 @@ protected:
 	CGameResult MakeRoundPlayerWin(class CPlayer *pPlayer) const;
 	CGameResult MakeRoundDraw() const;
 	CGameResult MakeRoundEnd(const char *pMsg = 0) const;
+	CGameResult MakeRoundEndWithSurvivorBonus(const char *pMsg = 0) const;
 
 	// result builder helpers (combine conditions and return CGameResult)
 	bool IsMatchScoreLimitHit() const;

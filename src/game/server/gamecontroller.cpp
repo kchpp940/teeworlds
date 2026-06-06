@@ -437,6 +437,15 @@ IGameController::CGameResult IGameController::MakeRoundEnd(const char *pMsg) con
 	return R;
 }
 
+IGameController::CGameResult IGameController::MakeRoundEndWithSurvivorBonus(const char *pMsg) const
+{
+	CGameResult R;
+	R.m_ShouldAddScore = false;
+	R.m_BonusAllSurvivors = true;
+	R.m_pCustomMessage = pMsg;
+	return R;
+}
+
 // result builder helpers (combine conditions and return CGameResult)
 bool IGameController::IsMatchScoreLimitHit() const
 {
@@ -543,7 +552,7 @@ IGameController::CGameResult IGameController::BuildRoundTimeLimitResult()
 		if(IsTeamplay())
 			return MakeRoundDraw();
 		else
-			return MakeRoundEnd();
+			return MakeRoundEndWithSurvivorBonus();
 	}
 	return CGameResult();
 }
@@ -551,6 +560,9 @@ IGameController::CGameResult IGameController::BuildRoundTimeLimitResult()
 // unified result application
 bool IGameController::ApplyMatchResult(const CGameResult &Result)
 {
+	if(!Result.ShouldApply())
+		return false;
+
 	if(Result.m_SuddenDeath)
 	{
 		if(m_SuddenDeath)
@@ -570,8 +582,19 @@ bool IGameController::ApplyMatchResult(const CGameResult &Result)
 
 bool IGameController::ApplyRoundResult(const CGameResult &Result)
 {
-	if(Result.m_Result == WIN_RESULT_NONE && !Result.m_pCustomMessage && !Result.m_SuddenDeath)
+	if(!Result.ShouldApply())
 		return false;
+
+	if(Result.m_BonusAllSurvivors)
+	{
+		for(int i = 0; i < MAX_CLIENTS; ++i)
+		{
+			if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS &&
+				(!GameServer()->m_apPlayers[i]->m_RespawnDisabled ||
+				(GameServer()->m_apPlayers[i]->GetCharacter() && GameServer()->m_apPlayers[i]->GetCharacter()->IsAlive())))
+				GameServer()->m_apPlayers[i]->m_Score++;
+		}
+	}
 
 	if(Result.m_ShouldAddScore)
 	{
