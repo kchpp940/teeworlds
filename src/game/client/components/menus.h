@@ -94,6 +94,111 @@ private:
 		void (CMenus::*m_pfnRender)(CUIRect);
 	};
 
+	struct CMenuAction
+	{
+		const char *m_pLabel;
+		int m_Checked;
+		const char *m_pImageName;
+		int m_Corners;
+		float m_Rounding;
+		float m_FontFactor;
+		vec4 m_ColorHot;
+		bool m_TextFade;
+
+		int m_HotKey;
+		int m_HotKeyRequireCtrl;
+		int m_UiHotkey;
+
+		const char *m_pConfirmTitle;
+		const char *m_pConfirmMsg;
+		FConfirmPrepareCallback m_pfnConfirmPrepare;
+
+		int m_NavigateToPage;
+		FNavigationPrepareCallback m_pfnNavPrepare;
+
+		FActionCallback m_pfnAction;
+
+		static CMenuAction Navigate(const char *pLabel, int Page, int HotKey = 0,
+			FNavigationPrepareCallback pfnPrepare = 0, const char *pImageName = 0,
+			int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f)
+		{
+			CMenuAction A = {0};
+			A.m_pLabel = pLabel;
+			A.m_Checked = -1;
+			A.m_pImageName = pImageName;
+			A.m_Corners = Corners;
+			A.m_Rounding = Rounding;
+			A.m_FontFactor = FontFactor;
+			A.m_ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f);
+			A.m_TextFade = true;
+			A.m_HotKey = HotKey;
+			A.m_HotKeyRequireCtrl = 0;
+			A.m_UiHotkey = 0;
+			A.m_pConfirmTitle = 0;
+			A.m_pConfirmMsg = 0;
+			A.m_pfnConfirmPrepare = 0;
+			A.m_NavigateToPage = Page;
+			A.m_pfnNavPrepare = pfnPrepare;
+			A.m_pfnAction = 0;
+			return A;
+		}
+
+		static CMenuAction Direct(const char *pLabel, FActionCallback pfnAction,
+			int HotKey = 0, int UiHotkey = 0, const char *pImageName = 0,
+			int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f)
+		{
+			CMenuAction A = {0};
+			A.m_pLabel = pLabel;
+			A.m_Checked = -1;
+			A.m_pImageName = pImageName;
+			A.m_Corners = Corners;
+			A.m_Rounding = Rounding;
+			A.m_FontFactor = FontFactor;
+			A.m_ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f);
+			A.m_TextFade = true;
+			A.m_HotKey = HotKey;
+			A.m_HotKeyRequireCtrl = 0;
+			A.m_UiHotkey = UiHotkey;
+			A.m_pConfirmTitle = 0;
+			A.m_pConfirmMsg = 0;
+			A.m_pfnConfirmPrepare = 0;
+			A.m_NavigateToPage = -1;
+			A.m_pfnNavPrepare = 0;
+			A.m_pfnAction = pfnAction;
+			return A;
+		}
+
+		static CMenuAction Confirm(const char *pLabel,
+			const char *pConfirmTitle, const char *pConfirmMsg,
+			FConfirmPrepareCallback pfnConfirmPrepare, FActionCallback pfnAction,
+			int HotKey = 0, const char *pImageName = 0,
+			int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f)
+		{
+			CMenuAction A = {0};
+			A.m_pLabel = pLabel;
+			A.m_Checked = -1;
+			A.m_pImageName = pImageName;
+			A.m_Corners = Corners;
+			A.m_Rounding = Rounding;
+			A.m_FontFactor = FontFactor;
+			A.m_ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f);
+			A.m_TextFade = true;
+			A.m_HotKey = HotKey;
+			A.m_HotKeyRequireCtrl = 0;
+			A.m_UiHotkey = 0;
+			A.m_pConfirmTitle = pConfirmTitle;
+			A.m_pConfirmMsg = pConfirmMsg;
+			A.m_pfnConfirmPrepare = pfnConfirmPrepare;
+			A.m_NavigateToPage = -1;
+			A.m_pfnNavPrepare = 0;
+			A.m_pfnAction = pfnAction;
+			return A;
+		}
+	};
+
+	void ExecuteMenuAction(const CMenuAction *pAction);
+	bool DoMenuActionButton(CButtonContainer *pButton, const CMenuAction *pAction, const CUIRect *pRect);
+
 	bool NavigateToPage(int PageID, FNavigationPrepareCallback pfnPrepare = 0);
 	bool DoButton_PageNavigate(CButtonContainer *pButtonContainer, const char *pText, int PageID, const CUIRect *pRect, int HotKey = 0, FNavigationPrepareCallback pfnPrepare = 0, const char *pImageName = 0, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f, vec4 ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f), bool TextFade = true);
 	int NavigateCurrentPage(CUIRect MainView, bool IsOnline);
@@ -388,6 +493,19 @@ private:
 			Config()->m_ClCameraStabilizing = 50;
 		}
 	}
+
+	void ActionNavigateBrowserPage() { SetMenuPage(Config()->m_UiBrowserPage); }
+	void ActionShowQuitPopup() { m_Popup = POPUP_QUIT; }
+	void ActionToggleSidebar() { m_SidebarActive ^= 1; }
+	void ActionEnterEditor() { Config()->m_ClEditor = 1; Input()->MouseModeRelative(); }
+	void ActionDisconnect();
+	void ActionRefreshBrowser();
+	void ActionConnectSelected();
+	void ActionToggleRecord();
+	void ActionJoinSpectators();
+	void ActionJoinRed();
+	void ActionJoinBlue();
+	void ActionJoin() { ActionJoinRed(); }
 
 	bool PrepareDeleteDemo(char *pMsgBuf, int MsgBufSize);
 	bool PrepareRemoveFilter(char *pMsgBuf, int MsgBufSize);

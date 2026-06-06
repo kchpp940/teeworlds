@@ -98,14 +98,14 @@ void CMenus::RenderGame(CUIRect MainView)
 				str_copy(aBuf, Localize("locked"), sizeof(aBuf));
 		}
 		else
-			str_copy(aBuf, Localize(Team != TEAM_SPECTATORS ? "Spectate" : "Spectating"), sizeof(aBuf)); // Localize("Spectating");
+			str_copy(aBuf, Localize(Team != TEAM_SPECTATORS ? "Spectate" : "Spectating"), sizeof(aBuf));
 
 		static CButtonContainer s_SpectateButton;
 		DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, Spacing);
 		if(DoButton_Menu(&s_SpectateButton, aBuf, Team == TEAM_SPECTATORS, &Button) && Team != TEAM_SPECTATORS && Info.m_AllowSpec)
 		{
-			m_pClient->SendSwitchTeam(TEAM_SPECTATORS);
-			SetActive(false);
+			CMenuAction A = CMenuAction::Direct(0, &CMenus::ActionJoinSpectators);
+			ExecuteMenuAction(&A);
 		}
 
 		// team button
@@ -126,14 +126,14 @@ void CMenus::RenderGame(CUIRect MainView)
 					str_copy(aBuf, Localize("locked"), sizeof(aBuf));
 			}
 			else
-				str_copy(aBuf, Localize(Team != TEAM_RED ? "Join red" : "Joined red"), sizeof(aBuf)); // Localize("Join red");Localize("Joined red");
+				str_copy(aBuf, Localize(Team != TEAM_RED ? "Join red" : "Joined red"), sizeof(aBuf));
 
 			static CButtonContainer s_RedButton;
 			DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, Spacing);
 			if(DoButton_Menu(&s_RedButton, aBuf, Team == TEAM_RED, &Button, 0, CUIRect::CORNER_ALL, 5.0f, 0.0f, vec4(0.975f, 0.17f, 0.17f, 0.75f), false) && Team != TEAM_RED && !(Info.m_aNotification[0]) && !BlockRed)
 			{
-				m_pClient->SendSwitchTeam(TEAM_RED);
-				SetActive(false);
+				CMenuAction A = CMenuAction::Direct(0, &CMenus::ActionJoinRed);
+				ExecuteMenuAction(&A);
 			}
 
 			RedTeamSizeNew = m_pClient->m_GameInfo.m_aTeamSize[TEAM_RED];
@@ -151,14 +151,14 @@ void CMenus::RenderGame(CUIRect MainView)
 					str_copy(aBuf, Localize("locked"), sizeof(aBuf));
 			}
 			else
-				str_copy(aBuf, Localize(Team != TEAM_BLUE ? "Join blue" : "Joined blue"), sizeof(aBuf)); // Localize("Join blue");Localize("Joined blue");
+				str_copy(aBuf, Localize(Team != TEAM_BLUE ? "Join blue" : "Joined blue"), sizeof(aBuf));
 
 			static CButtonContainer s_BlueButton;
 			DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, Spacing);
 			if(DoButton_Menu(&s_BlueButton, aBuf, Team == TEAM_BLUE, &Button, 0, CUIRect::CORNER_ALL, 5.0f, 0.0f, vec4(0.17f, 0.46f, 0.975f, 0.75f), false) && Team != TEAM_BLUE && !(Info.m_aNotification[0]) && !BlockBlue)
 			{
-				m_pClient->SendSwitchTeam(TEAM_BLUE);
-				SetActive(false);
+				CMenuAction A = CMenuAction::Direct(0, &CMenus::ActionJoinBlue);
+				ExecuteMenuAction(&A);
 			}
 		}
 		else
@@ -171,35 +171,31 @@ void CMenus::RenderGame(CUIRect MainView)
 					str_copy(aBuf, Localize("locked"), sizeof(aBuf));
 			}
 			else
-				str_copy(aBuf, Localize(Team != TEAM_RED ? "Join" : "Joined"), sizeof(aBuf)); //Localize("Join");Localize("Joined");
+				str_copy(aBuf, Localize(Team != TEAM_RED ? "Join" : "Joined"), sizeof(aBuf));
 
 			DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, 0.0f);
 			static CButtonContainer s_JoinButton;
 			if(DoButton_Menu(&s_JoinButton, aBuf, Team == TEAM_RED, &Button) && Team != TEAM_RED && !(Info.m_aNotification[0]))
 			{
-				m_pClient->SendSwitchTeam(TEAM_RED);
-				SetActive(false);
+				CMenuAction A = CMenuAction::Direct(0, &CMenus::ActionJoin);
+				ExecuteMenuAction(&A);
 			}
 		}
 
 		// disconnect button
 		ButtonRow.VSplitRight(ButtonWidth, &ButtonRow, &Button);
 		static CButtonContainer s_DisconnectButton;
-		if(DoButton_Menu(&s_DisconnectButton, Localize("Disconnect"), 0, &Button))
-			Client()->Disconnect();
+		CMenuAction DiscAction = CMenuAction::Direct(Localize("Disconnect"), &CMenus::ActionDisconnect);
+		DoMenuActionButton(&s_DisconnectButton, &DiscAction, &Button);
 
 		// Record button
 		ButtonRow.VSplitRight(50.0f, &ButtonRow, 0);
 		ButtonRow.VSplitRight(ButtonWidth, &ButtonRow, &Button);
 		static CButtonContainer s_DemoButton;
 		bool Recording = DemoRecorder()->IsRecording();
-		if(DoButton_Menu(&s_DemoButton, Localize(Recording ? "Stop record" : "Record"), Recording, &Button))	// Localize("Stop record");Localize("Record");
-		{
-			if(!Recording)
-				Client()->DemoRecorder_Start("demo", true);
-			else
-				Client()->DemoRecorder_Stop();
-		}
+		CMenuAction RecAction = CMenuAction::Direct(Localize(Recording ? "Stop record" : "Record"), &CMenus::ActionToggleRecord);
+		RecAction.m_Checked = Recording ? 1 : 0;
+		DoMenuActionButton(&s_DemoButton, &RecAction, &Button);
 	}
 }
 

@@ -42,13 +42,15 @@ void CMenus::RenderStartMenu(CUIRect MainView)
 	pImage = Config()->m_ClShowStartMenuImages ? "settings" : 0;
 	DoButtons_HSplitColumn(&TopMenu, &Button, ButtonHeight, Spacing);
 	static CButtonContainer s_SettingsButton;
-	DoButton_PageNavigate(&s_SettingsButton, Localize("Settings"), PAGE_SETTINGS, &Button, KEY_S, 0, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f);
+	CMenuAction SettingsAction = CMenuAction::Navigate(Localize("Settings"), PAGE_SETTINGS, KEY_S, 0, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f);
+	DoMenuActionButton(&s_SettingsButton, &SettingsAction, &Button);
 
 	// Demos button
 	pImage = Config()->m_ClShowStartMenuImages ? "demos" : 0;
 	DoButtons_HSplitColumn(&TopMenu, &Button, ButtonHeight, Spacing);
 	static CButtonContainer s_DemoButton;
-	DoButton_PageNavigate(&s_DemoButton, Localize("Demos"), PAGE_DEMOS, &Button, KEY_D, &CMenus::DemolistPrepare, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f);
+	CMenuAction DemosAction = CMenuAction::Navigate(Localize("Demos"), PAGE_DEMOS, KEY_D, &CMenus::DemolistPrepare, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f);
+	DoMenuActionButton(&s_DemoButton, &DemosAction, &Button);
 
 	// Editor button (has special hotkey logic)
 	static bool EditorHotkeyWasPressed = true;
@@ -56,12 +58,9 @@ void CMenus::RenderStartMenu(CUIRect MainView)
 	pImage = Config()->m_ClShowStartMenuImages ? "editor" : 0;
 	DoButtons_HSplitColumn(&TopMenu, &Button, ButtonHeight, Spacing);
 	static CButtonContainer s_MapEditorButton;
-	if(DoButton_Menu(&s_MapEditorButton, Localize("Editor"), 0, &Button, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f) || (!EditorHotkeyWasPressed && Client()->LocalTime() - EditorHotKeyChecktime < 0.1f && CheckHotKey(KEY_E)))
-	{
-		Config()->m_ClEditor = 1;
-		Input()->MouseModeRelative();
+	CMenuAction EditorAction = CMenuAction::Direct(Localize("Editor"), &CMenus::ActionEnterEditor, 0, 0, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f);
+	if(DoMenuActionButton(&s_MapEditorButton, &EditorAction, &Button) || (!EditorHotkeyWasPressed && Client()->LocalTime() - EditorHotKeyChecktime < 0.1f && CheckHotKey(KEY_E)))
 		EditorHotkeyWasPressed = true;
-	}
 	if(!Input()->KeyIsPressed(KEY_E))
 	{
 		EditorHotkeyWasPressed = false;
@@ -72,16 +71,16 @@ void CMenus::RenderStartMenu(CUIRect MainView)
 	pImage = Config()->m_ClShowStartMenuImages ? "play_game" : 0;
 	DoButtons_HSplitColumn(&TopMenu, &Button, ButtonHeight, Spacing);
 	static CButtonContainer s_PlayButton;
-	if(DoButton_Menu(&s_PlayButton, Localize("Play"), 0, &Button, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER) || CheckHotKey(KEY_P))
-		SetMenuPage(Config()->m_UiBrowserPage);
+	CMenuAction PlayAction = CMenuAction::Direct(Localize("Play"), &CMenus::ActionNavigateBrowserPage, KEY_P, CUI::HOTKEY_ENTER, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f);
+	DoMenuActionButton(&s_PlayButton, &PlayAction, &Button);
 
 	// Bottom menu with Quit button
 	BottomMenu.HSplitTop(90.0f, 0, &BottomMenu);
 	RenderBackgroundShadow(&BottomMenu, true, Rounding);
 	BottomMenu.HSplitTop(ButtonHeight, &Button, &TopMenu);
 	static CButtonContainer s_QuitButton;
-	if(DoButton_Menu(&s_QuitButton, Localize("Quit"), 0, &Button, 0, CUIRect::CORNER_ALL, Rounding, 0.5f) || UI()->ConsumeHotkey(CUI::HOTKEY_ESCAPE) || CheckHotKey(KEY_Q))
-		m_Popup = POPUP_QUIT;
+	CMenuAction QuitAction = CMenuAction::Direct(Localize("Quit"), &CMenus::ActionShowQuitPopup, KEY_Q, CUI::HOTKEY_ESCAPE, 0, CUIRect::CORNER_ALL, Rounding, 0.5f);
+	DoMenuActionButton(&s_QuitButton, &QuitAction, &Button);
 
 	// render version
 	CUIRect Version;

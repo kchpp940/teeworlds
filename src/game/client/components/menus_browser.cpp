@@ -2101,20 +2101,14 @@ void CMenus::RenderServerbrowserBottomBox(CUIRect MainView)
 	MainView.HSplitTop(25.0f, &MainView, 0);
 	static CButtonContainer s_RefreshButton;
 	DoButtons_VSplitRow(&MainView, &Button, ButtonWidth, 0.0f);
-	if(DoButton_Menu(&s_RefreshButton, Localize("Refresh"), 0, &Button) || (UI()->KeyPress(KEY_R) && (Input()->KeyIsPressed(KEY_LCTRL) || Input()->KeyIsPressed(KEY_RCTRL))))
-	{
-		if(m_MenuPage == PAGE_INTERNET)
-			ServerBrowser()->Refresh(IServerBrowser::REFRESHFLAG_INTERNET);
-		else if(m_MenuPage == PAGE_LAN)
-			ServerBrowser()->Refresh(IServerBrowser::REFRESHFLAG_LAN);
-	}
+	CMenuAction RefreshAction = CMenuAction::Direct(Localize("Refresh"), &CMenus::ActionRefreshBrowser, KEY_R);
+	RefreshAction.m_HotKeyRequireCtrl = 1;
+	DoMenuActionButton(&s_RefreshButton, &RefreshAction, &Button);
 
 	static CButtonContainer s_JoinButton;
 	DoButtons_VSplitRow(&MainView, &Button, ButtonWidth, Spacing);
-	if(DoButton_Menu(&s_JoinButton, Localize("Connect"), 0, &Button) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER))
-	{
-		Client()->Connect(GetServerBrowserAddress());
-	}
+	CMenuAction ConnectAction = CMenuAction::Direct(Localize("Connect"), &CMenus::ActionConnectSelected, 0, CUI::HOTKEY_ENTER);
+	DoMenuActionButton(&s_JoinButton, &ConnectAction, &Button);
 }
 
 void CMenus::DoGameIcon(const char *pName, const CUIRect *pRect)
@@ -2210,7 +2204,8 @@ void CMenus::RenderServerbrowser(CUIRect MainView)
 	static CButtonContainer s_SidebarButton;
 	if(DoButton_SpriteID(&s_SidebarButton, IMAGE_ARROWICONS, m_SidebarActive?SPRITE_ARROW_RIGHT_A:SPRITE_ARROW_LEFT_A, false, &SidebarButton, CUIRect::CORNER_R, 5.0f, true))
 	{
-		m_SidebarActive ^= 1;
+		CMenuAction A = CMenuAction::Direct(0, &CMenus::ActionToggleSidebar);
+		ExecuteMenuAction(&A);
 	}
 
 	// back button

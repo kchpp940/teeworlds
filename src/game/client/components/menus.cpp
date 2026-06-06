@@ -448,6 +448,94 @@ bool CMenus::PrepareRemoveFriend(char *pMsgBuf, int MsgBufSize)
 	return true;
 }
 
+void CMenus::ExecuteMenuAction(const CMenuAction *pAction)
+{
+	if(pAction->m_pConfirmTitle)
+	{
+		DoConfirm(pAction->m_pConfirmTitle,
+			pAction->m_pConfirmMsg ? pAction->m_pConfirmMsg : Localize("Are you sure?"),
+			Localize("Yes"), Localize("No"),
+			pAction->m_pfnAction,
+			pAction->m_pfnConfirmPrepare);
+		return;
+	}
+
+	if(pAction->m_NavigateToPage >= 0)
+	{
+		NavigateToPage(pAction->m_NavigateToPage, pAction->m_pfnNavPrepare);
+		return;
+	}
+
+	if(pAction->m_pfnAction)
+		(this->*pAction->m_pfnAction)();
+}
+
+bool CMenus::DoMenuActionButton(CButtonContainer *pButton, const CMenuAction *pAction, const CUIRect *pRect)
+{
+	bool Triggered = false;
+	const bool Checked = pAction->m_Checked < 0 ? false : (pAction->m_Checked != 0);
+
+	Triggered |= DoButton_Menu(pButton, pAction->m_pLabel, Checked, pRect,
+		pAction->m_pImageName, pAction->m_Corners, pAction->m_Rounding,
+		pAction->m_FontFactor, pAction->m_ColorHot, pAction->m_TextFade);
+
+	if(pAction->m_UiHotkey)
+		Triggered |= UI()->ConsumeHotkey((unsigned)pAction->m_UiHotkey);
+
+	if(pAction->m_HotKey)
+	{
+		if(pAction->m_HotKeyRequireCtrl)
+			Triggered |= (UI()->KeyPress(pAction->m_HotKey) && (Input()->KeyIsPressed(KEY_LCTRL) || Input()->KeyIsPressed(KEY_RCTRL)));
+		else
+			Triggered |= CheckHotKey(pAction->m_HotKey);
+	}
+
+	if(Triggered)
+		ExecuteMenuAction(pAction);
+	return Triggered;
+}
+
+void CMenus::ActionDisconnect() { Client()->Disconnect(); }
+
+void CMenus::ActionRefreshBrowser()
+{
+	if(m_MenuPage == PAGE_INTERNET)
+		ServerBrowser()->Refresh(IServerBrowser::REFRESHFLAG_INTERNET);
+	else if(m_MenuPage == PAGE_LAN)
+		ServerBrowser()->Refresh(IServerBrowser::REFRESHFLAG_LAN);
+}
+
+void CMenus::ActionConnectSelected()
+{
+	Client()->Connect(GetServerBrowserAddress());
+}
+
+void CMenus::ActionToggleRecord()
+{
+	if(!DemoRecorder()->IsRecording())
+		Client()->DemoRecorder_Start("demo", true);
+	else
+		Client()->DemoRecorder_Stop();
+}
+
+void CMenus::ActionJoinSpectators()
+{
+	m_pClient->SendSwitchTeam(TEAM_SPECTATORS);
+	SetActive(false);
+}
+
+void CMenus::ActionJoinRed()
+{
+	m_pClient->SendSwitchTeam(TEAM_RED);
+	SetActive(false);
+}
+
+void CMenus::ActionJoinBlue()
+{
+	m_pClient->SendSwitchTeam(TEAM_BLUE);
+	SetActive(false);
+}
+
 bool CMenus::DoButton_CheckBox_ConfigEx(int *pConfig, const char *pText, const CUIRect *pRect, FConfigChangedCallback pfnOnChanged, bool Locked)
 {
 	if(DoButton_CheckBox(pConfig, pText, *pConfig, pRect, Locked))
