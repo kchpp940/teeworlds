@@ -65,6 +65,19 @@ public:
 	void GetFilterName(int FilterIndex, char *pBuf, int Size) const { m_ServerBrowserFilter.GetFilterName(FilterIndex, pBuf, Size); }
 	void SetFilterName(int FilterIndex, const char *pName) { m_ServerBrowserFilter.SetFilterName(FilterIndex, pName); }
 
+	// ---- Filter store (persistence + CRUD + ordering + active selection) ----
+	void LoadFilters();
+	void SaveFilters();
+	void EnsureDefaultFilters() { m_ServerBrowserFilter.EnsureDefaultFilters(); }
+
+	int GetActiveFilter(int Type) const { return m_ServerBrowserFilter.GetActiveFilter(Type); }
+	void SetActiveFilter(int Type, int FilterIndex) { m_ServerBrowserFilter.SetActiveFilter(Type, FilterIndex); }
+
+	int CreateFilter(int Preset, const char *pName) { RequestResort(); return m_ServerBrowserFilter.CreateFilter(Preset, pName); }
+	void DeleteFilter(int FilterIndex) { m_ServerBrowserFilter.DeleteFilter(FilterIndex); RequestResort(); }
+	void RenameFilter(int FilterIndex, const char *pName) { m_ServerBrowserFilter.SetFilterName(FilterIndex, pName); }
+	void MoveFilter(int FilterIndex, bool Up) { m_ServerBrowserFilter.MoveFilter(FilterIndex, Up); RequestResort(); }
+
 	// ---- Aggregated getters/setters for persistence ----
 	int GetFilterFlags(int FilterIndex) const { return m_ServerBrowserFilter.GetFilterFlags(FilterIndex); }
 	void SetFilterFlags(int FilterIndex, int Flags) { m_ServerBrowserFilter.SetFilterFlags(FilterIndex, Flags); RequestResort(); }

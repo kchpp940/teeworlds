@@ -76,6 +76,15 @@ public:
 	void GetFilterName(int FilterIndex, char *pBuf, int Size) const { str_copy(pBuf, m_lFilters[FilterIndex].m_aName, Size); }
 	void SetFilterName(int FilterIndex, const char *pName);
 
+	// ---- Filter store in-memory operations (CRUD + ordering + active selection) ----
+	void EnsureDefaultFilters();
+	int CreateFilter(int Preset, const char *pName) { return AddFilterFromPreset(Preset, pName); }
+	void DeleteFilter(int FilterIndex);
+	void MoveFilter(int FilterIndex, bool Up);
+
+	int GetActiveFilter(int Type) const { return m_aActiveFilters[Type]; }
+	void SetActiveFilter(int Type, int FilterIndex) { m_aActiveFilters[Type] = FilterIndex; }
+
 	// ---- Aggregated getters/setters for persistence ----
 	int GetFilterFlags(int FilterIndex) const { return m_lFilters[FilterIndex].m_FilterInfo.m_SortHash & 0xFFFF; }
 	void SetFilterFlags(int FilterIndex, int Flags);
@@ -121,6 +130,7 @@ private:
 	class IFriends *m_pFriends;
 	char m_aNetVersion[128];
 	array<CServerFilter> m_lFilters;
+	int m_aActiveFilters[IServerBrowser::NUM_TYPES];
 
 	// get updated on sort
 	class CServerEntry **m_ppServerlist;

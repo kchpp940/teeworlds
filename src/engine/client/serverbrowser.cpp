@@ -658,3 +658,168 @@ void CServerBrowser::SaveServerlist()
 	Writer.EndArray();
 	Writer.EndObject();
 }
+
+// ---- Filter store persistence ----
+
+static const char *s_pFiltersFilename = "filters.json";
+
+void CServerBrowser::LoadFilters()
+{
+	CJsonParser JsonParser;
+	const json_value *pJsonData = JsonParser.ParseFile(s_pFiltersFilename, Storage());
+	if(pJsonData == 0)
+	{
+		Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "client_srvbrowse", JsonParser.Error());
+		EnsureDefaultFilters();
+		return;
+	}
+
+	// per-type active filter selection
+	const json_value &rActiveEntry = (*pJsonData)["active_filters"];
+	if(rActiveEntry.type == json_array)
+	{
+		for(int i = 0; i < NUM_TYPES; ++i)
+		{
+			if(i < (int)rActiveEntry.u.array.length && rActiveEntry[i].type == json_integer)
+				SetActiveFilter(i, rActiveEntry[i].u.integer);
+		}
+	}
+
+	// filter list
+	const json_value &rFilterEntry = (*pJsonData)["filters"];
+	for(unsigned i = 0; i < rFilterEntry.u.array.length; ++i)
+	{
+		char *pName = rFilterEntry[i].u.object.values[0].name;
+		const json_value &rStart = *(rFilterEntry[i].u.object.values[0].value);
+		if(rStart.type != json_object)
+			continue;
+
+		int Preset = PRESET_CUSTOM;
+		if(rStart["type"].type == json_integer)
+			Preset = rStart["type"].u.integer;
+
+		const int FilterIndex = CreateFilter(Preset, pName);
+
+		const json_value &rSubStart = rStart["settings"];
+		if(rSubStart.type == json_object)
+		{
+			if(rSubStart["filter_hash"].type == json_integer)
+				SetFilterFlags(FilterIndex, rSubStart["filter_hash"].u.integer);
+
+			const json_value &rGametypeEntry = rSubStart["filter_gametype"];
+			ClearGametypeFilters(FilterIndex);
+			if(rGametypeEntry.type == json_array) // legacy: all inclusive
+			{
+				for(unsigned j = 0; j < rGametypeEntry.u.array.length; ++j)
+				{
+					if(rGametypeEntry[j].type == json_string)
+						AddGametypeFilter(FilterIndex, rGametypeEntry[j].u.string.ptr, false);
+				}
+			}
+			else if(rGametypeEntry.type == json_object)
+			{
+				for(unsigned j = 0; j < rGametypeEntry.u.object.length; ++j)
+				{
+					const json_value &rValue = *(rGametypeEntry.u.object.values[j].value);
+					if(rValue.type == json_boolean)
+						AddGametypeFilter(FilterIndex, rGametypeEntry.u.object.values[j].name, rValue.u.boolean);
+				}
+			}
+
+			if(rSubStart["filter_ping"].type == json_integer)
+				SetFilterPing(FilterIndex, rSubStart["filter_ping"].u.integer);
+			if(rSubStart["filter_serverlevel"].type == json_integer)
+				SetFilterLevelMask(FilterIndex, rSubStart["filter_serverlevel"].u.integer);
+			if(rSubStart["filter_address"].type == json_string)
+				SetFilterAddress(FilterIndex, rSubStart["filter_address"].u.string.ptr);
+			if(rSubStart["filter_country"].type == json_integer)
+				SetFilterCountry(FilterIndex, rSubStart["filter_country"].u.integer);
+		}
+
+		if(Preset == PRESET_STANDARD)
+			SetFilterFlag(FilterIndex, FILTER_PURE, true);
+		else if(Preset == PRESET_RACE)
+			AddGametypeFilter(FilterIndex, "Race", false);
+	}
+
+	EnsureDefaultFilters();
+}
+
+void CServerBrowser::SaveFilters()
+{
+	IOHANDLE File = Storage()->OpenFile(s_pFiltersFilename, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+	if(!File)
+		return;
+
+	CJsonWriter Writer(File);
+
+	Writer.BeginObject(); // root
+
+	// per-type active filter selection
+	Writer.WriteAttribute("active_filters");
+	Writer.BeginArray();
+	for(int i = 0; i < NUM_TYPES; ++i)
+		Writer.WriteIntValue(GetActiveFilter(i));
+	Writer.EndArray();
+
+	// filter list
+	Writer.WriteAttribute("filters");
+	Writer.BeginArray();
+	const int Count = NumFilters();
+	for(int i = 0; i < Count; ++i)
+	{
+		char aName[64];
+		GetFilterName(i, aName, sizeof(aName));
+
+		Writer.BeginObject();
+		Writer.WriteAttribute(aName);
+		Writer.BeginObject();
+		{
+			Writer.WriteAttribute("type");
+			Writer.WriteIntValue(GetFilterPreset(i));
+
+			Writer.WriteAttribute("settings");
+			Writer.BeginObject();
+			{
+				Writer.WriteAttribute("filter_hash");
+				Writer.WriteIntValue(GetFilterFlags(i));
+
+				Writer.WriteAttribute("filter_gametype");
+				Writer.BeginObject();
+				const int NumGt = GetNumGametypeFilters(i);
+				for(int j = 0; j < NumGt; ++j)
+				{
+					char aGtName[16];
+					bool Exclusive;
+					GetGametypeFilter(i, j, aGtName, sizeof(aGtName), &Exclusive);
+					if(aGtName[0])
+					{
+						Writer.WriteAttribute(aGtName);
+						Writer.WriteBoolValue(Exclusive);
+					}
+				}
+				Writer.EndObject();
+
+				Writer.WriteAttribute("filter_ping");
+				Writer.WriteIntValue(GetFilterPing(i));
+
+				Writer.WriteAttribute("filter_serverlevel");
+				Writer.WriteIntValue(GetFilterLevelMask(i));
+
+				char aAddress[NETADDR_MAXSTRSIZE];
+				GetFilterAddress(i, aAddress, sizeof(aAddress));
+				Writer.WriteAttribute("filter_address");
+				Writer.WriteStrValue(aAddress);
+
+				Writer.WriteAttribute("filter_country");
+				Writer.WriteIntValue(GetFilterCountry(i));
+			}
+			Writer.EndObject();
+		}
+		Writer.EndObject();
+		Writer.EndObject();
+	}
+	Writer.EndArray();
+
+	Writer.EndObject(); // root
+}

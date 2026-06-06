@@ -45,12 +45,12 @@ static int s_aDifficultySpriteIds[] = {
 vec3 TextHighlightColor = vec3(0.4f, 0.4f, 1.0f);
 
 // filters
-CMenus::CBrowserFilter::CBrowserFilter(int Preset, const char* pName, IServerBrowser *pServerBrowser)
+CMenus::CBrowserFilter::CBrowserFilter(int EngineFilterIndex, IServerBrowser *pServerBrowser)
 	: m_DeleteButtonContainer(true), m_UpButtonContainer(true), m_DownButtonContainer(true)
 {
 	m_Extended = false;
 	m_pServerBrowser = pServerBrowser;
-	m_Filter = m_pServerBrowser->AddFilterFromPreset(Preset, pName);
+	m_Filter = EngineFilterIndex;
 	m_pServerBrowser->GetFilterName(m_Filter, m_aName, sizeof(m_aName));
 }
 
@@ -138,100 +138,23 @@ void CMenus::LoadFilters()
 	if(pJsonData == 0)
 	{
 		Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "game", JsonParser.Error());
-		return;
-	}
-
-	// extract settings data
-	const json_value &rSettingsEntry = (*pJsonData)["settings"];
-	if(rSettingsEntry["sidebar_active"].type == json_integer)
-		m_SidebarActive = rSettingsEntry["sidebar_active"].u.integer;
-	if(rSettingsEntry["sidebar_tab"].type == json_integer)
-		m_SidebarTab = clamp(int(rSettingsEntry["sidebar_tab"].u.integer), int(SIDEBAR_TAB_INFO), int(NUM_SIDEBAR_TABS-1));
-
-	const int AllFilterIndex = CBrowserFilter::NUM_FILTERS - 2; // -2 because custom filters have index 0 but come last in the list
-	if(rSettingsEntry["filters"].type == json_array)
-	{
-		for(unsigned i = 0; i < IServerBrowser::NUM_TYPES; ++i)
-		{
-			if(i < rSettingsEntry["filters"].u.array.length && rSettingsEntry["filters"][i].type == json_integer)
-				m_aSelectedFilters[i] = rSettingsEntry["filters"][i].u.integer;
-			else
-				m_aSelectedFilters[i] = AllFilterIndex; // default to "all" if not set for all filters
-		}
 	}
 	else
 	{
-		for(unsigned i = 0; i < IServerBrowser::NUM_TYPES; ++i)
-			m_aSelectedFilters[i] = AllFilterIndex; // default to "all" if not set
+		const json_value &rSettingsEntry = (*pJsonData)["settings"];
+		if(rSettingsEntry["sidebar_active"].type == json_integer)
+			m_SidebarActive = rSettingsEntry["sidebar_active"].u.integer;
+		if(rSettingsEntry["sidebar_tab"].type == json_integer)
+			m_SidebarTab = clamp(int(rSettingsEntry["sidebar_tab"].u.integer), int(SIDEBAR_TAB_INFO), int(NUM_SIDEBAR_TABS-1));
 	}
 
-	// extract filter data
-	const json_value &rFilterEntry = (*pJsonData)["filter"];
-	for(unsigned i = 0; i < rFilterEntry.u.array.length; ++i)
-	{
-		char *pName = rFilterEntry[i].u.object.values[0].name;
-		const json_value &rStart = *(rFilterEntry[i].u.object.values[0].value);
-		if(rStart.type != json_object)
-			continue;
-
-		int Type = CBrowserFilter::FILTER_CUSTOM;
-		if(rStart["type"].type == json_integer)
-			Type = rStart["type"].u.integer;
-
-		m_lFilters.add(CBrowserFilter(Type, pName, ServerBrowser()));
-		const int FilterIndex = m_lFilters[i].Filter();
-
-		const json_value &rSubStart = rStart["settings"];
-		if(rSubStart.type == json_object)
-		{
-			// flags
-			if(rSubStart["filter_hash"].type == json_integer)
-				ServerBrowser()->SetFilterFlags(FilterIndex, rSubStart["filter_hash"].u.integer);
-
-			// gametype list
-			const json_value &rGametypeEntry = rSubStart["filter_gametype"];
-			ServerBrowser()->ClearGametypeFilters(FilterIndex);
-			if(rGametypeEntry.type == json_array) // legacy: all entries are inclusive
-			{
-				for(unsigned j = 0; j < rGametypeEntry.u.array.length; ++j)
-				{
-					if(rGametypeEntry[j].type == json_string)
-						ServerBrowser()->AddGametypeFilter(FilterIndex, rGametypeEntry[j].u.string.ptr, false);
-				}
-			}
-			else if(rGametypeEntry.type == json_object)
-			{
-				for(unsigned j = 0; j < rGametypeEntry.u.object.length; ++j)
-				{
-					const json_value &rValue = *(rGametypeEntry.u.object.values[j].value);
-					if(rValue.type == json_boolean)
-						ServerBrowser()->AddGametypeFilter(FilterIndex, rGametypeEntry.u.object.values[j].name, rValue.u.boolean);
-				}
-			}
-
-			// ping
-			if(rSubStart["filter_ping"].type == json_integer)
-				ServerBrowser()->SetFilterPing(FilterIndex, rSubStart["filter_ping"].u.integer);
-
-			// server level
-			if(rSubStart["filter_serverlevel"].type == json_integer)
-				ServerBrowser()->SetFilterLevelMask(FilterIndex, rSubStart["filter_serverlevel"].u.integer);
-
-			// address
-			if(rSubStart["filter_address"].type == json_string)
-				ServerBrowser()->SetFilterAddress(FilterIndex, rSubStart["filter_address"].u.string.ptr);
-
-			// country
-			if(rSubStart["filter_country"].type == json_integer)
-				ServerBrowser()->SetFilterCountry(FilterIndex, rSubStart["filter_country"].u.integer);
-		}
-
-		// preset-enforced defaults (pure flag for standard, Race gametype for race)
-		if(Type == CBrowserFilter::FILTER_STANDARD)
-			ServerBrowser()->SetFilterFlag(FilterIndex, IServerBrowser::FILTER_PURE, true);
-		else if(Type == CBrowserFilter::FILTER_RACE)
-			ServerBrowser()->AddGametypeFilter(FilterIndex, "Race", false);
-	}
+	// Filter list lives entirely in engine. Rebuild UI-side view model (CBrowserFilter
+	// wrappers that hold per-filter button containers and expanded state).
+	ServerBrowser()->LoadFilters();
+	m_lFilters.clear();
+	const int Count = ServerBrowser()->NumFilters();
+	for(int i = 0; i < Count; ++i)
+		m_lFilters.add(CBrowserFilter(i, ServerBrowser()));
 
 	CBrowserFilter *pSelectedFilter = GetSelectedBrowserFilter();
 	if(pSelectedFilter)
@@ -248,7 +171,7 @@ void CMenus::SaveFilters()
 
 	Writer.BeginObject(); // root
 
-	// settings
+	// pure UI state
 	Writer.WriteAttribute("settings");
 	Writer.BeginObject();
 	{
@@ -257,156 +180,47 @@ void CMenus::SaveFilters()
 
 		Writer.WriteAttribute("sidebar_tab");
 		Writer.WriteIntValue(m_SidebarTab);
-
-		Writer.WriteAttribute("filters");
-		Writer.BeginArray();
-		for(int i = 0; i < IServerBrowser::NUM_TYPES; i++)
-			Writer.WriteIntValue(m_aSelectedFilters[i]);
-		Writer.EndArray();
 	}
 	Writer.EndObject();
 
-	// filter
-	Writer.WriteAttribute("filter");
-	Writer.BeginArray();
-	for(int i = 0; i < m_lFilters.size(); i++)
-	{
-		const int FilterIndex = m_lFilters[i].Filter();
-
-		// part start
-		Writer.BeginObject();
-		Writer.WriteAttribute(m_lFilters[i].Name());
-		Writer.BeginObject();
-		{
-			Writer.WriteAttribute("type");
-			Writer.WriteIntValue(m_lFilters[i].Custom());
-
-			Writer.WriteAttribute("settings");
-			Writer.BeginObject();
-			{
-				Writer.WriteAttribute("filter_hash");
-				Writer.WriteIntValue(ServerBrowser()->GetFilterFlags(FilterIndex));
-
-				Writer.WriteAttribute("filter_gametype");
-				Writer.BeginObject();
-				const int NumGt = ServerBrowser()->GetNumGametypeFilters(FilterIndex);
-				for(int j = 0; j < NumGt; ++j)
-				{
-					char aName[16];
-					bool Exclusive;
-					ServerBrowser()->GetGametypeFilter(FilterIndex, j, aName, sizeof(aName), &Exclusive);
-					if(aName[0])
-					{
-						Writer.WriteAttribute(aName);
-						Writer.WriteBoolValue(Exclusive);
-					}
-				}
-				Writer.EndObject();
-
-				Writer.WriteAttribute("filter_ping");
-				Writer.WriteIntValue(ServerBrowser()->GetFilterPing(FilterIndex));
-
-				Writer.WriteAttribute("filter_serverlevel");
-				Writer.WriteIntValue(ServerBrowser()->GetFilterLevelMask(FilterIndex));
-
-				char aAddress[NETADDR_MAXSTRSIZE];
-				ServerBrowser()->GetFilterAddress(FilterIndex, aAddress, sizeof(aAddress));
-				Writer.WriteAttribute("filter_address");
-				Writer.WriteStrValue(aAddress);
-
-				Writer.WriteAttribute("filter_country");
-				Writer.WriteIntValue(ServerBrowser()->GetFilterCountry(FilterIndex));
-			}
-			Writer.EndObject();
-		}
-		Writer.EndObject();
-		Writer.EndObject();
-	}
-	Writer.EndArray();
-
 	Writer.EndObject(); // end root
+
+	// Filter data (list, order, settings, per-type active selection) is persisted by engine.
+	ServerBrowser()->SaveFilters();
 }
 
 void CMenus::RemoveFilter(int FilterIndex)
 {
-	int Filter = m_lFilters[FilterIndex].Filter();
-	ServerBrowser()->RemoveFilter(Filter);
+	ServerBrowser()->DeleteFilter(FilterIndex);
 	m_lFilters.remove_index(FilterIndex);
 
-	// update filter indexes
-	for(int i = 0; i < m_lFilters.size(); i++)
+	// sync engine filter indexes in UI wrappers
+	for(int i = 0; i < m_lFilters.size(); ++i)
 	{
-		CBrowserFilter *pFilter = &m_lFilters[i];
-		if(pFilter->Filter() > Filter)
-			pFilter->SetFilterNum(pFilter->Filter()-1);
+		if(m_lFilters[i].Filter() > FilterIndex)
+			m_lFilters[i].SetFilterNum(m_lFilters[i].Filter() - 1);
 	}
 }
 
 void CMenus::MoveFilter(bool Up, int Filter)
 {
-	// move up
+	ServerBrowser()->MoveFilter(Filter, Up);
 	CBrowserFilter Temp = m_lFilters[Filter];
 	if(Up)
 	{
 		if(Filter > 0)
 		{
-			m_lFilters[Filter] = m_lFilters[Filter-1];
-			m_lFilters[Filter-1] = Temp;
+			m_lFilters[Filter] = m_lFilters[Filter - 1];
+			m_lFilters[Filter - 1] = Temp;
 		}
 	}
-	else // move down
+	else
 	{
-		if(Filter < m_lFilters.size()-1)
+		if(Filter < m_lFilters.size() - 1)
 		{
-			m_lFilters[Filter] = m_lFilters[Filter+1];
-			m_lFilters[Filter+1] = Temp;
+			m_lFilters[Filter] = m_lFilters[Filter + 1];
+			m_lFilters[Filter + 1] = Temp;
 		}
-	}
-}
-
-void CMenus::InitDefaultFilters()
-{
-	int Filters = 0;
-	for(int i = 0; i < m_lFilters.size(); i++)
-		Filters |= 1 << m_lFilters[i].Custom();
-
-	const bool UseDefaultFilters = Filters == 0;
-
-	if((Filters & (1 << CBrowserFilter::FILTER_STANDARD)) == 0)
-	{
-		m_lFilters.add(CBrowserFilter(CBrowserFilter::FILTER_STANDARD, "Teeworlds", ServerBrowser()));
-		for(int Pos = m_lFilters.size() - 1; Pos > 0; --Pos)
-			MoveFilter(true, Pos);
-	}
-
-	if((Filters & (1 << CBrowserFilter::FILTER_RACE)) == 0)
-	{
-		m_lFilters.add(CBrowserFilter(CBrowserFilter::FILTER_RACE, Localize("Race"), ServerBrowser()));
-		for(int Pos = m_lFilters.size() - 1; Pos > 1; --Pos)
-			MoveFilter(true, Pos);
-	}
-
-	if((Filters & (1 << CBrowserFilter::FILTER_FAVORITES)) == 0)
-	{
-		m_lFilters.add(CBrowserFilter(CBrowserFilter::FILTER_FAVORITES, Localize("Favorites"), ServerBrowser()));
-		for(int Pos = m_lFilters.size() - 1; Pos > 2; --Pos)
-			MoveFilter(true, Pos);
-	}
-
-	if((Filters & (1 << CBrowserFilter::FILTER_ALL)) == 0)
-	{
-		m_lFilters.add(CBrowserFilter(CBrowserFilter::FILTER_ALL, Localize("All"), ServerBrowser()));
-		for(int Pos = m_lFilters.size() - 1; Pos > 3; --Pos)
-			MoveFilter(true, Pos);
-	}
-
-	// expand the all filter tab by default
-	if(UseDefaultFilters)
-	{
-		const int AllFilterIndex = m_lFilters.size()-1;
-		for(unsigned i = 0; i < IServerBrowser::NUM_TYPES; ++i)
-			m_aSelectedFilters[i] = AllFilterIndex; // default to "all" if not set
-		m_lFilters[AllFilterIndex].Switch();
 	}
 }
 
@@ -856,7 +670,7 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 	{
 		// restore selected filter and server when changing browser page
 		m_LastBrowserType = BrowserType;
-		ToBeSelectedFilter = m_aSelectedFilters[BrowserType];
+		ToBeSelectedFilter = ServerBrowser()->GetActiveFilter(BrowserType);
 		if(ToBeSelectedFilter != -1)
 		{
 			if(m_aSelectedServers[BrowserType] == -1)
@@ -887,12 +701,12 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 		}
 	}
 
-	if(m_aSelectedFilters[BrowserType] == -2)
-		m_aSelectedFilters[BrowserType] = SelectedFilter;
-	else if(SelectedFilter != m_aSelectedFilters[BrowserType])
+	if(ServerBrowser()->GetActiveFilter(BrowserType) == -2)
+		ServerBrowser()->SetActiveFilter(BrowserType, SelectedFilter);
+	else if(SelectedFilter != ServerBrowser()->GetActiveFilter(BrowserType))
 	{
 		// update stored state based on updated state of UI
-		m_aSelectedFilters[BrowserType] = SelectedFilter;
+		ServerBrowser()->SetActiveFilter(BrowserType, SelectedFilter);
 		m_aSelectedServers[BrowserType] = -1;
 		if(SelectedFilter != -1)
 		{
@@ -903,7 +717,7 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 	const bool CtrlPressed = Input()->KeyIsPressed(KEY_LCTRL) || Input()->KeyIsPressed(KEY_RCTRL);
 
 	// handle arrow hotkeys
-	const int LastSelectedFilter = m_aSelectedFilters[BrowserType];
+	const int LastSelectedFilter = ServerBrowser()->GetActiveFilter(BrowserType);
 	const int LastSelectedServer = m_aSelectedServers[BrowserType];
 	if(SelectedFilter > -1)
 	{
@@ -949,7 +763,7 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 
 		if(ToBeSelectedServer > -1 && ToBeSelectedServer < m_lFilters[NewFilter].NumSortedServers())
 		{
-			m_aSelectedFilters[BrowserType] = NewFilter;
+			ServerBrowser()->SetActiveFilter(BrowserType, NewFilter);
 			if(m_aSelectedServers[BrowserType] != ToBeSelectedServer)
 			{
 				m_aSelectedServers[BrowserType] = ToBeSelectedServer;
@@ -993,7 +807,7 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 				const CServerInfo *pItem = pFilter->SortedGet(ServerIndex);
 
 				// select server if address changed and match found
-				bool IsSelected = m_aSelectedFilters[BrowserType] == FilterIndex && m_aSelectedServers[BrowserType] == ServerIndex;
+				bool IsSelected = ServerBrowser()->GetActiveFilter(BrowserType) == FilterIndex && m_aSelectedServers[BrowserType] == ServerIndex;
 				if(m_AddressSelection&ADDR_SELECTION_CHANGE)
 				{
 					if (!str_comp(pItem->m_aAddress, pAddress))
@@ -1001,7 +815,7 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 						if(!IsSelected)
 						{
 							m_ShowServerDetails = true;
-							m_aSelectedFilters[BrowserType] = FilterIndex;
+							ServerBrowser()->SetActiveFilter(BrowserType, FilterIndex);
 							m_aSelectedServers[BrowserType] = ServerIndex;
 							IsSelected = true;
 						}
@@ -1036,7 +850,7 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 				if(int ReturnValue = DoBrowserEntry(pFilter->ID(ServerIndex), Row, pItem, pFilter, ServerIndex, IsSelected || WasSelected, ShowServerInfo, &s_ScrollRegion))
 				{
 					m_ShowServerDetails = !m_ShowServerDetails || ReturnValue == 2 || m_aSelectedServers[BrowserType] != ServerIndex; // click twice on line => fold server details
-					m_aSelectedFilters[BrowserType] = FilterIndex;
+					ServerBrowser()->SetActiveFilter(BrowserType, FilterIndex);
 					m_aSelectedServers[BrowserType] = ServerIndex;
 					m_AddressSelection &= ~(ADDR_SELECTION_CHANGE|ADDR_SELECTION_RESET_SERVER_IF_NOT_FOUND);
 					if(Config()->m_UiAutoswitchInfotab)
@@ -1523,10 +1337,10 @@ void CMenus::RenderServerbrowserFilterTab(CUIRect View)
 			CBrowserFilter *pSelectedFilter = GetSelectedBrowserFilter();
 			if(pSelectedFilter)
 				pSelectedFilter->Switch();
-			m_lFilters.add(CBrowserFilter(CBrowserFilter::FILTER_CUSTOM, s_FilterInput.GetString(), ServerBrowser()));
+			const int NewFilterIdx = ServerBrowser()->CreateFilter(CBrowserFilter::FILTER_CUSTOM, s_FilterInput.GetString());
+			m_lFilters.add(CBrowserFilter(NewFilterIdx, ServerBrowser()));
 			m_lFilters[m_lFilters.size()-1].Switch();
 			s_FilterInput.Clear();
-			Client()->ServerBrowserUpdate();
 		}
 	}
 

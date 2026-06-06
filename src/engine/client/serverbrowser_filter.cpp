@@ -380,6 +380,8 @@ void CServerBrowserFilter::Init(CConfig *pConfig, IFriends *pFriends, const char
 	m_pConfig = pConfig;
 	m_pFriends = pFriends;
 	str_copy(m_aNetVersion, pNetVersion, sizeof(m_aNetVersion));
+	for(int i = 0; i < IServerBrowser::NUM_TYPES; ++i)
+		m_aActiveFilters[i] = -1;
 }
 
 void CServerBrowserFilter::Clear()
@@ -640,4 +642,97 @@ void CServerBrowserFilter::SetFilterLevelMask(int FilterIndex, int Mask)
 	CServerFilter *pFilter = &m_lFilters[FilterIndex];
 	pFilter->m_FilterInfo.m_ServerLevel = Mask & ((1 << CServerInfo::NUM_SERVER_LEVELS) - 1);
 	pFilter->Sort();
+}
+
+// ---- Filter store in-memory operations ----
+
+void CServerBrowserFilter::EnsureDefaultFilters()
+{
+	int Filters = 0;
+	for(int i = 0; i < m_lFilters.size(); i++)
+		Filters |= 1 << m_lFilters[i].m_Preset;
+
+	if((Filters & (1 << IServerBrowser::PRESET_STANDARD)) == 0)
+	{
+		AddFilterFromPreset(IServerBrowser::PRESET_STANDARD, "Teeworlds");
+		for(int Pos = m_lFilters.size() - 1; Pos > 0; --Pos)
+			MoveFilter(Pos, true);
+	}
+
+	if((Filters & (1 << IServerBrowser::PRESET_RACE)) == 0)
+	{
+		AddFilterFromPreset(IServerBrowser::PRESET_RACE, "Race");
+		for(int Pos = m_lFilters.size() - 1; Pos > 1; --Pos)
+			MoveFilter(Pos, true);
+	}
+
+	if((Filters & (1 << IServerBrowser::PRESET_FAVORITES)) == 0)
+	{
+		AddFilterFromPreset(IServerBrowser::PRESET_FAVORITES, "Favorites");
+		for(int Pos = m_lFilters.size() - 1; Pos > 2; --Pos)
+			MoveFilter(Pos, true);
+	}
+
+	if((Filters & (1 << IServerBrowser::PRESET_ALL)) == 0)
+	{
+		AddFilterFromPreset(IServerBrowser::PRESET_ALL, "All");
+		for(int Pos = m_lFilters.size() - 1; Pos > 3; --Pos)
+			MoveFilter(Pos, true);
+	}
+
+	const bool UseDefaultFilters = Filters == 0;
+	if(UseDefaultFilters)
+	{
+		const int AllFilterIndex = m_lFilters.size() - 1;
+		for(int i = 0; i < IServerBrowser::NUM_TYPES; ++i)
+			m_aActiveFilters[i] = AllFilterIndex;
+	}
+}
+
+void CServerBrowserFilter::DeleteFilter(int FilterIndex)
+{
+	RemoveFilter(FilterIndex);
+	for(int i = 0; i < IServerBrowser::NUM_TYPES; ++i)
+	{
+		if(m_aActiveFilters[i] == FilterIndex)
+			m_aActiveFilters[i] = clamp(FilterIndex, 0, m_lFilters.size() - 1);
+		else if(m_aActiveFilters[i] > FilterIndex)
+			m_aActiveFilters[i]--;
+	}
+}
+
+void CServerBrowserFilter::MoveFilter(int FilterIndex, bool Up)
+{
+	if(Up)
+	{
+		if(FilterIndex > 0)
+		{
+			CServerFilter Temp = m_lFilters[FilterIndex];
+			m_lFilters[FilterIndex] = m_lFilters[FilterIndex - 1];
+			m_lFilters[FilterIndex - 1] = Temp;
+			for(int i = 0; i < IServerBrowser::NUM_TYPES; ++i)
+			{
+				if(m_aActiveFilters[i] == FilterIndex)
+					m_aActiveFilters[i] = FilterIndex - 1;
+				else if(m_aActiveFilters[i] == FilterIndex - 1)
+					m_aActiveFilters[i] = FilterIndex;
+			}
+		}
+	}
+	else
+	{
+		if(FilterIndex < m_lFilters.size() - 1)
+		{
+			CServerFilter Temp = m_lFilters[FilterIndex];
+			m_lFilters[FilterIndex] = m_lFilters[FilterIndex + 1];
+			m_lFilters[FilterIndex + 1] = Temp;
+			for(int i = 0; i < IServerBrowser::NUM_TYPES; ++i)
+			{
+				if(m_aActiveFilters[i] == FilterIndex)
+					m_aActiveFilters[i] = FilterIndex + 1;
+				else if(m_aActiveFilters[i] == FilterIndex + 1)
+					m_aActiveFilters[i] = FilterIndex;
+			}
+		}
+	}
 }

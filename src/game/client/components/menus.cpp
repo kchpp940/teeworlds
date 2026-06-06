@@ -46,7 +46,6 @@ CMenus::CMenus()
 	m_AddressSelection = 0;
 	for(int Type = 0; Type < IServerBrowser::NUM_TYPES; Type++)
 	{
-		m_aSelectedFilters[Type] = -2;
 		m_aSelectedServers[Type] = -1;
 	}
 
@@ -938,8 +937,6 @@ void CMenus::OnInit()
 
 	// load filters
 	LoadFilters();
-	// add standard filters in case they are missing
-	InitDefaultFilters();
 	RenderLoading(1);
 
 	// load game type icons

@@ -378,7 +378,7 @@ private:
 		CButtonContainer m_DownButtonContainer;
 
 		CBrowserFilter() {}
-		CBrowserFilter(int Preset, const char* pName, IServerBrowser *pServerBrowser);
+		CBrowserFilter(int EngineFilterIndex, IServerBrowser *pServerBrowser);
 		void Switch();
 		bool Extended() const;
 		int Custom() const;
@@ -432,7 +432,6 @@ private:
 	void SaveFilters();
 	void RemoveFilter(int FilterIndex);
 	void MoveFilter(bool Up, int Filter);
-	void InitDefaultFilters();
 
 	struct CColumn
 	{
@@ -476,7 +475,6 @@ private:
 	bool m_SidebarActive;
 	bool m_ShowServerDetails;
 	int m_LastBrowserType; // -1 if not initialized
-	int m_aSelectedFilters[IServerBrowser::NUM_TYPES]; // -1 if none selected, -2 if not initialized
 	int m_aSelectedServers[IServerBrowser::NUM_TYPES]; // -1 if none selected
 	int m_AddressSelection;
 	static CColumn ms_aBrowserCols[NUM_BROWSER_COLS];
@@ -485,9 +483,10 @@ private:
 	CBrowserFilter *GetSelectedBrowserFilter()
 	{
 		const int Tab = ServerBrowser()->GetType();
-		if(m_aSelectedFilters[Tab] < 0 || m_aSelectedFilters[Tab] >= m_lFilters.size())
+		const int Idx = ServerBrowser()->GetActiveFilter(Tab);
+		if(Idx < 0 || Idx >= m_lFilters.size())
 			return 0;
-		return &m_lFilters[m_aSelectedFilters[Tab]];
+		return &m_lFilters[Idx];
 	}
 
 	const CServerInfo *GetSelectedServerInfo()

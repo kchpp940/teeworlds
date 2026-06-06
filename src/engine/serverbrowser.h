@@ -215,6 +215,21 @@ public:
 	virtual void GetFilterName(int FilterIndex, char *pBuf, int Size) const = 0;
 	virtual void SetFilterName(int FilterIndex, const char *pName) = 0;
 
+	// ---- Filter store (persistence + CRUD + ordering + active selection) ----
+	// Engine owns the entire filter list, its order, per-type active filter
+	// selection, and JSON persistence. UI only asks engine to mutate state.
+	virtual void LoadFilters() = 0;
+	virtual void SaveFilters() = 0;
+	virtual void EnsureDefaultFilters() = 0;
+
+	virtual int GetActiveFilter(int Type) const = 0;
+	virtual void SetActiveFilter(int Type, int FilterIndex) = 0;
+
+	virtual int CreateFilter(int Preset, const char *pName) = 0;
+	virtual void DeleteFilter(int FilterIndex) = 0;
+	virtual void RenameFilter(int FilterIndex, const char *pName) = 0;
+	virtual void MoveFilter(int FilterIndex, bool Up) = 0;
+
 	// ---- Aggregated state getters/setters for persistence ----
 	// These let the persistence layer (UI settings file) read/write
 	// entire flags mask / level mask without understanding how
