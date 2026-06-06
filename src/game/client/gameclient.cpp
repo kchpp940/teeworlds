@@ -748,7 +748,7 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker)
 			case GAMEMSG_CTF_CAPTURE:
 				m_pSounds->Enqueue(CSounds::CHN_GLOBAL, SOUND_CTF_CAPTURE);
 				int ClientID = clamp(aParaI[1], 0, MAX_CLIENTS - 1);
-				m_pStats->OnFlagCapture(ClientID);
+				m_pMatchEvents->OnFlagCapture(ClientID);
 				char aLabel[64];
 				GetPlayerLabel(aLabel, sizeof(aLabel), ClientID, m_aClients[ClientID].m_aName);
 
@@ -884,7 +884,7 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker)
 		if(m_aClients[pMsg->m_ClientID].m_Team != TEAM_SPECTATORS)
 			m_GameInfo.m_aTeamSize[m_aClients[pMsg->m_ClientID].m_Team]++;
 
-		m_pStats->OnPlayerEnter(pMsg->m_ClientID, pMsg->m_Team);
+		m_pMatchEvents->OnPlayerEnter(pMsg->m_ClientID, pMsg->m_Team);
 	}
 	else if(MsgId == NETMSGTYPE_SV_CLIENTDROP && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 	{
@@ -918,7 +918,7 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker)
 			m_GameInfo.m_aTeamSize[m_aClients[pMsg->m_ClientID].m_Team]--;
 
 		m_aClients[pMsg->m_ClientID].Reset(this, pMsg->m_ClientID);
-		m_pStats->OnPlayerLeave(pMsg->m_ClientID);
+		m_pMatchEvents->OnPlayerLeave(pMsg->m_ClientID);
 	}
 	else if(MsgId == NETMSGTYPE_SV_SKINCHANGE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 	{
@@ -1011,13 +1011,13 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker)
 	{
 		CNetMsg_De_ClientEnter *pMsg = (CNetMsg_De_ClientEnter *)pRawMsg;
 		DoEnterMessage(pMsg->m_pName, pMsg->m_ClientID, pMsg->m_Team);
-		m_pStats->OnPlayerEnter(pMsg->m_ClientID, pMsg->m_Team);
+		m_pMatchEvents->OnPlayerEnter(pMsg->m_ClientID, pMsg->m_Team);
 	}
 	else if(MsgId == NETMSGTYPE_DE_CLIENTLEAVE && Client()->State() == IClient::STATE_DEMOPLAYBACK)
 	{
 		CNetMsg_De_ClientLeave *pMsg = (CNetMsg_De_ClientLeave *)pRawMsg;
 		DoLeaveMessage(pMsg->m_pName, pMsg->m_ClientID, pMsg->m_pReason);
-		m_pStats->OnPlayerLeave(pMsg->m_ClientID);
+		m_pMatchEvents->OnPlayerLeave(pMsg->m_ClientID);
 	}
 }
 

@@ -561,36 +561,6 @@ void CStats::OnRender()
 	}
 }
 
-void CStats::UpdatePlayTime(int Ticks)
-{
-	m_pClient->m_pMatchEvents->UpdatePlayTime(Ticks);
-}
-
-void CStats::OnMatchStart()
-{
-	m_pClient->m_pMatchEvents->OnMatchStart();
-}
-
-void CStats::OnFlagGrab(int ClientID)
-{
-	m_pClient->m_pMatchEvents->OnFlagGrab(ClientID);
-}
-
-void CStats::OnFlagCapture(int ClientID)
-{
-	m_pClient->m_pMatchEvents->OnFlagCapture(ClientID);
-}
-
-void CStats::OnPlayerEnter(int ClientID, int Team)
-{
-	m_pClient->m_pMatchEvents->OnPlayerEnter(ClientID, Team);
-}
-
-void CStats::OnPlayerLeave(int ClientID)
-{
-	m_pClient->m_pMatchEvents->OnPlayerLeave(ClientID);
-}
-
 void CStats::AutoStatScreenshot()
 {
 	if(Client()->State() != IClient::STATE_DEMOPLAYBACK)

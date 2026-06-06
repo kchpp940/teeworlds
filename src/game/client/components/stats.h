@@ -46,13 +46,6 @@ public:
 	virtual void OnRender();
 	virtual void OnRelease();
 
-	void UpdatePlayTime(int Ticks);
-	void OnMatchStart();
-	void OnFlagGrab(int ClientID);
-	void OnFlagCapture(int ClientID);
-	void OnPlayerEnter(int ClientID, int Team);
-	void OnPlayerLeave(int ClientID);
-
 	const CPlayerStats *GetPlayerStats(int ClientID) const;
 };
 
