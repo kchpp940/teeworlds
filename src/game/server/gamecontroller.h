@@ -108,6 +108,34 @@ protected:
 	void EndMatch() { SetGameState(IGS_END_MATCH, TIMER_END); }
 	void EndRound() { SetGameState(IGS_END_ROUND, TIMER_END/2); }
 
+	enum EWinResult
+	{
+		WIN_RESULT_NONE = 0,
+		WIN_RESULT_RED,
+		WIN_RESULT_BLUE,
+		WIN_RESULT_DRAW,
+		WIN_RESULT_PLAYER,
+	};
+
+	// match end helpers
+	bool DoWincheckMatchWithLimit(bool ScoreLimitHit, bool TimeLimitHit);
+	void FinishMatch(EWinResult Result, class CPlayer *pWinner = 0);
+	void TriggerSuddenDeath();
+
+	// round end helpers (survival modes)
+	void FinishRoundTeamWin(int WinningTeam);
+	void FinishRoundDraw();
+	void FinishRoundPlayerWin(class CPlayer *pWinner = 0);
+	void FinishRoundNoWinner();
+
+	// broadcast / message hooks (override for custom messages)
+	virtual void BroadcastSuddenDeathMessage();
+	virtual void BroadcastMatchResult(EWinResult Result, class CPlayer *pWinner = 0);
+	virtual void BroadcastRoundResult(const char *pCustomMsg = 0);
+	virtual const char *GetTeamWinMessage(int Team) const;
+	virtual const char *GetDrawMessage() const;
+	virtual const char *GetSuddenDeathMessage() const;
+
 	virtual bool DoWincheckMatch();		// returns true when the match is over
 	virtual void DoWincheckRound() {}
 	bool HasEnoughPlayers() const { return (IsTeamplay() && m_aTeamSize[TEAM_RED] > 0 && m_aTeamSize[TEAM_BLUE] > 0) || (!IsTeamplay() && m_aTeamSize[TEAM_RED] > 1); }
