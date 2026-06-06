@@ -18,11 +18,11 @@
 #include <game/client/components/countryflags.h>
 #include <game/client/components/motd.h>
 #include <game/client/components/stats.h>
-#include <game/client/components/match_events.h>
 
 #include "menus.h"
 #include "stats.h"
 #include "scoreboard.h"
+#include "stats.h"
 
 
 CScoreboard::CScoreboard()
@@ -104,7 +104,10 @@ float CScoreboard::RenderSpectators(float x, float y, float w)
 {
 	float h = 20.0f;
 
-	int NumSpectators = m_pClient->m_pMatchEvents->NumSpectators();
+	int NumSpectators = 0;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+		if(m_pClient->m_aClients[i].m_Active && m_pClient->m_aClients[i].m_Team == TEAM_SPECTATORS)
+			NumSpectators++;
 
 	char aBuf[64];
 	char SpectatorBuf[64];
@@ -130,8 +133,8 @@ float CScoreboard::RenderSpectators(float x, float y, float w)
 		s_SpectatorCursors[i].Reset();
 		s_SpectatorCursors[i].m_FontSize = FontSize;
 
-		const CMatchEvents::CPlayerActivityState *pActivity = m_pClient->m_pMatchEvents->GetPlayerActivity(i);
-		if(!pActivity->m_Active || m_pClient->m_aClients[i].m_Team != TEAM_SPECTATORS || Lines > MaxLines)
+		const CNetObj_PlayerInfo *pInfo = m_pClient->m_Snap.m_apPlayerInfos[0];
+		if(!pInfo || m_pClient->m_aClients[i].m_Team != TEAM_SPECTATORS || Lines > MaxLines)
 			continue;
 
 		if(pLastCursor)
@@ -145,11 +148,11 @@ float CScoreboard::RenderSpectators(float x, float y, float w)
 		if(m_pClient->m_aClients[i].m_aClan[0])
 		{
 			str_format(aBuf, sizeof(aBuf), "%s ", m_pClient->m_aClients[i].m_aClan);
-			TextRender()->TextColor(1.0f, 1.0f, (pActivity->m_PlayerFlags&PLAYERFLAG_WATCHING) ? 0.0f : 1.0f, 0.7f);
+			TextRender()->TextColor(1.0f, 1.0f, (pInfo->m_PlayerFlags&PLAYERFLAG_WATCHING) ? 0.0f : 1.0f, 0.7f);
 			TextRender()->TextDeferred(&s_SpectatorCursors[i], aBuf, -1);
 		}
 
-		TextRender()->TextColor(1.0f, 1.0f, (pActivity->m_PlayerFlags&PLAYERFLAG_WATCHING) ? 0.0f :	 1.0f, 1.0f);
+		TextRender()->TextColor(1.0f, 1.0f, (pInfo->m_PlayerFlags&PLAYERFLAG_WATCHING) ? 0.0f :	 1.0f, 1.0f);
 		TextRender()->TextDeferred(&s_SpectatorCursors[i], m_pClient->m_aClients[i].m_aName, -1);
 		TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
 
@@ -202,11 +205,9 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 	if(Team == TEAM_SPECTATORS)
 		return 0.0f;
 
-	CMatchEvents *pME = m_pClient->m_pMatchEvents;
-
 	// ready mode
 	const CGameClient::CSnapState& Snap = m_pClient->m_Snap;
-	const bool ReadyMode = pME->GameStateEndTick() == 0 && m_pClient->m_Snap.m_pGameData;
+	const bool ReadyMode = Snap.m_pGameData && Snap.m_pGameData->m_GameStateEndTick == 0;
 
 	bool Race = m_pClient->m_GameInfo.m_GameFlags&GAMEFLAG_RACE;
 
@@ -257,9 +258,9 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 	// render title
 	if(NoTitle)
 	{
-		if(pME->GameStateFlags()&GAMESTATEFLAG_GAMEOVER)
+		if(Snap.m_pGameData && Snap.m_pGameData->m_GameStateFlags&GAMESTATEFLAG_GAMEOVER)
 			pTitle = Localize("Game over");
-		else if(pME->GameStateFlags()&GAMESTATEFLAG_ROUNDOVER)
+		else if(Snap.m_pGameData && Snap.m_pGameData->m_GameStateFlags&GAMESTATEFLAG_ROUNDOVER)
 			pTitle = Localize("Round over");
 		else
 			pTitle = Localize("Scoreboard");
@@ -317,11 +318,11 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 	if(Race)
 	{
 		s_Cursor.Reset();
-		if(Team != TEAM_BLUE && pME->RaceBestTime() >= 0)
+		if(m_pClient->m_Snap.m_pGameDataRace && Team != TEAM_BLUE)
 		{
 			float MapRecordFontsize = 16.0f;
 			const char *pMapRecordStr = Localize("Map record");
-			FormatTime(aBuf, sizeof(aBuf), pME->RaceBestTime(), m_pClient->RacePrecision());
+			FormatTime(aBuf, sizeof(aBuf), m_pClient->m_Snap.m_pGameDataRace->m_BestTime, m_pClient->RacePrecision());
 			s_Cursor.m_FontSize = HeadlineFontsize;
 			s_Cursor.MoveTo(ScoreAnchorX, y+3.0f);
 
@@ -335,19 +336,20 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 	{
 		if(m_pClient->m_GameInfo.m_GameFlags&GAMEFLAG_TEAMS)
 		{
-			int Score = pME->TeamScore(Team);
+			int Score = Team == TEAM_RED ? m_pClient->m_Snap.m_pGameDataTeam->m_TeamscoreRed : m_pClient->m_Snap.m_pGameDataTeam->m_TeamscoreBlue;
 			str_format(aBuf, sizeof(aBuf), "%d", Score);
 		}
 		else
 		{
-			if(Snap.m_SpecInfo.m_Active && Snap.m_SpecInfo.m_SpectatorID >= 0)
+			if(m_pClient->m_Snap.m_SpecInfo.m_Active && m_pClient->m_Snap.m_SpecInfo.m_SpectatorID >= 0 &&
+				m_pClient->m_Snap.m_apPlayerInfos[m_pClient->m_Snap.m_SpecInfo.m_SpectatorID])
 			{
-				int Score = pME->GetPlayerActivity(Snap.m_SpecInfo.m_SpectatorID)->m_Score;
+				int Score = m_pClient->m_Snap.m_apPlayerInfos[m_pClient->m_Snap.m_SpecInfo.m_SpectatorID]->m_Score;
 				str_format(aBuf, sizeof(aBuf), "%d", Score);
 			}
-			else if(pME->GetPlayerActivity(m_pClient->m_LocalClientID)->m_Active)
+			else if(m_pClient->m_Snap.m_pLocalInfo)
 			{
-				int Score = pME->GetPlayerActivity(m_pClient->m_LocalClientID)->m_Score;
+				int Score = m_pClient->m_Snap.m_pLocalInfo->m_Score;
 				str_format(aBuf, sizeof(aBuf), "%d", Score);
 			}
 		}
@@ -431,9 +433,8 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 			{
 				// make sure that we render the correct team
 				const CGameClient::CPlayerInfoItem *pInfo = &m_pClient->m_Snap.m_aInfoByScore[i];
-				const CMatchEvents::CPlayerActivityState *pActivity = pME->GetPlayerActivity(pInfo->m_ClientID);
-				if(!pActivity->m_Active || m_pClient->m_aClients[pInfo->m_ClientID].m_Team != Team || (!RenderDead && (pActivity->m_PlayerFlags&PLAYERFLAG_DEAD)) ||
-					(RenderDead && !(pActivity->m_PlayerFlags&PLAYERFLAG_DEAD)))
+				if(!pInfo->m_pPlayerInfo || m_pClient->m_aClients[pInfo->m_ClientID].m_Team != Team || (!RenderDead && (pInfo->m_pPlayerInfo->m_PlayerFlags&PLAYERFLAG_DEAD)) ||
+					(RenderDead && !(pInfo->m_pPlayerInfo->m_PlayerFlags&PLAYERFLAG_DEAD)))
 					continue;
 
 				RenderScoreIDs[NumRenderScoreIDs] = i;
@@ -442,9 +443,9 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 		}
 		NumRenderScoreIDs = MAX_IDS;
 		RenderScoreIDs[MAX_IDS-1] = -1;
-		HoleSizes[0] = pME->TeamSize(Team) - (MAX_IDS-1);
+		HoleSizes[0] = m_pClient->m_GameInfo.m_aTeamSize[Team] - (MAX_IDS-1);
 
-		if(m_pClient->m_LocalClientID != -1 && (m_pClient->m_aClients[m_pClient->m_LocalClientID].m_Team == Team || Snap.m_SpecInfo.m_Active))
+		if(m_pClient->m_LocalClientID != -1 && (m_pClient->m_aClients[m_pClient->m_LocalClientID].m_Team == Team || m_pClient->m_Snap.m_SpecInfo.m_Active))
 		{
 			int Classment = -1;
 			int TeamScoreIDs[MAX_CLIENTS];
@@ -454,12 +455,11 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 				{
 					// make sure that we render the correct team
 					const CGameClient::CPlayerInfoItem *pInfo = &m_pClient->m_Snap.m_aInfoByScore[i];
-					const CMatchEvents::CPlayerActivityState *pActivity = pME->GetPlayerActivity(pInfo->m_ClientID);
-					if(!pActivity->m_Active || m_pClient->m_aClients[pInfo->m_ClientID].m_Team != Team || (!RenderDead && (pActivity->m_PlayerFlags&PLAYERFLAG_DEAD)) ||
-						(RenderDead && !(pActivity->m_PlayerFlags&PLAYERFLAG_DEAD)))
+					if(!pInfo->m_pPlayerInfo || m_pClient->m_aClients[pInfo->m_ClientID].m_Team != Team || (!RenderDead && (pInfo->m_pPlayerInfo->m_PlayerFlags&PLAYERFLAG_DEAD)) ||
+						(RenderDead && !(pInfo->m_pPlayerInfo->m_PlayerFlags&PLAYERFLAG_DEAD)))
 						continue;
 
-					if(m_pClient->m_LocalClientID == pInfo->m_ClientID || (Snap.m_SpecInfo.m_Active && pInfo->m_ClientID == Snap.m_SpecInfo.m_SpectatorID))
+					if(m_pClient->m_LocalClientID == pInfo->m_ClientID || (m_pClient->m_Snap.m_SpecInfo.m_Active && pInfo->m_ClientID == m_pClient->m_Snap.m_SpecInfo.m_SpectatorID))
 						Classment = j;
 
 					TeamScoreIDs[j] = i;
@@ -468,14 +468,14 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 			}
 
 			if(Classment < MAX_IDS-1) {}
-			else if(Classment == pME->TeamSize(Team) - 1)
+			else if(Classment == m_pClient->m_GameInfo.m_aTeamSize[Team] - 1)
 			{
 				HoleSizes[0] = Classment - MAX_IDS-2;
 				RenderScoreIDs[MAX_IDS-3] = -1;
 				RenderScoreIDs[MAX_IDS-2] = TeamScoreIDs[Classment-1];
 				RenderScoreIDs[MAX_IDS-1] = TeamScoreIDs[Classment];
 			}
-			else if(Classment == pME->TeamSize(Team) - 2)
+			else if(Classment == m_pClient->m_GameInfo.m_aTeamSize[Team] - 2)
 			{
 				HoleSizes[0] = Classment - MAX_IDS-3;
 				RenderScoreIDs[MAX_IDS-4] = -1;
@@ -483,7 +483,7 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 				RenderScoreIDs[MAX_IDS-2] = TeamScoreIDs[Classment];
 				RenderScoreIDs[MAX_IDS-1] = TeamScoreIDs[Classment+1];
 			}
-			else if(Classment == pME->TeamSize(Team) - 3)
+			else if(Classment == m_pClient->m_GameInfo.m_aTeamSize[Team] - 3)
 			{
 				HoleSizes[0] = Classment - MAX_IDS-4;
 				RenderScoreIDs[MAX_IDS-5] = -1;
@@ -492,14 +492,14 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 				RenderScoreIDs[MAX_IDS-2] = TeamScoreIDs[Classment+1];
 				RenderScoreIDs[MAX_IDS-1] = TeamScoreIDs[Classment+2];
 			}
-			else if(Classment < pME->TeamSize(Team) - 3)
+			else if(Classment < m_pClient->m_GameInfo.m_aTeamSize[Team] - 3)
 			{
 				HoleSizes[0] = Classment - MAX_IDS-4;
 				RenderScoreIDs[MAX_IDS-5] = -1;
 				RenderScoreIDs[MAX_IDS-4] = TeamScoreIDs[Classment-1];
 				RenderScoreIDs[MAX_IDS-3] = TeamScoreIDs[Classment];
 				RenderScoreIDs[MAX_IDS-2] = TeamScoreIDs[Classment+1];
-				HoleSizes[1] = pME->TeamSize(Team) - Classment - 2;
+				HoleSizes[1] = m_pClient->m_GameInfo.m_aTeamSize[Team] - Classment - 2;
 				RenderScoreIDs[MAX_IDS-1] = -2;
 			}
 		}
@@ -512,9 +512,8 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 			{
 				// make sure that we render the correct team
 				const CGameClient::CPlayerInfoItem *pInfo = &m_pClient->m_Snap.m_aInfoByScore[i];
-				const CMatchEvents::CPlayerActivityState *pActivity = pME->GetPlayerActivity(pInfo->m_ClientID);
-				if(!pActivity->m_Active || m_pClient->m_aClients[pInfo->m_ClientID].m_Team != Team || (!RenderDead && (pActivity->m_PlayerFlags&PLAYERFLAG_DEAD)) ||
-					(RenderDead && !(pActivity->m_PlayerFlags&PLAYERFLAG_DEAD)))
+				if(!pInfo->m_pPlayerInfo || m_pClient->m_aClients[pInfo->m_ClientID].m_Team != Team || (!RenderDead && (pInfo->m_pPlayerInfo->m_PlayerFlags&PLAYERFLAG_DEAD)) ||
+					(RenderDead && !(pInfo->m_pPlayerInfo->m_PlayerFlags&PLAYERFLAG_DEAD)))
 					continue;
 
 				RenderScoreIDs[NumRenderScoreIDs] = i;
@@ -545,8 +544,7 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 		if(RenderScoreIDs[i] >= 0)
 		{
 			const CGameClient::CPlayerInfoItem *pInfo = &m_pClient->m_Snap.m_aInfoByScore[RenderScoreIDs[i]];
-			const CMatchEvents::CPlayerActivityState *pActivity = pME->GetPlayerActivity(pInfo->m_ClientID);
-			bool RenderDead = pActivity->m_PlayerFlags&PLAYERFLAG_DEAD;
+			bool RenderDead = pInfo->m_pPlayerInfo->m_PlayerFlags&PLAYERFLAG_DEAD;
 			float ColorAlpha = RenderDead ? 0.5f : 1.0f;
 			TextRender()->TextColor(1.0f, 1.0f, 1.0f, ColorAlpha);
 
@@ -575,7 +573,7 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 
 			// ping
 			TextRender()->TextColor(TextColor.r, TextColor.g, TextColor.b, 0.5f*ColorAlpha);
-			str_format(aBuf, sizeof(aBuf), "%d", clamp(pActivity->m_Latency, 0, 999));
+			str_format(aBuf, sizeof(aBuf), "%d", clamp(pInfo->m_pPlayerInfo->m_Latency, 0, 999));
 
 			s_Cursor.Reset();
 			s_Cursor.MoveTo(PingOffset+PingLength, y+Spacing);
@@ -590,15 +588,15 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 				CountryFlagOffset, y + 3.0f, 30.0f, LineHeight-5.0f);
 
 			// flag
-			if(m_pClient->m_GameInfo.m_GameFlags&GAMEFLAG_FLAGS &&
-				(pME->GetFlagCarrierRed() == pInfo->m_ClientID ||
-				pME->GetFlagCarrierBlue() == pInfo->m_ClientID))
+			if(m_pClient->m_GameInfo.m_GameFlags&GAMEFLAG_FLAGS && m_pClient->m_Snap.m_pGameDataFlag &&
+				(m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierRed == pInfo->m_ClientID ||
+				m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierBlue == pInfo->m_ClientID))
 			{
 				Graphics()->BlendNormal();
 				Graphics()->TextureSet(g_pData->m_aImages[IMAGE_GAME].m_Id);
 				Graphics()->QuadsBegin();
 
-				RenderTools()->SelectSprite(pME->IsFlagCarrierBlue(pInfo->m_ClientID) ? SPRITE_FLAG_BLUE : SPRITE_FLAG_RED, SPRITE_FLAG_FLIP_X);
+				RenderTools()->SelectSprite(pInfo->m_ClientID == m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierBlue ? SPRITE_FLAG_BLUE : SPRITE_FLAG_RED, SPRITE_FLAG_FLIP_X);
 
 				float Size = LineHeight;
 				IGraphics::CQuadItem QuadItem(TeeOffset+4.0f, y-2.0f-Spacing/2.0f, Size/2.0f, Size);
@@ -629,7 +627,7 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 			}
 
 			// TODO: make an eye icon or something
-			if(RenderDead && pActivity->m_PlayerFlags&PLAYERFLAG_WATCHING)
+			if(RenderDead && pInfo->m_pPlayerInfo->m_PlayerFlags&PLAYERFLAG_WATCHING)
 				TextRender()->TextColor(1.0f, 1.0f, 0.0f, ColorAlpha);
 
 			// id
@@ -644,7 +642,7 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 			TextRender()->TextOutlined(&s_Cursor, m_pClient->m_aClients[pInfo->m_ClientID].m_aName, str_length(m_pClient->m_aClients[pInfo->m_ClientID].m_aName));
 			
 			// ready / watching
-			if(ReadyMode && (pActivity->m_PlayerFlags&PLAYERFLAG_READY))
+			if(ReadyMode && (pInfo->m_pPlayerInfo->m_PlayerFlags&PLAYERFLAG_READY))
 			{
 				if(HighlightedLine)
 					TextRender()->TextSecondaryColor(0.0f, 0.1f, 0.0f, 0.5f);
@@ -667,14 +665,14 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 			{
 				// K
 				TextRender()->TextColor(TextColor.r, TextColor.g, TextColor.b, 0.5f*ColorAlpha);
-				str_format(aBuf, sizeof(aBuf), "%d", clamp(pME->GetPlayerStats(pInfo->m_ClientID)->m_Kills, 0, 999));
+				str_format(aBuf, sizeof(aBuf), "%d", clamp(m_pClient->m_pStats->GetPlayerStats(pInfo->m_ClientID)->m_Kills, 0, 999));
 				s_Cursor.Reset();
 				s_Cursor.MoveTo(KillOffset+KillLength/2, y+Spacing);
 				s_Cursor.m_MaxWidth = KillLength;
 				TextRender()->TextOutlined(&s_Cursor, aBuf, -1);
 
 				// D
-				str_format(aBuf, sizeof(aBuf), "%d", clamp(pME->GetPlayerStats(pInfo->m_ClientID)->m_Deaths, 0, 999));
+				str_format(aBuf, sizeof(aBuf), "%d", clamp(m_pClient->m_pStats->GetPlayerStats(pInfo->m_ClientID)->m_Deaths, 0, 999));
 				s_Cursor.Reset();
 				s_Cursor.MoveTo(DeathOffset+DeathLength/2, y+Spacing);
 				s_Cursor.m_MaxWidth = DeathLength;
@@ -685,12 +683,12 @@ float CScoreboard::RenderScoreboard(float x, float y, float w, int Team, const c
 			if(Race)
 			{
 				aBuf[0] = 0;
-				if(pActivity->m_Score >= 0)
-					FormatTime(aBuf, sizeof(aBuf), pActivity->m_Score, m_pClient->RacePrecision());
+				if(pInfo->m_pPlayerInfo->m_Score >= 0)
+					FormatTime(aBuf, sizeof(aBuf), pInfo->m_pPlayerInfo->m_Score, m_pClient->RacePrecision());
 			}
 			else
 			{
-				str_format(aBuf, sizeof(aBuf), "%d", clamp(pActivity->m_Score, -999, 9999));
+				str_format(aBuf, sizeof(aBuf), "%d", clamp(pInfo->m_pPlayerInfo->m_Score, -999, 9999));
 			}
 
 			s_Cursor.Reset();
@@ -806,8 +804,6 @@ void CScoreboard::OnRender()
 	if(m_pClient->m_pMenus->IsActive() || m_pClient->m_pStats->IsActive())
 		return;
 
-	CMatchEvents *pME = m_pClient->m_pMatchEvents;
-
 	// postpone the active state till the render area gets updated during the rendering
 	if(m_Activate)
 	{
@@ -849,7 +845,7 @@ void CScoreboard::OnRender()
 			m_TotalRect.w = w;
 			m_TotalRect.h = ScoreboardHeight+SpectatorHeight+3.0f;
 		}
-		else
+		else if(m_pClient->m_Snap.m_pGameDataTeam)
 		{
 			float ScoreboardHeight = RenderScoreboard(Width/2-w-1.5f, y, w, TEAM_RED, pRedClanName, -1);
 			RenderScoreboard(Width/2+1.5f, y, w, TEAM_BLUE, pBlueClanName, 1);
@@ -872,22 +868,22 @@ void CScoreboard::OnRender()
 	s_Cursor.m_Align = TEXTALIGN_TC;
 	s_Cursor.MoveTo(Width/2, 39);
 	s_Cursor.Reset();
-	if((m_pClient->m_GameInfo.m_GameFlags&GAMEFLAG_TEAMS))
+	if(m_pClient->m_Snap.m_pGameData && (m_pClient->m_GameInfo.m_GameFlags&GAMEFLAG_TEAMS) && m_pClient->m_Snap.m_pGameDataTeam)
 	{
-		if(pME->GameStateFlags()&GAMESTATEFLAG_GAMEOVER)
+		if(m_pClient->m_Snap.m_pGameData->m_GameStateFlags&GAMESTATEFLAG_GAMEOVER)
 		{
 			char aText[256];
 
-			if(pME->TeamScore(TEAM_RED) > pME->TeamScore(TEAM_BLUE))
+			if(m_pClient->m_Snap.m_pGameDataTeam->m_TeamscoreRed > m_pClient->m_Snap.m_pGameDataTeam->m_TeamscoreBlue)
 				str_format(aText, sizeof(aText), Localize("%s wins!"), pRedClanName);
-			else if(pME->TeamScore(TEAM_BLUE) > pME->TeamScore(TEAM_RED))
+			else if(m_pClient->m_Snap.m_pGameDataTeam->m_TeamscoreBlue > m_pClient->m_Snap.m_pGameDataTeam->m_TeamscoreRed)
 				str_format(aText, sizeof(aText), Localize("%s wins!"), pBlueClanName);
 			else
 				str_copy(aText, Localize("Draw!"), sizeof(aText));
 
 			TextRender()->TextOutlined(&s_Cursor, aText, -1);
 		}
-		else if(pME->GameStateFlags()&GAMESTATEFLAG_ROUNDOVER)
+		else if(m_pClient->m_Snap.m_pGameData->m_GameStateFlags&GAMESTATEFLAG_ROUNDOVER)
 		{
 			char aText[256];
 			str_copy(aText, Localize("Round over!"), sizeof(aText));
@@ -906,18 +902,16 @@ bool CScoreboard::IsActive() const
 	if(m_Active)
 		return true;
 
-	CMatchEvents *pME = m_pClient->m_pMatchEvents;
-
 	if(m_pClient->m_LocalClientID != -1 && m_pClient->m_aClients[m_pClient->m_LocalClientID].m_Team != TEAM_SPECTATORS)
 	{
 		// we are not a spectator, check if we are dead, don't follow a player and the game isn't paused
 		if(!m_pClient->m_Snap.m_pLocalCharacter && !m_pClient->m_Snap.m_SpecInfo.m_Active &&
-			!(m_pClient->m_Snap.m_pGameData && pME->GameStateFlags()&GAMESTATEFLAG_PAUSED))
+			!(m_pClient->m_Snap.m_pGameData && m_pClient->m_Snap.m_pGameData->m_GameStateFlags&GAMESTATEFLAG_PAUSED))
 			return true;
 	}
 
 	// if the game is over
-	if(m_pClient->m_Snap.m_pGameData && pME->GameStateFlags()&(GAMESTATEFLAG_ROUNDOVER|GAMESTATEFLAG_GAMEOVER))
+	if(m_pClient->m_Snap.m_pGameData && m_pClient->m_Snap.m_pGameData->m_GameStateFlags&(GAMESTATEFLAG_ROUNDOVER|GAMESTATEFLAG_GAMEOVER))
 		return true;
 
 	return false;

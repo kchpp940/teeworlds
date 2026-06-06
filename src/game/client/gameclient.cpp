@@ -51,7 +51,6 @@
 #include "components/sounds.h"
 #include "components/spectator.h"
 #include "components/stats.h"
-#include "components/match_events.h"
 #include "components/voting.h"
 
 inline void AppendDecimals(char *pBuf, int Size, int Time, int Precision)
@@ -115,7 +114,6 @@ static CDamageInd gsDamageInd;
 static CVoting gs_Voting;
 static CSpectator gs_Spectator;
 static CStats gs_Stats;
-static CMatchEvents gs_MatchEvents;
 
 static CPlayers gs_Players;
 static CNamePlates gs_NamePlates;
@@ -257,7 +255,6 @@ void CGameClient::OnConsoleInit()
 	m_pMapLayersBackGround = &::gs_MapLayersBackGround;
 	m_pMapLayersForeGround = &::gs_MapLayersForeGround;
 	m_pStats = &::gs_Stats;
-	m_pMatchEvents = &::gs_MatchEvents;
 
 	// make a list of all the systems, make sure to add them in the corrent render order
 	m_All.Add(m_pSkins);
@@ -289,7 +286,6 @@ void CGameClient::OnConsoleInit()
 	m_All.Add(&gs_Broadcast);
 	m_All.Add(&gs_DebugHud);
 	m_All.Add(&gs_Notifications);
-	m_All.Add(m_pMatchEvents);
 	m_All.Add(&gs_Scoreboard);
 	m_All.Add(m_pStats);
 	m_All.Add(m_pMotd);
@@ -497,6 +493,9 @@ void CGameClient::OnReset()
 		m_DemoSpecMode = SPEC_FREEVIEW;
 		m_DemoSpecID = -1;
 		m_Tuning = CTuningParams();
+		m_LastGameStartTick = -1;
+		m_LastFlagCarrierRed = FLAG_MISSING;
+		m_LastFlagCarrierBlue = FLAG_MISSING;
 	}
 }
 
@@ -748,7 +747,7 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker)
 			case GAMEMSG_CTF_CAPTURE:
 				m_pSounds->Enqueue(CSounds::CHN_GLOBAL, SOUND_CTF_CAPTURE);
 				int ClientID = clamp(aParaI[1], 0, MAX_CLIENTS - 1);
-				m_pMatchEvents->OnFlagCapture(ClientID);
+				m_pStats->OnFlagCapture(ClientID);
 				char aLabel[64];
 				GetPlayerLabel(aLabel, sizeof(aLabel), ClientID, m_aClients[ClientID].m_aName);
 
@@ -884,7 +883,7 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker)
 		if(m_aClients[pMsg->m_ClientID].m_Team != TEAM_SPECTATORS)
 			m_GameInfo.m_aTeamSize[m_aClients[pMsg->m_ClientID].m_Team]++;
 
-		m_pMatchEvents->OnPlayerEnter(pMsg->m_ClientID, pMsg->m_Team);
+		m_pStats->OnPlayerEnter(pMsg->m_ClientID, pMsg->m_Team);
 	}
 	else if(MsgId == NETMSGTYPE_SV_CLIENTDROP && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 	{
@@ -918,7 +917,7 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker)
 			m_GameInfo.m_aTeamSize[m_aClients[pMsg->m_ClientID].m_Team]--;
 
 		m_aClients[pMsg->m_ClientID].Reset(this, pMsg->m_ClientID);
-		m_pMatchEvents->OnPlayerLeave(pMsg->m_ClientID);
+		m_pStats->OnPlayerLeave(pMsg->m_ClientID);
 	}
 	else if(MsgId == NETMSGTYPE_SV_SKINCHANGE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 	{
@@ -1011,13 +1010,13 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker)
 	{
 		CNetMsg_De_ClientEnter *pMsg = (CNetMsg_De_ClientEnter *)pRawMsg;
 		DoEnterMessage(pMsg->m_pName, pMsg->m_ClientID, pMsg->m_Team);
-		m_pMatchEvents->OnPlayerEnter(pMsg->m_ClientID, pMsg->m_Team);
+		m_pStats->OnPlayerEnter(pMsg->m_ClientID, pMsg->m_Team);
 	}
 	else if(MsgId == NETMSGTYPE_DE_CLIENTLEAVE && Client()->State() == IClient::STATE_DEMOPLAYBACK)
 	{
 		CNetMsg_De_ClientLeave *pMsg = (CNetMsg_De_ClientLeave *)pRawMsg;
 		DoLeaveMessage(pMsg->m_pName, pMsg->m_ClientID, pMsg->m_pReason);
-		m_pMatchEvents->OnPlayerLeave(pMsg->m_ClientID);
+		m_pStats->OnPlayerLeave(pMsg->m_ClientID);
 	}
 }
 
@@ -1345,7 +1344,18 @@ void CGameClient::OnNewSnapshot()
 				else if(s_LastGameFlags&GAMESTATEFLAG_GAMEOVER && !(GameFlags&GAMESTATEFLAG_GAMEOVER))
 					OnStartGame();
 
+				// stats
+				if(m_Snap.m_pGameData->m_GameStartTick != m_LastGameStartTick && !(s_LastGameFlags&GAMESTATEFLAG_ROUNDOVER)
+					&& !(s_LastGameFlags&GAMESTATEFLAG_PAUSED) && (!(GameFlags&GAMESTATEFLAG_PAUSED) || GameFlags&GAMESTATEFLAG_STARTCOUNTDOWN))
+				{
+					m_pStats->OnMatchStart();
+				}
+
+				if(!(GameFlags&(GAMESTATEFLAG_PAUSED|GAMESTATEFLAG_ROUNDOVER|GAMESTATEFLAG_GAMEOVER)))
+					m_pStats->UpdatePlayTime(Client()->GameTick() - Client()->PrevGameTick());
+
 				s_LastGameFlags = GameFlags;
+				m_LastGameStartTick = m_Snap.m_pGameData->m_GameStartTick;
 			}
 			else if(Item.m_Type == NETOBJTYPE_GAMEDATATEAM)
 			{
@@ -1355,6 +1365,15 @@ void CGameClient::OnNewSnapshot()
 			{
 				m_Snap.m_pGameDataFlag = (const CNetObj_GameDataFlag *)pData;
 				m_Snap.m_GameDataFlagSnapID = Item.m_ID;
+
+				// stats
+				if(m_LastFlagCarrierRed == FLAG_ATSTAND && m_Snap.m_pGameDataFlag->m_FlagCarrierRed >= 0)
+					m_pStats->OnFlagGrab(m_Snap.m_pGameDataFlag->m_FlagCarrierRed);
+				else if(m_LastFlagCarrierBlue == FLAG_ATSTAND && m_Snap.m_pGameDataFlag->m_FlagCarrierBlue >= 0)
+					m_pStats->OnFlagGrab(m_Snap.m_pGameDataFlag->m_FlagCarrierBlue);
+
+				m_LastFlagCarrierRed = m_Snap.m_pGameDataFlag->m_FlagCarrierRed;
+				m_LastFlagCarrierBlue = m_Snap.m_pGameDataFlag->m_FlagCarrierBlue;
 			}
 			else if(Item.m_Type == NETOBJTYPE_GAMEDATARACE)
 			{
@@ -1461,9 +1480,6 @@ void CGameClient::OnNewSnapshot()
 		m_ServerMode = SERVERMODE_PURE;
 	else
 		m_ServerMode = SERVERMODE_PUREMOD;
-
-	for(int i = 0; i < m_All.m_Num; i++)
-		m_All.m_apComponents[i]->OnNewSnapshot();
 }
 
 void CGameClient::OnDemoRecSnap()

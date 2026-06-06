@@ -86,32 +86,11 @@ bool CGameControllerCTF::OnEntity(int Index, vec2 Pos)
 }
 
 // game
-bool CGameControllerCTF::DoWincheckMatch()
+bool CGameControllerCTF::IsSuddenDeathSettled() const
 {
-	// check score win condition
-	if((m_GameInfo.m_ScoreLimit > 0 && (m_aTeamscore[TEAM_RED] >= m_GameInfo.m_ScoreLimit || m_aTeamscore[TEAM_BLUE] >= m_GameInfo.m_ScoreLimit)) ||
-		(m_GameInfo.m_TimeLimit > 0 && (Server()->Tick()-m_GameStartTick) >= m_GameInfo.m_TimeLimit*Server()->TickSpeed()*60))
-	{
-		if(m_SuddenDeath)
-		{
-			if(m_aTeamscore[TEAM_RED]/100 != m_aTeamscore[TEAM_BLUE]/100)
-			{
-				EndMatch();
-				return true;
-			}
-		}
-		else
-		{
-			if(m_aTeamscore[TEAM_RED] != m_aTeamscore[TEAM_BLUE])
-			{
-				EndMatch();
-				return true;
-			}
-			else
-				m_SuddenDeath = 1;
-		}
-	}
-	return false;
+	if(m_SuddenDeath)
+		return m_aTeamscore[TEAM_RED]/100 != m_aTeamscore[TEAM_BLUE]/100;
+	return m_aTeamscore[TEAM_RED] != m_aTeamscore[TEAM_BLUE];
 }
 
 // general

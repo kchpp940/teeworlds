@@ -8,7 +8,6 @@
 #include <game/client/components/menus.h>
 #include <game/client/components/scoreboard.h>
 #include <game/client/components/sounds.h>
-#include <game/client/components/match_events.h>
 #include <game/client/gameclient.h>
 #include <generated/client_data.h>
 #include "stats.h"
@@ -29,18 +28,31 @@ CStats::CStats()
 	OnReset();
 }
 
-const CStats::CPlayerStats *CStats::PlayerStats(int ClientID) const
+void CStats::CPlayerStats::Reset()
 {
-	return m_pClient->m_pMatchEvents->GetPlayerStats(ClientID);
-}
-
-const CStats::CPlayerStats *CStats::GetPlayerStats(int ClientID) const
-{
-	return m_pClient->m_pMatchEvents->GetPlayerStats(ClientID);
+	m_IngameTicks		= 0;
+	m_Kills				= 0;
+	m_Deaths			= 0;
+	m_Suicides			= 0;
+	m_BestSpree			= 0;
+	m_CurrentSpree		= 0;
+	for(int j = 0; j < NUM_WEAPONS; j++)
+	{
+		m_aKillsWith[j]		= 0;
+		m_aDeathsFrom[j]	= 0;
+	}
+	m_FlagGrabs			= 0;
+	m_FlagCaptures		= 0;
+	m_CarriersKilled	= 0;
+	m_KillsCarrying		= 0;
+	m_DeathsCarrying	= 0;
 }
 
 void CStats::OnReset()
 {
+	for(int i = 0; i < MAX_CLIENTS; i++)
+		m_aStats[i].Reset();
+
 	m_Active = false;
 	m_Activate = false;
 
@@ -78,6 +90,41 @@ void CStats::ConKeyStats(IConsole::IResult *pResult, void *pUserData)
 void CStats::OnConsoleInit()
 {
 	Console()->Register("+stats", "", CFGFLAG_CLIENT, ConKeyStats, this, "Show stats");
+}
+
+void CStats::OnMessage(int MsgType, void *pRawMsg)
+{
+	if(m_pClient->m_SuppressEvents)
+		return;
+
+	if(MsgType == NETMSGTYPE_SV_KILLMSG)
+	{
+		CNetMsg_Sv_KillMsg *pMsg = (CNetMsg_Sv_KillMsg *)pRawMsg;
+		
+		if(pMsg->m_Weapon != -3)	// team switch
+			m_aStats[pMsg->m_Victim].m_Deaths++;
+		m_aStats[pMsg->m_Victim].m_CurrentSpree = 0;
+		if(pMsg->m_Weapon >= 0)
+			m_aStats[pMsg->m_Victim].m_aDeathsFrom[pMsg->m_Weapon]++;
+		if((pMsg->m_ModeSpecial & 1) && (pMsg->m_Weapon != -3))
+			m_aStats[pMsg->m_Victim].m_DeathsCarrying++;
+		if(pMsg->m_Victim != pMsg->m_Killer)
+		{
+			m_aStats[pMsg->m_Killer].m_Kills++;
+			m_aStats[pMsg->m_Killer].m_CurrentSpree++;
+
+			if(m_aStats[pMsg->m_Killer].m_CurrentSpree > m_aStats[pMsg->m_Killer].m_BestSpree)
+				m_aStats[pMsg->m_Killer].m_BestSpree = m_aStats[pMsg->m_Killer].m_CurrentSpree;
+			if(pMsg->m_Weapon >= 0)
+				m_aStats[pMsg->m_Killer].m_aKillsWith[pMsg->m_Weapon]++;
+			if(pMsg->m_ModeSpecial & 1)
+				m_aStats[pMsg->m_Killer].m_CarriersKilled++;
+			if(pMsg->m_ModeSpecial & 2)
+				m_aStats[pMsg->m_Killer].m_KillsCarrying++;
+		}
+		else if(pMsg->m_Weapon != -3)
+			m_aStats[pMsg->m_Victim].m_Suicides++;
+	}
 }
 
 void CStats::OnRender()
@@ -188,7 +235,7 @@ void CStats::OnRender()
 	{
 		for(int i = 0; i < NumPlayers; i++)
 		{
-			const CPlayerStats *pStats = m_pClient->m_pMatchEvents->GetPlayerStats(aPlayers[i]);
+			const CPlayerStats *pStats = &m_aStats[aPlayers[i]];
 			for(int j=0; j<NUM_WEAPONS; j++)
 				aDisplayWeapon[j] = aDisplayWeapon[j] || pStats->m_aKillsWith[j] || pStats->m_aDeathsFrom[j];
 		}
@@ -364,7 +411,7 @@ void CStats::OnRender()
 			LastTeam = CurrentTeam;
 		}
 
-		const CPlayerStats *pStats = m_pClient->m_pMatchEvents->GetPlayerStats(aPlayers[j]);
+		const CPlayerStats *pStats = &m_aStats[aPlayers[j]];
 		const bool HighlightedLine = aPlayers[j] == m_pClient->m_LocalClientID
 			|| (m_pClient->m_Snap.m_SpecInfo.m_Active && aPlayers[j] == m_pClient->m_Snap.m_SpecInfo.m_SpectatorID);
 
@@ -559,6 +606,40 @@ void CStats::OnRender()
 		}
 		y += LineHeight;
 	}
+}
+
+void CStats::UpdatePlayTime(int Ticks)
+{
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(m_pClient->m_aClients[i].m_Active && m_pClient->m_aClients[i].m_Team != TEAM_SPECTATORS)
+			m_aStats[i].m_IngameTicks += Ticks;
+	}
+}
+
+void CStats::OnMatchStart()
+{
+	OnReset();
+}
+
+void CStats::OnFlagGrab(int ClientID)
+{
+	m_aStats[ClientID].m_FlagGrabs++;
+}
+
+void CStats::OnFlagCapture(int ClientID)
+{
+	m_aStats[ClientID].m_FlagCaptures++;
+}
+
+void CStats::OnPlayerEnter(int ClientID, int Team)
+{
+	m_aStats[ClientID].Reset();
+}
+
+void CStats::OnPlayerLeave(int ClientID)
+{
+	m_aStats[ClientID].Reset();
 }
 
 void CStats::AutoStatScreenshot()

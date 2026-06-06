@@ -214,24 +214,160 @@ void IGameController::DoTeamBalance()
 	GameServer()->SendGameMsg(GAMEMSG_TEAM_BALANCE, -1);
 }
 
+// scoring helpers
+void IGameController::DoPlayerScoreUpdate(CPlayer *pVictim, CPlayer *pKiller, int Weapon)
+{
+	if(!pKiller || Weapon == WEAPON_GAME)
+		return;
+	if(pKiller == pVictim)
+		pVictim->m_Score--;
+	else
+	{
+		if(IsTeamplay() && pVictim->GetTeam() == pKiller->GetTeam())
+			pKiller->m_Score--;
+		else
+			pKiller->m_Score++;
+	}
+}
+
+void IGameController::DoTeamScoreUpdate(CPlayer *pVictim, CPlayer *pKiller, int Weapon)
+{
+	if(!pKiller || Weapon == WEAPON_GAME)
+		return;
+	if(pKiller == pVictim || pKiller->GetTeam() == pVictim->GetTeam())
+		m_aTeamscore[pKiller->GetTeam()&1]--;
+	else
+		m_aTeamscore[pKiller->GetTeam()&1]++;
+}
+
+void IGameController::SetRespawnDelay(CPlayer *pPlayer, float Seconds)
+{
+	if(pPlayer)
+		pPlayer->m_RespawnTick = maximum(pPlayer->m_RespawnTick, Server()->Tick()+(int)(Server()->TickSpeed()*Seconds));
+}
+
+// survival helpers
+int IGameController::CountAlivePlayers(int Team) const
+{
+	int Count = 0;
+	for(int i = 0; i < MAX_CLIENTS; ++i)
+	{
+		if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS &&
+			(Team == -1 || GameServer()->m_apPlayers[i]->GetTeam() == Team) &&
+			(!GameServer()->m_apPlayers[i]->m_RespawnDisabled ||
+			(GameServer()->m_apPlayers[i]->GetCharacter() && GameServer()->m_apPlayers[i]->GetCharacter()->IsAlive())))
+			++Count;
+	}
+	return Count;
+}
+
+CPlayer *IGameController::FindAlivePlayer() const
+{
+	CPlayer *pAlive = 0;
+	for(int i = 0; i < MAX_CLIENTS; ++i)
+	{
+		if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS &&
+			(!GameServer()->m_apPlayers[i]->m_RespawnDisabled ||
+			(GameServer()->m_apPlayers[i]->GetCharacter() && GameServer()->m_apPlayers[i]->GetCharacter()->IsAlive())))
+			pAlive = GameServer()->m_apPlayers[i];
+	}
+	return pAlive;
+}
+
+void IGameController::CountAlivePlayersByTeam(int &RedAlive, int &BlueAlive) const
+{
+	RedAlive = 0;
+	BlueAlive = 0;
+	for(int i = 0; i < MAX_CLIENTS; ++i)
+	{
+		if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS &&
+			(!GameServer()->m_apPlayers[i]->m_RespawnDisabled ||
+			(GameServer()->m_apPlayers[i]->GetCharacter() && GameServer()->m_apPlayers[i]->GetCharacter()->IsAlive())))
+			++(GameServer()->m_apPlayers[i]->GetTeam() == TEAM_RED ? RedAlive : BlueAlive);
+	}
+}
+
+// wincheck helpers
+bool IGameController::IsSuddenDeathSettled() const
+{
+	if(IsTeamplay())
+		return m_aTeamscore[TEAM_RED] != m_aTeamscore[TEAM_BLUE];
+	else
+	{
+		int Topscore = 0;
+		int TopscoreCount = 0;
+		for(int i = 0; i < MAX_CLIENTS; i++)
+		{
+			if(GameServer()->m_apPlayers[i])
+			{
+				if(GameServer()->m_apPlayers[i]->m_Score > Topscore)
+				{
+					Topscore = GameServer()->m_apPlayers[i]->m_Score;
+					TopscoreCount = 1;
+				}
+				else if(GameServer()->m_apPlayers[i]->m_Score == Topscore)
+					TopscoreCount++;
+			}
+		}
+		return TopscoreCount == 1;
+	}
+}
+
+bool IGameController::DoTeamScoreWincheck()
+{
+	if((m_GameInfo.m_ScoreLimit > 0 && (m_aTeamscore[TEAM_RED] >= m_GameInfo.m_ScoreLimit || m_aTeamscore[TEAM_BLUE] >= m_GameInfo.m_ScoreLimit)) ||
+		(m_GameInfo.m_TimeLimit > 0 && (Server()->Tick()-m_GameStartTick) >= m_GameInfo.m_TimeLimit*Server()->TickSpeed()*60))
+	{
+		if(IsSuddenDeathSettled())
+		{
+			EndMatch();
+			return true;
+		}
+		else
+			m_SuddenDeath = 1;
+	}
+	return false;
+}
+
+bool IGameController::DoPlayerScoreWincheck()
+{
+	int Topscore = 0;
+	int TopscoreCount = 0;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(GameServer()->m_apPlayers[i])
+		{
+			if(GameServer()->m_apPlayers[i]->m_Score > Topscore)
+			{
+				Topscore = GameServer()->m_apPlayers[i]->m_Score;
+				TopscoreCount = 1;
+			}
+			else if(GameServer()->m_apPlayers[i]->m_Score == Topscore)
+				TopscoreCount++;
+		}
+	}
+
+	if((m_GameInfo.m_ScoreLimit > 0 && Topscore >= m_GameInfo.m_ScoreLimit) ||
+		(m_GameInfo.m_TimeLimit > 0 && (Server()->Tick()-m_GameStartTick) >= m_GameInfo.m_TimeLimit*Server()->TickSpeed()*60))
+	{
+		if(TopscoreCount == 1)
+		{
+			EndMatch();
+			return true;
+		}
+		else
+			m_SuddenDeath = 1;
+	}
+	return false;
+}
+
 // event
 int IGameController::OnCharacterDeath(CCharacter *pVictim, CPlayer *pKiller, int Weapon)
 {
-	// do scoreing
-	if(!pKiller || Weapon == WEAPON_GAME)
-		return 0;
-	if(pKiller == pVictim->GetPlayer())
-		pVictim->GetPlayer()->m_Score--; // suicide or world
-	else
-	{
-		if(IsTeamplay() && pVictim->GetPlayer()->GetTeam() == pKiller->GetTeam())
-			pKiller->m_Score--; // teamkill
-		else
-			pKiller->m_Score++; // normal kill
-	}
-	if(Weapon == WEAPON_SELF)
-		pVictim->GetPlayer()->m_RespawnTick = Server()->Tick()+Server()->TickSpeed()*3.0f;
+	DoPlayerScoreUpdate(pVictim->GetPlayer(), pKiller, Weapon);
 
+	if(Weapon == WEAPON_SELF)
+		SetRespawnDelay(pVictim->GetPlayer(), 3.0f);
 
 	// update spectator modes for dead players in survival
 	if(m_GameFlags&GAMEFLAG_SURVIVAL)
@@ -415,53 +551,9 @@ void IGameController::OnReset()
 bool IGameController::DoWincheckMatch()
 {
 	if(IsTeamplay())
-	{
-		// check score win condition
-		if((m_GameInfo.m_ScoreLimit > 0 && (m_aTeamscore[TEAM_RED] >= m_GameInfo.m_ScoreLimit || m_aTeamscore[TEAM_BLUE] >= m_GameInfo.m_ScoreLimit)) ||
-			(m_GameInfo.m_TimeLimit > 0 && (Server()->Tick()-m_GameStartTick) >= m_GameInfo.m_TimeLimit*Server()->TickSpeed()*60))
-		{
-			if(m_aTeamscore[TEAM_RED] != m_aTeamscore[TEAM_BLUE] || m_GameFlags&GAMEFLAG_SURVIVAL)
-			{
-				EndMatch();
-				return true;
-			}
-			else
-				m_SuddenDeath = 1;
-		}
-	}
+		return DoTeamScoreWincheck();
 	else
-	{
-		// gather some stats
-		int Topscore = 0;
-		int TopscoreCount = 0;
-		for(int i = 0; i < MAX_CLIENTS; i++)
-		{
-			if(GameServer()->m_apPlayers[i])
-			{
-				if(GameServer()->m_apPlayers[i]->m_Score > Topscore)
-				{
-					Topscore = GameServer()->m_apPlayers[i]->m_Score;
-					TopscoreCount = 1;
-				}
-				else if(GameServer()->m_apPlayers[i]->m_Score == Topscore)
-					TopscoreCount++;
-			}
-		}
-
-		// check score win condition
-		if((m_GameInfo.m_ScoreLimit > 0 && Topscore >= m_GameInfo.m_ScoreLimit) ||
-			(m_GameInfo.m_TimeLimit > 0 && (Server()->Tick()-m_GameStartTick) >= m_GameInfo.m_TimeLimit*Server()->TickSpeed()*60))
-		{
-			if(TopscoreCount == 1)
-			{
-				EndMatch();
-				return true;
-			}
-			else
-				m_SuddenDeath = 1;
-		}
-	}
-	return false;
+		return DoPlayerScoreWincheck();
 }
 
 void IGameController::ResetGame()

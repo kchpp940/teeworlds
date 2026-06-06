@@ -16,9 +16,6 @@ class CHud : public CComponent
 	int m_CheckpointDiff;
 	int64 m_CheckpointTime;
 
-	int m_LastCheckpointEventGeneration;
-	int m_LastKillEventGeneration;
-
 	void RenderCursor();
 
 	void RenderFps();
@@ -40,12 +37,11 @@ class CHud : public CComponent
 	void RenderRaceTime(const CNetObj_PlayerInfoRace *pRaceInfo);
 	void RenderCheckpoint();
 	void RenderLocalTime(float x);
-
-	void ProcessNewEvents();
 public:
 	CHud();
 
 	virtual void OnReset();
+	virtual void OnMessage(int MsgType, void *pRawMsg);
 	virtual void OnRender();
 };
 

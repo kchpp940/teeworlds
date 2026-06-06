@@ -58,9 +58,6 @@ class IGameController
 	EGameState m_GameState;
 	int m_GameStateTimer;
 
-	virtual bool DoWincheckMatch();		// returns true when the match is over
-	virtual void DoWincheckRound() {}
-	bool HasEnoughPlayers() const { return (IsTeamplay() && m_aTeamSize[TEAM_RED] > 0 && m_aTeamSize[TEAM_BLUE] > 0) || (!IsTeamplay() && m_aTeamSize[TEAM_RED] > 1); }
 	void ResetGame();
 	void SetGameState(EGameState GameState, int Timer=0);
 	void StartMatch();
@@ -110,6 +107,25 @@ protected:
 
 	void EndMatch() { SetGameState(IGS_END_MATCH, TIMER_END); }
 	void EndRound() { SetGameState(IGS_END_ROUND, TIMER_END/2); }
+
+	virtual bool DoWincheckMatch();		// returns true when the match is over
+	virtual void DoWincheckRound() {}
+	bool HasEnoughPlayers() const { return (IsTeamplay() && m_aTeamSize[TEAM_RED] > 0 && m_aTeamSize[TEAM_BLUE] > 0) || (!IsTeamplay() && m_aTeamSize[TEAM_RED] > 1); }
+
+	// scoring helpers
+	void DoPlayerScoreUpdate(class CPlayer *pVictim, class CPlayer *pKiller, int Weapon);
+	void DoTeamScoreUpdate(class CPlayer *pVictim, class CPlayer *pKiller, int Weapon);
+	void SetRespawnDelay(class CPlayer *pPlayer, float Seconds);
+
+	// survival helpers
+	int CountAlivePlayers(int Team = -1) const;
+	class CPlayer *FindAlivePlayer() const;
+	void CountAlivePlayersByTeam(int &RedAlive, int &BlueAlive) const;
+
+	// wincheck helpers
+	virtual bool DoTeamScoreWincheck();
+	virtual bool DoPlayerScoreWincheck();
+	virtual bool IsSuddenDeathSettled() const;
 
 	// info
 	int m_GameFlags;

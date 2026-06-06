@@ -59,6 +59,10 @@ class CGameClient : public IGameClient
 	int m_PredictedTick;
 	int m_LastNewPredictedTick;
 
+	int m_LastGameStartTick;
+	int m_LastFlagCarrierRed;
+	int m_LastFlagCarrierBlue;
+
 	static void ConTeam(IConsole::IResult *pResult, void *pUserData);
 	static void ConKill(IConsole::IResult *pResult, void *pUserData);
 	static void ConReadyChange(IConsole::IResult *pResult, void *pUserData);
@@ -333,7 +337,6 @@ public:
 	class CVoting *m_pVoting;
 	class CScoreboard *m_pScoreboard;
 	class CStats *m_pStats;
-	class CMatchEvents *m_pMatchEvents;
 	class CItems *m_pItems;
 	class CMapLayers *m_pMapLayersBackGround;
 	class CMapLayers *m_pMapLayersForeGround;
