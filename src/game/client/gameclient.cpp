@@ -497,9 +497,6 @@ void CGameClient::OnReset()
 		m_DemoSpecMode = SPEC_FREEVIEW;
 		m_DemoSpecID = -1;
 		m_Tuning = CTuningParams();
-		m_LastGameStartTick = -1;
-		m_LastFlagCarrierRed = FLAG_MISSING;
-		m_LastFlagCarrierBlue = FLAG_MISSING;
 	}
 }
 
@@ -1348,18 +1345,7 @@ void CGameClient::OnNewSnapshot()
 				else if(s_LastGameFlags&GAMESTATEFLAG_GAMEOVER && !(GameFlags&GAMESTATEFLAG_GAMEOVER))
 					OnStartGame();
 
-				// stats
-				if(m_Snap.m_pGameData->m_GameStartTick != m_LastGameStartTick && !(s_LastGameFlags&GAMESTATEFLAG_ROUNDOVER)
-					&& !(s_LastGameFlags&GAMESTATEFLAG_PAUSED) && (!(GameFlags&GAMESTATEFLAG_PAUSED) || GameFlags&GAMESTATEFLAG_STARTCOUNTDOWN))
-				{
-					m_pStats->OnMatchStart();
-				}
-
-				if(!(GameFlags&(GAMESTATEFLAG_PAUSED|GAMESTATEFLAG_ROUNDOVER|GAMESTATEFLAG_GAMEOVER)))
-					m_pStats->UpdatePlayTime(Client()->GameTick() - Client()->PrevGameTick());
-
 				s_LastGameFlags = GameFlags;
-				m_LastGameStartTick = m_Snap.m_pGameData->m_GameStartTick;
 			}
 			else if(Item.m_Type == NETOBJTYPE_GAMEDATATEAM)
 			{
@@ -1369,15 +1355,6 @@ void CGameClient::OnNewSnapshot()
 			{
 				m_Snap.m_pGameDataFlag = (const CNetObj_GameDataFlag *)pData;
 				m_Snap.m_GameDataFlagSnapID = Item.m_ID;
-
-				// stats
-				if(m_LastFlagCarrierRed == FLAG_ATSTAND && m_Snap.m_pGameDataFlag->m_FlagCarrierRed >= 0)
-					m_pStats->OnFlagGrab(m_Snap.m_pGameDataFlag->m_FlagCarrierRed);
-				else if(m_LastFlagCarrierBlue == FLAG_ATSTAND && m_Snap.m_pGameDataFlag->m_FlagCarrierBlue >= 0)
-					m_pStats->OnFlagGrab(m_Snap.m_pGameDataFlag->m_FlagCarrierBlue);
-
-				m_LastFlagCarrierRed = m_Snap.m_pGameDataFlag->m_FlagCarrierRed;
-				m_LastFlagCarrierBlue = m_Snap.m_pGameDataFlag->m_FlagCarrierBlue;
 			}
 			else if(Item.m_Type == NETOBJTYPE_GAMEDATARACE)
 			{
@@ -1484,6 +1461,9 @@ void CGameClient::OnNewSnapshot()
 		m_ServerMode = SERVERMODE_PURE;
 	else
 		m_ServerMode = SERVERMODE_PUREMOD;
+
+	for(int i = 0; i < m_All.m_Num; i++)
+		m_All.m_apComponents[i]->OnNewSnapshot();
 }
 
 void CGameClient::OnDemoRecSnap()

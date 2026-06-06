@@ -14,6 +14,7 @@ public:
 		MAX_RACE_EVENTS = 16,
 		MAX_CHECKPOINT_EVENTS = 16,
 
+		FLAG_MISSING = -1,
 		FLAG_ATSTAND = 0,
 		FLAG_TAKEN = 1,
 		FLAG_DROPPED = 2,
@@ -111,6 +112,8 @@ private:
 
 	int m_LastFlagCarrierRed;
 	int m_LastFlagCarrierBlue;
+	int m_PrevFlagCarrierRed;
+	int m_PrevFlagCarrierBlue;
 	int m_FlagDropTickRed;
 	int m_FlagDropTickBlue;
 	int m_FlagStateRed;
@@ -119,7 +122,9 @@ private:
 	CTeamState m_aTeamState[2];
 
 	int m_GameStartTick;
+	int m_PrevGameStartTick;
 	int m_GameStateFlags;
+	int m_PrevGameStateFlags;
 	int m_GameStateEndTick;
 	int m_SnapNotReadyCount;
 

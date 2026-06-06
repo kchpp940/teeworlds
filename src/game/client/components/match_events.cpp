@@ -53,12 +53,14 @@ void CMatchEvents::OnReset()
 	m_CheckpointEventNext = 0;
 	m_CheckpointEventGeneration = 0;
 
-	m_LastFlagCarrierRed = -1;
-	m_LastFlagCarrierBlue = -1;
+	m_LastFlagCarrierRed = FLAG_MISSING;
+	m_LastFlagCarrierBlue = FLAG_MISSING;
+	m_PrevFlagCarrierRed = FLAG_MISSING;
+	m_PrevFlagCarrierBlue = FLAG_MISSING;
 	m_FlagDropTickRed = 0;
 	m_FlagDropTickBlue = 0;
-	m_FlagStateRed = 0;
-	m_FlagStateBlue = 0;
+	m_FlagStateRed = FLAG_ATSTAND;
+	m_FlagStateBlue = FLAG_ATSTAND;
 
 	m_aTeamState[0].m_Score = 0;
 	m_aTeamState[0].m_Size = 0;
@@ -68,7 +70,9 @@ void CMatchEvents::OnReset()
 	m_aTeamState[1].m_AliveCount = 0;
 
 	m_GameStartTick = 0;
+	m_PrevGameStartTick = -1;
 	m_GameStateFlags = 0;
+	m_PrevGameStateFlags = 0;
 	m_GameStateEndTick = 0;
 	m_SnapNotReadyCount = 0;
 
@@ -127,6 +131,15 @@ void CMatchEvents::OnNewSnapshot()
 		m_GameStartTick = m_pClient->m_Snap.m_pGameData->m_GameStartTick;
 		m_GameStateFlags = m_pClient->m_Snap.m_pGameData->m_GameStateFlags;
 		m_GameStateEndTick = m_pClient->m_Snap.m_pGameData->m_GameStateEndTick;
+
+		if(m_GameStartTick != m_PrevGameStartTick && !(m_PrevGameStateFlags&GAMESTATEFLAG_ROUNDOVER)
+			&& !(m_PrevGameStateFlags&GAMESTATEFLAG_PAUSED) && (!(m_GameStateFlags&GAMESTATEFLAG_PAUSED) || m_GameStateFlags&GAMESTATEFLAG_STARTCOUNTDOWN))
+		{
+			OnMatchStart();
+		}
+
+		if(!(m_GameStateFlags&(GAMESTATEFLAG_PAUSED|GAMESTATEFLAG_ROUNDOVER|GAMESTATEFLAG_GAMEOVER)))
+			UpdatePlayTime(Client()->GameTick() - Client()->PrevGameTick());
 	}
 	else
 	{
@@ -143,17 +156,23 @@ void CMatchEvents::OnNewSnapshot()
 		m_LastFlagCarrierBlue = m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierBlue;
 		m_FlagDropTickRed = m_pClient->m_Snap.m_pGameDataFlag->m_FlagDropTickRed;
 		m_FlagDropTickBlue = m_pClient->m_Snap.m_pGameDataFlag->m_FlagDropTickBlue;
+
+		if(m_PrevFlagCarrierRed == FLAG_ATSTAND && m_LastFlagCarrierRed >= 0)
+			OnFlagGrab(m_LastFlagCarrierRed);
+		if(m_PrevFlagCarrierBlue == FLAG_ATSTAND && m_LastFlagCarrierBlue >= 0)
+			OnFlagGrab(m_LastFlagCarrierBlue);
+
 		m_FlagStateRed = (m_LastFlagCarrierRed >= 0) ? FLAG_TAKEN : (m_FlagDropTickRed != 0 ? FLAG_DROPPED : FLAG_ATSTAND);
 		m_FlagStateBlue = (m_LastFlagCarrierBlue >= 0) ? FLAG_TAKEN : (m_FlagDropTickBlue != 0 ? FLAG_DROPPED : FLAG_ATSTAND);
 	}
 	else
 	{
-		m_LastFlagCarrierRed = -1;
-		m_LastFlagCarrierBlue = -1;
+		m_LastFlagCarrierRed = FLAG_MISSING;
+		m_LastFlagCarrierBlue = FLAG_MISSING;
 		m_FlagDropTickRed = 0;
 		m_FlagDropTickBlue = 0;
-		m_FlagStateRed = 0;
-		m_FlagStateBlue = 0;
+		m_FlagStateRed = FLAG_ATSTAND;
+		m_FlagStateBlue = FLAG_ATSTAND;
 	}
 
 	if(m_pClient->m_Snap.m_pGameDataTeam)
@@ -205,6 +224,11 @@ void CMatchEvents::OnNewSnapshot()
 			NumSpec++;
 	}
 	m_NumSpectators = NumSpec;
+
+	m_PrevFlagCarrierRed = m_LastFlagCarrierRed;
+	m_PrevFlagCarrierBlue = m_LastFlagCarrierBlue;
+	m_PrevGameStartTick = m_GameStartTick;
+	m_PrevGameStateFlags = m_GameStateFlags;
 }
 
 void CMatchEvents::OnMessage(int MsgType, void *pRawMsg)
