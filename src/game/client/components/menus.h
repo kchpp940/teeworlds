@@ -401,6 +401,30 @@ private:
 		void GetDisplayCounts(int Index, int *pNum, int *pMax) const;
 		bool IsClientHidden(int Index, int ClientIndex) const;
 
+		// ---- Semantic filter state API ----
+		bool GetFilterFlag(int Flag) const { return m_pServerBrowser->GetFilterFlag(m_Filter, Flag); }
+		void SetFilterFlag(int Flag, bool Enabled) { m_pServerBrowser->SetFilterFlag(m_Filter, Flag, Enabled); }
+
+		int GetFilterPing() const { return m_pServerBrowser->GetFilterPing(m_Filter); }
+		void SetFilterPing(int Ping) { m_pServerBrowser->SetFilterPing(m_Filter, Ping); }
+
+		void GetFilterAddress(char *pBuf, int Size) const { m_pServerBrowser->GetFilterAddress(m_Filter, pBuf, Size); }
+		void SetFilterAddress(const char *pAddress) { m_pServerBrowser->SetFilterAddress(m_Filter, pAddress); }
+
+		bool GetFilterCountryEnabled() const { return m_pServerBrowser->GetFilterCountryEnabled(m_Filter); }
+		void SetFilterCountryEnabled(bool Enabled) { m_pServerBrowser->SetFilterCountryEnabled(m_Filter, Enabled); }
+		int GetFilterCountry() const { return m_pServerBrowser->GetFilterCountry(m_Filter); }
+		void SetFilterCountry(int Country) { m_pServerBrowser->SetFilterCountry(m_Filter, Country); }
+
+		bool IsLevelFiltered(int Level) const { return m_pServerBrowser->IsLevelFiltered(m_Filter, Level); }
+		void ToggleLevelFilter(int Level) { m_pServerBrowser->ToggleLevelFilter(m_Filter, Level); }
+
+		int GetNumGametypeFilters() const { return m_pServerBrowser->GetNumGametypeFilters(m_Filter); }
+		void GetGametypeFilter(int Idx, char *pName, int NameSize, bool *pExclusive) const { m_pServerBrowser->GetGametypeFilter(m_Filter, Idx, pName, NameSize, pExclusive); }
+		void AddGametypeFilter(const char *pName, bool Exclusive) { m_pServerBrowser->AddGametypeFilter(m_Filter, pName, Exclusive); }
+		void RemoveGametypeFilter(int Idx) { m_pServerBrowser->RemoveGametypeFilter(m_Filter, Idx); }
+		void ClearGametypeFilters() { m_pServerBrowser->ClearGametypeFilters(m_Filter); }
+
 		void Reset();
 		void GetFilter(CServerFilterInfo *pFilterInfo) const;
 		void SetFilter(const CServerFilterInfo *pFilterInfo);

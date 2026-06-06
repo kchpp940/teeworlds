@@ -103,7 +103,7 @@ public:
 		}
 	}
 
-	int IsLevelFiltered(int Level)
+	int IsLevelFiltered(int Level) const
 	{
 		return m_ServerLevel & (1 << Level);
 	}
@@ -194,6 +194,42 @@ public:
 	virtual void SetFilter(int Index, const CServerFilterInfo *pFilterInfo) = 0;
 	virtual void GetFilter(int Index, CServerFilterInfo *pFilterInfo) = 0;
 	virtual void RemoveFilter(int Index) = 0;
+
+	// ---- Semantic filter state API ----
+	// UI calls these instead of manipulating CServerFilterInfo directly.
+	// All mutations auto-trigger re-filter/sort and update derived display fields.
+
+	virtual bool GetFilterFlag(int FilterIndex, int Flag) const = 0;
+	virtual void SetFilterFlag(int FilterIndex, int Flag, bool Enabled) = 0;
+
+	virtual int GetFilterPing(int FilterIndex) const = 0;
+	virtual void SetFilterPing(int FilterIndex, int Ping) = 0;
+
+	virtual void GetFilterAddress(int FilterIndex, char *pBuf, int Size) const = 0;
+	virtual void SetFilterAddress(int FilterIndex, const char *pAddress) = 0;
+
+	virtual bool GetFilterCountryEnabled(int FilterIndex) const = 0;
+	virtual void SetFilterCountryEnabled(int FilterIndex, bool Enabled) = 0;
+	virtual int GetFilterCountry(int FilterIndex) const = 0;
+	virtual void SetFilterCountry(int FilterIndex, int Country) = 0;
+
+	virtual bool IsLevelFiltered(int FilterIndex, int Level) const = 0;
+	virtual void ToggleLevelFilter(int FilterIndex, int Level) = 0;
+
+	virtual int GetNumGametypeFilters(int FilterIndex) const = 0;
+	virtual void GetGametypeFilter(int FilterIndex, int Idx, char *pName, int NameSize, bool *pExclusive) const = 0;
+	virtual void AddGametypeFilter(int FilterIndex, const char *pName, bool Exclusive) = 0;
+	virtual void RemoveGametypeFilter(int FilterIndex, int Idx) = 0;
+	virtual void ClearGametypeFilters(int FilterIndex) = 0;
+
+	// Global sorting (not per-filter)
+	virtual int GetSort() const = 0;
+	virtual int GetSortOrder() const = 0;
+	virtual void SetSortAndOrder(int SortType, int SortOrder) = 0;
+
+	// Global quick-search string (lives in Config, but accessed uniformly)
+	virtual void GetQuickSearchString(char *pBuf, int Size) const = 0;
+	virtual void SetQuickSearchString(const char *pString) = 0;
 };
 
 #endif

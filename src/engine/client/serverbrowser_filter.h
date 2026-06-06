@@ -74,6 +74,30 @@ public:
 	void GetDisplayCounts(int FilterIndex, int Index, int *pNum, int *pMax) const { m_lFilters[FilterIndex].GetDisplayCounts(Index, pNum, pMax); }
 	bool IsClientHidden(int FilterIndex, int Index, int ClientIndex) const { return m_lFilters[FilterIndex].IsClientHidden(Index, ClientIndex); }
 
+	// ---- Semantic filter state API ----
+	bool GetFilterFlag(int FilterIndex, int Flag) const { return (m_lFilters[FilterIndex].m_FilterInfo.m_SortHash & Flag) != 0; }
+	void SetFilterFlag(int FilterIndex, int Flag, bool Enabled);
+
+	int GetFilterPing(int FilterIndex) const { return m_lFilters[FilterIndex].m_FilterInfo.m_Ping; }
+	void SetFilterPing(int FilterIndex, int Ping);
+
+	void GetFilterAddress(int FilterIndex, char *pBuf, int Size) const { str_copy(pBuf, m_lFilters[FilterIndex].m_FilterInfo.m_aAddress, Size); }
+	void SetFilterAddress(int FilterIndex, const char *pAddress);
+
+	bool GetFilterCountryEnabled(int FilterIndex) const { return (m_lFilters[FilterIndex].m_FilterInfo.m_SortHash & IServerBrowser::FILTER_COUNTRY) != 0; }
+	void SetFilterCountryEnabled(int FilterIndex, bool Enabled);
+	int GetFilterCountry(int FilterIndex) const { return m_lFilters[FilterIndex].m_FilterInfo.m_Country; }
+	void SetFilterCountry(int FilterIndex, int Country);
+
+	bool IsLevelFiltered(int FilterIndex, int Level) const { return m_lFilters[FilterIndex].m_FilterInfo.IsLevelFiltered(Level) != 0; }
+	void ToggleLevelFilter(int FilterIndex, int Level);
+
+	int GetNumGametypeFilters(int FilterIndex) const;
+	void GetGametypeFilter(int FilterIndex, int Idx, char *pName, int NameSize, bool *pExclusive) const;
+	void AddGametypeFilter(int FilterIndex, const char *pName, bool Exclusive);
+	void RemoveGametypeFilter(int FilterIndex, int Idx);
+	void ClearGametypeFilters(int FilterIndex);
+
 private:
 	class CConfig *m_pConfig;
 	class IFriends *m_pFriends;

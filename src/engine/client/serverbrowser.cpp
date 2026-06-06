@@ -278,6 +278,19 @@ void CServerBrowser::SetType(int Type)
 	m_ServerBrowserFilter.Sort(m_aServerlist[m_ActServerlistType].m_ppServerlist, m_aServerlist[m_ActServerlistType].m_NumServers, CServerBrowserFilter::RESORT_FLAG_FORCE);
 }
 
+void CServerBrowser::SetSortAndOrder(int SortType, int SortOrder)
+{
+	Config()->m_BrSort = SortType;
+	Config()->m_BrSortOrder = SortOrder;
+	m_NeedResort = true;
+}
+
+void CServerBrowser::SetQuickSearchString(const char *pString)
+{
+	str_copy(Config()->m_BrFilterString, pString, sizeof(Config()->m_BrFilterString));
+	m_NeedResort = true;
+}
+
 void CServerBrowser::Refresh(int RefreshFlags)
 {
 	m_RefreshFlags |= RefreshFlags;

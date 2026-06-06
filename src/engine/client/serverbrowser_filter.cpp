@@ -427,6 +427,134 @@ void CServerBrowserFilter::RemoveFilter(int Index)
 	m_lFilters.remove_index(Index);
 }
 
+// ---- Semantic filter state API implementations ----
+
+void CServerBrowserFilter::SetFilterFlag(int FilterIndex, int Flag, bool Enabled)
+{
+	CServerFilter *pFilter = &m_lFilters[FilterIndex];
+	if(Enabled)
+		pFilter->m_FilterInfo.m_SortHash |= Flag;
+	else
+		pFilter->m_FilterInfo.m_SortHash &= ~Flag;
+	pFilter->Sort();
+}
+
+void CServerBrowserFilter::SetFilterPing(int FilterIndex, int Ping)
+{
+	CServerFilter *pFilter = &m_lFilters[FilterIndex];
+	pFilter->m_FilterInfo.m_Ping = Ping;
+	pFilter->Sort();
+}
+
+void CServerBrowserFilter::SetFilterAddress(int FilterIndex, const char *pAddress)
+{
+	CServerFilter *pFilter = &m_lFilters[FilterIndex];
+	str_copy(pFilter->m_FilterInfo.m_aAddress, pAddress, sizeof(pFilter->m_FilterInfo.m_aAddress));
+	pFilter->Sort();
+}
+
+void CServerBrowserFilter::SetFilterCountryEnabled(int FilterIndex, bool Enabled)
+{
+	SetFilterFlag(FilterIndex, IServerBrowser::FILTER_COUNTRY, Enabled);
+}
+
+void CServerBrowserFilter::SetFilterCountry(int FilterIndex, int Country)
+{
+	CServerFilter *pFilter = &m_lFilters[FilterIndex];
+	pFilter->m_FilterInfo.m_Country = Country;
+	pFilter->Sort();
+}
+
+void CServerBrowserFilter::ToggleLevelFilter(int FilterIndex, int Level)
+{
+	CServerFilter *pFilter = &m_lFilters[FilterIndex];
+	pFilter->m_FilterInfo.ToggleLevel(Level);
+	pFilter->Sort();
+}
+
+int CServerBrowserFilter::GetNumGametypeFilters(int FilterIndex) const
+{
+	const CServerFilterInfo &Info = m_lFilters[FilterIndex].m_FilterInfo;
+	int Count = 0;
+	for(int i = 0; i < CServerFilterInfo::MAX_GAMETYPES; ++i)
+	{
+		if(Info.m_aGametype[i][0])
+			Count++;
+		else
+			break;
+	}
+	return Count;
+}
+
+void CServerBrowserFilter::GetGametypeFilter(int FilterIndex, int Idx, char *pName, int NameSize, bool *pExclusive) const
+{
+	const CServerFilterInfo &Info = m_lFilters[FilterIndex].m_FilterInfo;
+	if(Idx >= 0 && Idx < CServerFilterInfo::MAX_GAMETYPES && Info.m_aGametype[Idx][0])
+	{
+		if(pName)
+			str_copy(pName, Info.m_aGametype[Idx], NameSize);
+		if(pExclusive)
+			*pExclusive = Info.m_aGametypeExclusive[Idx] != 0;
+	}
+	else
+	{
+		if(pName && NameSize > 0)
+			pName[0] = 0;
+		if(pExclusive)
+			*pExclusive = false;
+	}
+}
+
+void CServerBrowserFilter::AddGametypeFilter(int FilterIndex, const char *pName, bool Exclusive)
+{
+	CServerFilter *pFilter = &m_lFilters[FilterIndex];
+	for(int i = 0; i < CServerFilterInfo::MAX_GAMETYPES; ++i)
+	{
+		if(!pFilter->m_FilterInfo.m_aGametype[i][0])
+		{
+			str_copy(pFilter->m_FilterInfo.m_aGametype[i], pName, sizeof(pFilter->m_FilterInfo.m_aGametype[i]));
+			pFilter->m_FilterInfo.m_aGametypeExclusive[i] = Exclusive;
+			pFilter->Sort();
+			return;
+		}
+	}
+}
+
+void CServerBrowserFilter::RemoveGametypeFilter(int FilterIndex, int Idx)
+{
+	CServerFilter *pFilter = &m_lFilters[FilterIndex];
+	if(Idx < 0 || Idx >= CServerFilterInfo::MAX_GAMETYPES)
+		return;
+	if(Idx == CServerFilterInfo::MAX_GAMETYPES - 1 || !pFilter->m_FilterInfo.m_aGametype[Idx + 1][0])
+	{
+		pFilter->m_FilterInfo.m_aGametype[Idx][0] = 0;
+		pFilter->m_FilterInfo.m_aGametypeExclusive[Idx] = false;
+	}
+	else
+	{
+		int j = Idx;
+		for(; j < CServerFilterInfo::MAX_GAMETYPES - 1 && pFilter->m_FilterInfo.m_aGametype[j + 1][0]; ++j)
+		{
+			str_copy(pFilter->m_FilterInfo.m_aGametype[j], pFilter->m_FilterInfo.m_aGametype[j + 1], sizeof(pFilter->m_FilterInfo.m_aGametype[j]));
+			pFilter->m_FilterInfo.m_aGametypeExclusive[j] = pFilter->m_FilterInfo.m_aGametypeExclusive[j + 1];
+		}
+		pFilter->m_FilterInfo.m_aGametype[j][0] = 0;
+		pFilter->m_FilterInfo.m_aGametypeExclusive[j] = false;
+	}
+	pFilter->Sort();
+}
+
+void CServerBrowserFilter::ClearGametypeFilters(int FilterIndex)
+{
+	CServerFilter *pFilter = &m_lFilters[FilterIndex];
+	for(int i = 0; i < CServerFilterInfo::MAX_GAMETYPES; ++i)
+	{
+		pFilter->m_FilterInfo.m_aGametype[i][0] = 0;
+		pFilter->m_FilterInfo.m_aGametypeExclusive[i] = false;
+	}
+	pFilter->Sort();
+}
+
 void CServerBrowserFilter::CServerFilter::GetDisplayCounts(int Index, int *pNum, int *pMax) const
 {
 	if(Index < 0 || Index >= m_pServerBrowserFilter->m_NumServers)

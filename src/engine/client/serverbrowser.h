@@ -57,6 +57,37 @@ public:
 	void GetFilter(int Index, CServerFilterInfo *pFilterInfo) { m_ServerBrowserFilter.GetFilter(Index, pFilterInfo); }
 	void RemoveFilter(int Index) { m_ServerBrowserFilter.RemoveFilter(Index); }
 
+	// ---- Semantic filter state API ----
+	bool GetFilterFlag(int FilterIndex, int Flag) const { return m_ServerBrowserFilter.GetFilterFlag(FilterIndex, Flag); }
+	void SetFilterFlag(int FilterIndex, int Flag, bool Enabled) { m_ServerBrowserFilter.SetFilterFlag(FilterIndex, Flag, Enabled); RequestResort(); }
+
+	int GetFilterPing(int FilterIndex) const { return m_ServerBrowserFilter.GetFilterPing(FilterIndex); }
+	void SetFilterPing(int FilterIndex, int Ping) { m_ServerBrowserFilter.SetFilterPing(FilterIndex, Ping); RequestResort(); }
+
+	void GetFilterAddress(int FilterIndex, char *pBuf, int Size) const { m_ServerBrowserFilter.GetFilterAddress(FilterIndex, pBuf, Size); }
+	void SetFilterAddress(int FilterIndex, const char *pAddress) { m_ServerBrowserFilter.SetFilterAddress(FilterIndex, pAddress); RequestResort(); }
+
+	bool GetFilterCountryEnabled(int FilterIndex) const { return m_ServerBrowserFilter.GetFilterCountryEnabled(FilterIndex); }
+	void SetFilterCountryEnabled(int FilterIndex, bool Enabled) { m_ServerBrowserFilter.SetFilterCountryEnabled(FilterIndex, Enabled); RequestResort(); }
+	int GetFilterCountry(int FilterIndex) const { return m_ServerBrowserFilter.GetFilterCountry(FilterIndex); }
+	void SetFilterCountry(int FilterIndex, int Country) { m_ServerBrowserFilter.SetFilterCountry(FilterIndex, Country); RequestResort(); }
+
+	bool IsLevelFiltered(int FilterIndex, int Level) const { return m_ServerBrowserFilter.IsLevelFiltered(FilterIndex, Level); }
+	void ToggleLevelFilter(int FilterIndex, int Level) { m_ServerBrowserFilter.ToggleLevelFilter(FilterIndex, Level); RequestResort(); }
+
+	int GetNumGametypeFilters(int FilterIndex) const { return m_ServerBrowserFilter.GetNumGametypeFilters(FilterIndex); }
+	void GetGametypeFilter(int FilterIndex, int Idx, char *pName, int NameSize, bool *pExclusive) const { m_ServerBrowserFilter.GetGametypeFilter(FilterIndex, Idx, pName, NameSize, pExclusive); }
+	void AddGametypeFilter(int FilterIndex, const char *pName, bool Exclusive) { m_ServerBrowserFilter.AddGametypeFilter(FilterIndex, pName, Exclusive); RequestResort(); }
+	void RemoveGametypeFilter(int FilterIndex, int Idx) { m_ServerBrowserFilter.RemoveGametypeFilter(FilterIndex, Idx); RequestResort(); }
+	void ClearGametypeFilters(int FilterIndex) { m_ServerBrowserFilter.ClearGametypeFilters(FilterIndex); RequestResort(); }
+
+	int GetSort() const { return Config()->m_BrSort; }
+	int GetSortOrder() const { return Config()->m_BrSortOrder; }
+	void SetSortAndOrder(int SortType, int SortOrder);
+
+	void GetQuickSearchString(char *pBuf, int Size) const { str_copy(pBuf, Config()->m_BrFilterString, Size); }
+	void SetQuickSearchString(const char *pString);
+
 	static void CBFTrackPacket(int TrackID, void *pUser);
 	
 	void LoadServerlist();
