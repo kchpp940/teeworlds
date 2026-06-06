@@ -806,11 +806,9 @@ void CMenus::RenderThemeSelection(CUIRect MainView, bool Header)
 
 void CMenus::RenderSettingsGeneral(CUIRect MainView)
 {
-	CUIRect Label, Button, Game, Client, BottomView, Background;
+	CUIRect Label, Button, Game, Client, BottomView;
 
-	// cut view
-	MainView.HSplitBottom(80.0f, &MainView, &BottomView);
-	BottomView.HSplitTop(20.f, 0, &BottomView);
+	DoPageFrame_Settings(&MainView, &MainView, &BottomView, 0, 80.0f);
 
 	// render game menu backgrounds
 	int NumOptions = maximum(Config()->m_ClNameplates ? 6 : 3, Config()->m_ClShowsocial ? 6 : 5);
@@ -818,12 +816,6 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 	float Spacing = 2.0f;
 	float BackgroundHeight = (float)(NumOptions+1)*ButtonHeight+(float)NumOptions*Spacing;
 
-	if(this->Client()->State() == IClient::STATE_ONLINE)
-		Background = MainView;
-	else
-		MainView.HSplitTop(20.0f, 0, &Background);
-	Background.Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha/100.0f), 5.0f, this->Client()->State() == IClient::STATE_OFFLINE ? CUIRect::CORNER_ALL : CUIRect::CORNER_B);
-	MainView.HSplitTop(20.0f, 0, &MainView);
 	MainView.HSplitTop(BackgroundHeight, &Game, &MainView);
 	Game.Draw(vec4(0.0f, 0.0f, 0.0f, 0.25f));
 
@@ -1041,11 +1033,9 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 		m_pClient->m_IdentityState = 0;
 	}
 
-	CUIRect Button, Label, TopView, BottomView, Background, Left, Right;
+	CUIRect Button, Label, TopView, BottomView, Left, Right;
 
-	// cut view
-	MainView.HSplitBottom(80.0f, &MainView, &BottomView);
-	BottomView.HSplitTop(20.f, 0, &BottomView);
+	DoPageFrame_Settings(&MainView, &MainView, &BottomView, 0, 80.0f);
 
 	// render skin preview background
 	const float SpacingH = 2.0f;
@@ -1055,12 +1045,6 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 	const float BackgroundHeight = (ButtonHeight+SpacingH) + SkinHeight*2;
 	const vec2 MousePosition = vec2(UI()->MouseX(), UI()->MouseY());
 
-	if(this->Client()->State() == IClient::STATE_ONLINE)
-		Background = MainView;
-	else
-		MainView.HSplitTop(20.0f, 0, &Background);
-	Background.Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha/100.0f), 5.0f, Client()->State() == IClient::STATE_OFFLINE ? CUIRect::CORNER_ALL : CUIRect::CORNER_B);
-	MainView.HSplitTop(20.0f, 0, &MainView);
 	MainView.HSplitTop(BackgroundHeight, &TopView, &MainView);
 	TopView.VSplitMid(&Left, &Right, 3.0f);
 	Left.Draw(vec4(0.0f, 0.0f, 0.0f, 0.25f));
@@ -1335,16 +1319,8 @@ void CMenus::PopupConfirmDeleteSkin()
 
 void CMenus::RenderSettingsControls(CUIRect MainView)
 {
-	// cut view
-	CUIRect BottomView, Background;
-	MainView.HSplitBottom(80.0f, &MainView, &BottomView);
-	if(this->Client()->State() == IClient::STATE_ONLINE)
-		Background = MainView;
-	else
-		MainView.HSplitTop(20.0f, 0, &Background);
-	Background.Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha/100.0f), 5.0f, Client()->State() == IClient::STATE_OFFLINE ? CUIRect::CORNER_ALL : CUIRect::CORNER_B);
-	MainView.HSplitTop(20.0f, 0, &MainView);
-	BottomView.HSplitTop(20.f, 0, &BottomView);
+	CUIRect BottomView;
+	DoPageFrame_Settings(&MainView, &MainView, &BottomView, 0, 80.0f);
 
 	const float HeaderHeight = 20.0f;
 
@@ -1520,11 +1496,9 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	static const int s_GfxTextureQuality = Config()->m_GfxTextureQuality;
 	static const int s_GfxTextureCompression = Config()->m_GfxTextureCompression;
 
-	CUIRect Label, Button, ScreenLeft, ScreenRight, Texture, BottomView, Background;
+	CUIRect Label, Button, ScreenLeft, ScreenRight, Texture, BottomView;
 
-	// cut view
-	MainView.HSplitBottom(80.0f, &MainView, &BottomView);
-	BottomView.HSplitTop(20.f, 0, &BottomView);
+	DoPageFrame_Settings(&MainView, &MainView, &BottomView, 0, 80.0f);
 
 	// render screen menu background
 	int NumOptions = 3;
@@ -1534,12 +1508,6 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	float Spacing = 2.0f;
 	float BackgroundHeight = (float)(NumOptions+1)*ButtonHeight+(float)NumOptions*Spacing;
 
-	if(this->Client()->State() == IClient::STATE_ONLINE)
-		Background = MainView;
-	else
-		MainView.HSplitTop(20.0f, 0, &Background);
-	Background.Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha/100.0f), 5.0f, Client()->State() == IClient::STATE_OFFLINE ? CUIRect::CORNER_ALL : CUIRect::CORNER_B);
-	MainView.HSplitTop(20.0f, 0, &MainView);
 	MainView.HSplitTop(BackgroundHeight, &ScreenLeft, &MainView);
 	ScreenLeft.Draw(vec4(0.0f, 0.0f, 0.0f, 0.25f));
 
@@ -1742,7 +1710,7 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 
 void CMenus::RenderSettingsSound(CUIRect MainView)
 {
-	CUIRect Label, Button, Sound, Detail, BottomView, Background;
+	CUIRect Label, Button, Sound, Detail, BottomView;
 
 	// render sound menu background
 	int NumOptions = Config()->m_SndEnable ? 3 : 2;
@@ -1753,13 +1721,7 @@ void CMenus::RenderSettingsSound(CUIRect MainView)
 	if(Config()->m_SndEnable)
 		TotalHeight += 10.0f+2.0f*ButtonHeight+Spacing;
 
-	MainView.HSplitBottom(MainView.h-TotalHeight-20.0f, &MainView, &BottomView);
-	if(this->Client()->State() == IClient::STATE_ONLINE)
-		Background = MainView;
-	else
-		MainView.HSplitTop(20.0f, 0, &Background);
-	Background.Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha/100.0f), 5.0f, Client()->State() == IClient::STATE_OFFLINE ? CUIRect::CORNER_ALL : CUIRect::CORNER_B);
-	MainView.HSplitTop(20.0f, 0, &MainView);
+	DoPageFrame_Settings(&MainView, &MainView, &BottomView, 0, MainView.h - TotalHeight - 20.0f);
 	MainView.HSplitTop(BackgroundHeight, &Sound, &MainView);
 	Sound.Draw(vec4(0.0f, 0.0f, 0.0f, 0.25f));
 

@@ -404,6 +404,50 @@ bool CMenus::DoButton_DeleteConfirm(CButtonContainer *pButtonContainer, const ch
 	return DoButton_ConfirmAction(pButtonContainer, pBtnText, pConfirmTitle, pConfirmMsg, Localize("Yes"), Localize("No"), pfnAction, pRect, Corners, Rounding);
 }
 
+bool CMenus::DoConfirm(const char *pConfirmTitle, const char *pConfirmMsgFallback, const char *pConfirmBtn, const char *pCancelBtn, FActionCallback pfnAction, FConfirmPrepareCallback pfnPrepare)
+{
+	const char *pMsg = pConfirmMsgFallback;
+	char aBuf[256];
+	if(pfnPrepare)
+	{
+		aBuf[0] = 0;
+		if(!(this->*pfnPrepare)(aBuf, (int)sizeof(aBuf)))
+			return false;
+		if(aBuf[0])
+			pMsg = aBuf;
+	}
+	PopupConfirm(pConfirmTitle, pMsg, pConfirmBtn, pCancelBtn, pfnAction);
+	return true;
+}
+
+bool CMenus::PrepareDeleteDemo(char *pMsgBuf, int MsgBufSize)
+{
+	if(m_DemolistSelectedIndex < 0)
+		return false;
+	UI()->SetActiveItem(0);
+	str_format(pMsgBuf, MsgBufSize, Localize("Are you sure that you want to delete the demo '%s'?"), m_lDemos[m_DemolistSelectedIndex].m_aFilename);
+	return true;
+}
+
+bool CMenus::PrepareRemoveFilter(char *pMsgBuf, int MsgBufSize)
+{
+	if(!m_RemoveFilterIndex || m_RemoveFilterIndex < 0 || m_RemoveFilterIndex >= (int)m_lFilters.size())
+		return false;
+	str_format(pMsgBuf, MsgBufSize, Localize("Are you sure that you want to remove the filter '%s' from the server browser?"), m_lFilters[m_RemoveFilterIndex].Name());
+	return true;
+}
+
+bool CMenus::PrepareRemoveFriend(char *pMsgBuf, int MsgBufSize)
+{
+	if(!m_pDeleteFriend)
+		return false;
+	const bool IsPlayer = m_pDeleteFriend->m_FriendState == CContactInfo::CONTACT_PLAYER;
+	str_format(pMsgBuf, MsgBufSize,
+		IsPlayer ? Localize("Are you sure that you want to remove the player '%s' from your friends list?") : Localize("Are you sure that you want to remove the clan '%s' from your friends list?"),
+		IsPlayer ? m_pDeleteFriend->m_aName : m_pDeleteFriend->m_aClan);
+	return true;
+}
+
 bool CMenus::DoButton_CheckBox_ConfigEx(int *pConfig, const char *pText, const CUIRect *pRect, FConfigChangedCallback pfnOnChanged, bool Locked)
 {
 	if(DoButton_CheckBox(pConfig, pText, *pConfig, pRect, Locked))
@@ -462,11 +506,14 @@ void CMenus::DoPageFrame_Info(CUIRect *pMainView, CUIRect *pContent, const char 
 	pMainView->HSplitTop(ButtonHeight, 0, pContent);
 	pContent->Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha / 100.0f));
 
-	CUIRect Label;
-	pContent->HSplitTop(ButtonHeight, &Label, pContent);
-	Label.y += 2.0f;
-	UI()->DoLabel(&Label, pTitle, ButtonHeight * CUI::ms_FontmodHeight * 0.8f, TEXTALIGN_CENTER);
-	pContent->Draw(vec4(0.0, 0.0, 0.0, 0.25f));
+	if(pTitle && pTitle[0])
+	{
+		CUIRect Label;
+		pContent->HSplitTop(ButtonHeight, &Label, pContent);
+		Label.y += 2.0f;
+		UI()->DoLabel(&Label, pTitle, ButtonHeight * CUI::ms_FontmodHeight * 0.8f, TEXTALIGN_CENTER);
+		pContent->Draw(vec4(0.0, 0.0, 0.0, 0.25f));
+	}
 }
 
 bool CMenus::DoSubPage_Tabs(int *pActivePage, const CSubPageDescriptor *pPages, CButtonContainer *pButtons, int NumPages, CUIRect *pTabBar, float NotActiveAlpha)

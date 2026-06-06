@@ -67,6 +67,7 @@ private:
 	typedef void (CMenus::*FNavigationPrepareCallback)();
 	typedef void (CMenus::*FActionCallback)();
 	typedef void (CMenus::*FConfigChangedCallback)();
+	typedef bool (CMenus::*FConfirmPrepareCallback)(char *pMsgBuf, int MsgBufSize);
 
 	struct CPageDescriptor
 	{
@@ -99,6 +100,7 @@ private:
 
 	bool DoButton_ConfirmAction(CButtonContainer *pButtonContainer, const char *pBtnText, const char *pConfirmTitle, const char *pConfirmMsg, const char *pConfirmBtn, const char *pCancelBtn, FActionCallback pfnAction, const CUIRect *pRect, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f, vec4 ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f), bool TextFade = true);
 	bool DoButton_DeleteConfirm(CButtonContainer *pButtonContainer, const char *pBtnText, const char *pConfirmTitle, const char *pConfirmMsg, FActionCallback pfnAction, const CUIRect *pRect, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f);
+	bool DoConfirm(const char *pConfirmTitle, const char *pConfirmMsgFallback, const char *pConfirmBtn, const char *pCancelBtn, FActionCallback pfnAction, FConfirmPrepareCallback pfnPrepare = 0);
 
 	bool DoButton_CheckBox_ConfigEx(int *pConfig, const char *pText, const CUIRect *pRect, FConfigChangedCallback pfnOnChanged = 0, bool Locked = false);
 	void DoConfig_SliderInt(int *pConfig, int *pConfigTmp, const CUIRect *pRect, const char *pLabel, int Min, int Max);
@@ -386,6 +388,10 @@ private:
 			Config()->m_ClCameraStabilizing = 50;
 		}
 	}
+
+	bool PrepareDeleteDemo(char *pMsgBuf, int MsgBufSize);
+	bool PrepareRemoveFilter(char *pMsgBuf, int MsgBufSize);
+	bool PrepareRemoveFriend(char *pMsgBuf, int MsgBufSize);
 	static int DemolistFetchCallback(const CFsFileInfo* pFileInfo, int IsDir, int StorageType, void *pUser);
 
 	// friends

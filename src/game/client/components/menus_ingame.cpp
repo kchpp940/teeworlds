@@ -210,15 +210,7 @@ void CMenus::RenderPlayers(CUIRect MainView)
 	const float NameWidth = 250.0f;
 	const float ClanWidth = 250.0f;
 	CUIRect Label, Row;
-	MainView.HSplitBottom(80.0f, &MainView, 0);
-	MainView.HSplitTop(20.0f, 0, &MainView);
-	MainView.Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha/100.0f));
-
-	// player options
-	MainView.HSplitTop(ButtonHeight, &Label, &MainView);
-	Label.y += 2.0f;
-	UI()->DoLabel(&Label, Localize("Player options"), ButtonHeight*CUI::ms_FontmodHeight*0.8f, TEXTALIGN_CENTER);
-	MainView.Draw(vec4(0.0, 0.0, 0.0, 0.25f));
+	DoPageFrame_Info(&MainView, &MainView, Localize("Player options"), 80.0f);
 
 	// prepare headline
 	MainView.HSplitTop(ButtonHeight, &Row, &MainView);
@@ -352,10 +344,7 @@ void CMenus::RenderServerInfo(CUIRect MainView)
 	CServerInfo CurrentServerInfo;
 	Client()->GetServerInfo(&CurrentServerInfo);
 
-	// render background
-	MainView.HSplitBottom(80.0f, &MainView, 0);
-	MainView.HSplitTop(20.0f, 0, &MainView);
-	MainView.Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha/100.0f));
+	DoPageFrame_Info(&MainView, &MainView, 0, 80.0f);
 
 	CUIRect ServerInfo, GameInfo, Motd, Label;
 

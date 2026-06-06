@@ -704,8 +704,11 @@ void CMenus::RenderFilterHeader(CUIRect View, int FilterIndex)
 		if(DoButton_SpriteID(&pFilter->m_DeleteButtonContainer, IMAGE_TOOLICONS, SPRITE_TOOL_X_A, false, &Button))
 		{
 			m_RemoveFilterIndex = FilterIndex;
-			str_format(aBuf, sizeof(aBuf), Localize("Are you sure that you want to remove the filter '%s' from the server browser?"), pFilter->Name());
-			PopupConfirm(Localize("Remove filter"), aBuf, Localize("Yes"), Localize("No"), &CMenus::PopupConfirmRemoveFilter);
+			DoConfirm(Localize("Remove filter"),
+				Localize("Are you sure that you want to remove this filter from the server browser?"),
+				Localize("Yes"), Localize("No"),
+				&CMenus::PopupConfirmRemoveFilter,
+				&CMenus::PrepareRemoveFilter);
 		}
 	}
 	else
@@ -1519,12 +1522,11 @@ void CMenus::RenderServerbrowserFriendTab(CUIRect View)
 	// delete friend
 	if(m_pDeleteFriend)
 	{
-		const bool IsPlayer = m_pDeleteFriend->m_FriendState == CContactInfo::CONTACT_PLAYER;
-		char aBuf[128];
-		str_format(aBuf, sizeof(aBuf),
-			IsPlayer ? Localize("Are you sure that you want to remove the player '%s' from your friends list?") : Localize("Are you sure that you want to remove the clan '%s' from your friends list?"),
-			IsPlayer ? m_pDeleteFriend->m_aName : m_pDeleteFriend->m_aClan);
-		PopupConfirm(Localize("Remove friend"), aBuf, Localize("Yes"), Localize("No"), &CMenus::PopupConfirmRemoveFriend);
+		DoConfirm(Localize("Remove friend"),
+			Localize("Are you sure that you want to remove this friend from your friends list?"),
+			Localize("Yes"), Localize("No"),
+			&CMenus::PopupConfirmRemoveFriend,
+			&CMenus::PrepareRemoveFriend);
 	}
 }
 

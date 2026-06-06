@@ -642,14 +642,12 @@ void CMenus::RenderDemoList(CUIRect MainView)
 	static CButtonContainer s_DeleteButton;
 	if(DoButton_Menu(&s_DeleteButton, Localize("Delete"), 0, &Button) || UI()->ConsumeHotkey(CUI::HOTKEY_DELETE))
 	{
-		if(m_DemolistSelectedIndex >= 0)
-		{
-			UI()->SetActiveItem(0);
-			char aBuf[128];
-			str_format(aBuf, sizeof(aBuf), Localize("Are you sure that you want to delete the demo '%s'?"), m_lDemos[m_DemolistSelectedIndex].m_aFilename);
-			PopupConfirm(Localize("Delete demo"), aBuf, Localize("Yes"), Localize("No"), &CMenus::PopupConfirmDeleteDemo);
+		if(DoConfirm(Localize("Delete demo"),
+			Localize("Are you sure that you want to delete this demo?"),
+			Localize("Yes"), Localize("No"),
+			&CMenus::PopupConfirmDeleteDemo,
+			&CMenus::PrepareDeleteDemo))
 			return;
-		}
 	}
 
 		BottomView.VSplitLeft(Spacing, 0, &BottomView);
