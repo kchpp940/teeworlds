@@ -194,6 +194,36 @@ public:
 	virtual void SetFilter(int Index, const CServerFilterInfo *pFilterInfo) = 0;
 	virtual void GetFilter(int Index, CServerFilterInfo *pFilterInfo) = 0;
 	virtual void RemoveFilter(int Index) = 0;
+	virtual int NumFilters() const = 0;
+
+	// ---- Filter presets and metadata ----
+	// Presets are built-in filter templates that live in engine.
+	// UI creates filters from presets and never needs to know the
+	// default values of FILTER_COMPAT_VERSION, gametype lists, etc.
+	enum
+	{
+		PRESET_CUSTOM = 0,
+		PRESET_ALL,
+		PRESET_STANDARD,
+		PRESET_FAVORITES,
+		PRESET_RACE,
+		NUM_PRESETS,
+	};
+	virtual int AddFilterFromPreset(int Preset, const char *pName) = 0;
+	virtual void ResetFilterToPreset(int FilterIndex) = 0;
+	virtual int GetFilterPreset(int FilterIndex) const = 0;
+	virtual void GetFilterName(int FilterIndex, char *pBuf, int Size) const = 0;
+	virtual void SetFilterName(int FilterIndex, const char *pName) = 0;
+
+	// ---- Aggregated state getters/setters for persistence ----
+	// These let the persistence layer (UI settings file) read/write
+	// entire flags mask / level mask without understanding how
+	// FILTER_* flags are packed into SortHash or how Level bits are
+	// stored. They are intentionally coarse and not used by normal UI.
+	virtual int GetFilterFlags(int FilterIndex) const = 0;
+	virtual void SetFilterFlags(int FilterIndex, int Flags) = 0;
+	virtual int GetFilterLevelMask(int FilterIndex) const = 0;
+	virtual void SetFilterLevelMask(int FilterIndex, int Mask) = 0;
 
 	// ---- Semantic filter state API ----
 	// UI calls these instead of manipulating CServerFilterInfo directly.

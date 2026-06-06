@@ -20,6 +20,10 @@ public:
 		CServerBrowserFilter *m_pServerBrowserFilter;
 		CConfig *Config() const { return m_pServerBrowserFilter->m_pConfig; }
 
+		// filter metadata (preset + name, owned by engine)
+		int m_Preset;
+		char m_aName[64];
+
 		// filter settings
 		CServerFilterInfo m_FilterInfo;
 		
@@ -63,6 +67,20 @@ public:
 	void GetFilter(int Index, class CServerFilterInfo *pFilterInfo) const;
 	void RemoveFilter(int Index);
 	void SetFilter(int Index, const class CServerFilterInfo *pFilterInfo);
+	int NumFilters() const { return m_lFilters.size(); }
+
+	// ---- Filter presets and metadata ----
+	int AddFilterFromPreset(int Preset, const char *pName);
+	void ResetFilterToPreset(int FilterIndex);
+	int GetFilterPreset(int FilterIndex) const { return m_lFilters[FilterIndex].m_Preset; }
+	void GetFilterName(int FilterIndex, char *pBuf, int Size) const { str_copy(pBuf, m_lFilters[FilterIndex].m_aName, Size); }
+	void SetFilterName(int FilterIndex, const char *pName);
+
+	// ---- Aggregated getters/setters for persistence ----
+	int GetFilterFlags(int FilterIndex) const { return m_lFilters[FilterIndex].m_FilterInfo.m_SortHash & 0xFFFF; }
+	void SetFilterFlags(int FilterIndex, int Flags);
+	int GetFilterLevelMask(int FilterIndex) const { return m_lFilters[FilterIndex].m_FilterInfo.m_ServerLevel; }
+	void SetFilterLevelMask(int FilterIndex, int Mask);
 	
 	// stats
 	const void *GetID(int FilterIndex, int Index) const { return &m_lFilters[FilterIndex].m_pSortedServerlist[Index]; }

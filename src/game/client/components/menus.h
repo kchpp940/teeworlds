@@ -358,25 +358,19 @@ private:
 	class CBrowserFilter
 	{
 		bool m_Extended;
-		int m_Custom;
-		char m_aName[64];
+		char m_aName[64]; // cached copy of engine-side name, needed for const char* return
 		int m_Filter;
 		IServerBrowser *m_pServerBrowser;
-
-		static CServerFilterInfo ms_FilterStandard;
-		static CServerFilterInfo ms_FilterRace;
-		static CServerFilterInfo ms_FilterFavorites;
-		static CServerFilterInfo ms_FilterAll;
 
 	public:
 		enum
 		{
-			FILTER_CUSTOM = 0,
-			FILTER_ALL,
-			FILTER_STANDARD,
-			FILTER_FAVORITES,
-			FILTER_RACE,
-			NUM_FILTERS,
+			FILTER_CUSTOM = IServerBrowser::PRESET_CUSTOM,
+			FILTER_ALL = IServerBrowser::PRESET_ALL,
+			FILTER_STANDARD = IServerBrowser::PRESET_STANDARD,
+			FILTER_FAVORITES = IServerBrowser::PRESET_FAVORITES,
+			FILTER_RACE = IServerBrowser::PRESET_RACE,
+			NUM_FILTERS = IServerBrowser::NUM_PRESETS,
 		};
 
 		CButtonContainer m_DeleteButtonContainer;
@@ -384,7 +378,7 @@ private:
 		CButtonContainer m_DownButtonContainer;
 
 		CBrowserFilter() {}
-		CBrowserFilter(int Custom, const char* pName, IServerBrowser *pServerBrowser);
+		CBrowserFilter(int Preset, const char* pName, IServerBrowser *pServerBrowser);
 		void Switch();
 		bool Extended() const;
 		int Custom() const;

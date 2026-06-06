@@ -33,11 +33,6 @@ CMenus::CColumn CMenus::ms_aBrowserCols[] = {  // Localize("Server"); Localize("
 	{COL_BROWSER_PING,		IServerBrowser::SORT_PING,			"Ping",		1, 40.0f,  0, {0}, {0}, TEXTALIGN_CENTER},
 };
 
-CServerFilterInfo CMenus::CBrowserFilter::ms_FilterStandard = {IServerBrowser::FILTER_COMPAT_VERSION|IServerBrowser::FILTER_PURE|IServerBrowser::FILTER_PURE_MAP, 999, -1, 0, {{0}}, {0}, {0}};
-CServerFilterInfo CMenus::CBrowserFilter::ms_FilterRace = {IServerBrowser::FILTER_COMPAT_VERSION, 999, -1, 0, {{"Race"}}, {false}, {0}};
-CServerFilterInfo CMenus::CBrowserFilter::ms_FilterFavorites = {IServerBrowser::FILTER_COMPAT_VERSION|IServerBrowser::FILTER_FAVORITE, 999, -1, 0, {{0}}, {0}, {0}};
-CServerFilterInfo CMenus::CBrowserFilter::ms_FilterAll = {IServerBrowser::FILTER_COMPAT_VERSION, 999, -1, 0, {{0}}, {0}, {0}};
-
 static CLocConstString s_aDifficultyLabels[] = {
 	"Casual",
 	"Normal",
@@ -50,45 +45,18 @@ static int s_aDifficultySpriteIds[] = {
 vec3 TextHighlightColor = vec3(0.4f, 0.4f, 1.0f);
 
 // filters
-CMenus::CBrowserFilter::CBrowserFilter(int Custom, const char* pName, IServerBrowser *pServerBrowser)
+CMenus::CBrowserFilter::CBrowserFilter(int Preset, const char* pName, IServerBrowser *pServerBrowser)
 	: m_DeleteButtonContainer(true), m_UpButtonContainer(true), m_DownButtonContainer(true)
 {
 	m_Extended = false;
-	m_Custom = Custom;
-	str_copy(m_aName, pName, sizeof(m_aName));
 	m_pServerBrowser = pServerBrowser;
-	switch(m_Custom)
-	{
-	case CBrowserFilter::FILTER_STANDARD:
-		m_Filter = m_pServerBrowser->AddFilter(&ms_FilterStandard);
-		break;
-	case CBrowserFilter::FILTER_RACE:
-		m_Filter = m_pServerBrowser->AddFilter(&ms_FilterRace);
-		break;
-	case CBrowserFilter::FILTER_FAVORITES:
-		m_Filter = m_pServerBrowser->AddFilter(&ms_FilterFavorites);
-		break;
-	default:
-		m_Filter = m_pServerBrowser->AddFilter(&ms_FilterAll);
-	}
+	m_Filter = m_pServerBrowser->AddFilterFromPreset(Preset, pName);
+	m_pServerBrowser->GetFilterName(m_Filter, m_aName, sizeof(m_aName));
 }
 
 void CMenus::CBrowserFilter::Reset()
 {
-	switch(m_Custom)
-	{
-	case CBrowserFilter::FILTER_STANDARD:
-		SetFilter(&ms_FilterStandard);
-		break;
-	case CBrowserFilter::FILTER_RACE:
-		SetFilter(&ms_FilterRace);
-		break;
-	case CBrowserFilter::FILTER_FAVORITES:
-		SetFilter(&ms_FilterFavorites);
-		break;
-	default:
-		SetFilter(&ms_FilterAll);
-	}
+	m_pServerBrowser->ResetFilterToPreset(m_Filter);
 }
 
 void CMenus::CBrowserFilter::Switch()
@@ -103,7 +71,7 @@ bool CMenus::CBrowserFilter::Extended() const
 
 int CMenus::CBrowserFilter::Custom() const
 {
-	return m_Custom;
+	return m_pServerBrowser->GetFilterPreset(m_Filter);
 }
 
 int CMenus::CBrowserFilter::Filter() const
@@ -210,65 +178,59 @@ void CMenus::LoadFilters()
 		if(rStart["type"].type == json_integer)
 			Type = rStart["type"].u.integer;
 
-		// filter setting
-		CServerFilterInfo FilterInfo;
-		for(int j = 0; j < CServerFilterInfo::MAX_GAMETYPES; ++j)
-		{
-			FilterInfo.m_aGametype[j][0] = 0;
-			FilterInfo.m_aGametypeExclusive[j] = false;
-		}
+		m_lFilters.add(CBrowserFilter(Type, pName, ServerBrowser()));
+		const int FilterIndex = m_lFilters[i].Filter();
+
 		const json_value &rSubStart = rStart["settings"];
 		if(rSubStart.type == json_object)
 		{
+			// flags
 			if(rSubStart["filter_hash"].type == json_integer)
-				FilterInfo.m_SortHash = rSubStart["filter_hash"].u.integer;
+				ServerBrowser()->SetFilterFlags(FilterIndex, rSubStart["filter_hash"].u.integer);
 
+			// gametype list
 			const json_value &rGametypeEntry = rSubStart["filter_gametype"];
+			ServerBrowser()->ClearGametypeFilters(FilterIndex);
 			if(rGametypeEntry.type == json_array) // legacy: all entries are inclusive
 			{
-				for(unsigned j = 0; j < rGametypeEntry.u.array.length && j < CServerFilterInfo::MAX_GAMETYPES; ++j)
+				for(unsigned j = 0; j < rGametypeEntry.u.array.length; ++j)
 				{
 					if(rGametypeEntry[j].type == json_string)
-					{
-						str_copy(FilterInfo.m_aGametype[j], rGametypeEntry[j].u.string.ptr, sizeof(FilterInfo.m_aGametype[j]));
-						FilterInfo.m_aGametypeExclusive[j] = false;
-					}
+						ServerBrowser()->AddGametypeFilter(FilterIndex, rGametypeEntry[j].u.string.ptr, false);
 				}
 			}
 			else if(rGametypeEntry.type == json_object)
 			{
-				for(unsigned j = 0; j < rGametypeEntry.u.object.length && j < CServerFilterInfo::MAX_GAMETYPES; ++j)
+				for(unsigned j = 0; j < rGametypeEntry.u.object.length; ++j)
 				{
 					const json_value &rValue = *(rGametypeEntry.u.object.values[j].value);
 					if(rValue.type == json_boolean)
-					{
-						str_copy(FilterInfo.m_aGametype[j], rGametypeEntry.u.object.values[j].name, sizeof(FilterInfo.m_aGametype[j]));
-						FilterInfo.m_aGametypeExclusive[j] = rValue.u.boolean;
-					}
+						ServerBrowser()->AddGametypeFilter(FilterIndex, rGametypeEntry.u.object.values[j].name, rValue.u.boolean);
 				}
 			}
 
+			// ping
 			if(rSubStart["filter_ping"].type == json_integer)
-				FilterInfo.m_Ping = rSubStart["filter_ping"].u.integer;
+				ServerBrowser()->SetFilterPing(FilterIndex, rSubStart["filter_ping"].u.integer);
+
+			// server level
 			if(rSubStart["filter_serverlevel"].type == json_integer)
-				FilterInfo.m_ServerLevel = rSubStart["filter_serverlevel"].u.integer;
+				ServerBrowser()->SetFilterLevelMask(FilterIndex, rSubStart["filter_serverlevel"].u.integer);
+
+			// address
 			if(rSubStart["filter_address"].type == json_string)
-				str_copy(FilterInfo.m_aAddress, rSubStart["filter_address"].u.string.ptr, sizeof(FilterInfo.m_aAddress));
+				ServerBrowser()->SetFilterAddress(FilterIndex, rSubStart["filter_address"].u.string.ptr);
+
+			// country
 			if(rSubStart["filter_country"].type == json_integer)
-				FilterInfo.m_Country = rSubStart["filter_country"].u.integer;
+				ServerBrowser()->SetFilterCountry(FilterIndex, rSubStart["filter_country"].u.integer);
 		}
 
-		m_lFilters.add(CBrowserFilter(Type, pName, ServerBrowser()));
-
-		if(Type == CBrowserFilter::FILTER_STANDARD) // make sure the pure filter is enabled in the Teeworlds-filter
-			FilterInfo.m_SortHash |= IServerBrowser::FILTER_PURE;
-		else if(Type == CBrowserFilter::FILTER_RACE) // make sure Race gametype is included in Race-filter
-		{
-			str_copy(FilterInfo.m_aGametype[0], "Race", sizeof(FilterInfo.m_aGametype[0]));
-			FilterInfo.m_aGametypeExclusive[0] = false;
-		}
-
-		m_lFilters[i].SetFilter(&FilterInfo);
+		// preset-enforced defaults (pure flag for standard, Race gametype for race)
+		if(Type == CBrowserFilter::FILTER_STANDARD)
+			ServerBrowser()->SetFilterFlag(FilterIndex, IServerBrowser::FILTER_PURE, true);
+		else if(Type == CBrowserFilter::FILTER_RACE)
+			ServerBrowser()->AddGametypeFilter(FilterIndex, "Race", false);
 	}
 
 	CBrowserFilter *pSelectedFilter = GetSelectedBrowserFilter();
@@ -309,6 +271,8 @@ void CMenus::SaveFilters()
 	Writer.BeginArray();
 	for(int i = 0; i < m_lFilters.size(); i++)
 	{
+		const int FilterIndex = m_lFilters[i].Filter();
+
 		// part start
 		Writer.BeginObject();
 		Writer.WriteAttribute(m_lFilters[i].Name());
@@ -317,36 +281,41 @@ void CMenus::SaveFilters()
 			Writer.WriteAttribute("type");
 			Writer.WriteIntValue(m_lFilters[i].Custom());
 
-			// filter setting
-			CServerFilterInfo FilterInfo;
-			m_lFilters[i].GetFilter(&FilterInfo);
-
 			Writer.WriteAttribute("settings");
 			Writer.BeginObject();
 			{
 				Writer.WriteAttribute("filter_hash");
-				Writer.WriteIntValue(FilterInfo.m_SortHash);
+				Writer.WriteIntValue(ServerBrowser()->GetFilterFlags(FilterIndex));
 
 				Writer.WriteAttribute("filter_gametype");
 				Writer.BeginObject();
-				for(unsigned j = 0; j < CServerFilterInfo::MAX_GAMETYPES && FilterInfo.m_aGametype[j][0]; ++j)
+				const int NumGt = ServerBrowser()->GetNumGametypeFilters(FilterIndex);
+				for(int j = 0; j < NumGt; ++j)
 				{
-					Writer.WriteAttribute(FilterInfo.m_aGametype[j]);
-					Writer.WriteBoolValue(FilterInfo.m_aGametypeExclusive[j]);
+					char aName[16];
+					bool Exclusive;
+					ServerBrowser()->GetGametypeFilter(FilterIndex, j, aName, sizeof(aName), &Exclusive);
+					if(aName[0])
+					{
+						Writer.WriteAttribute(aName);
+						Writer.WriteBoolValue(Exclusive);
+					}
 				}
 				Writer.EndObject();
 
 				Writer.WriteAttribute("filter_ping");
-				Writer.WriteIntValue(FilterInfo.m_Ping);
+				Writer.WriteIntValue(ServerBrowser()->GetFilterPing(FilterIndex));
 
 				Writer.WriteAttribute("filter_serverlevel");
-				Writer.WriteIntValue(FilterInfo.m_ServerLevel);
+				Writer.WriteIntValue(ServerBrowser()->GetFilterLevelMask(FilterIndex));
 
+				char aAddress[NETADDR_MAXSTRSIZE];
+				ServerBrowser()->GetFilterAddress(FilterIndex, aAddress, sizeof(aAddress));
 				Writer.WriteAttribute("filter_address");
-				Writer.WriteStrValue(FilterInfo.m_aAddress);
+				Writer.WriteStrValue(aAddress);
 
 				Writer.WriteAttribute("filter_country");
-				Writer.WriteIntValue(FilterInfo.m_Country);
+				Writer.WriteIntValue(ServerBrowser()->GetFilterCountry(FilterIndex));
 			}
 			Writer.EndObject();
 		}

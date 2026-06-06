@@ -56,6 +56,20 @@ public:
 	void SetFilter(int Index, const CServerFilterInfo *pFilterInfo) { m_ServerBrowserFilter.SetFilter(Index, pFilterInfo); }
 	void GetFilter(int Index, CServerFilterInfo *pFilterInfo) { m_ServerBrowserFilter.GetFilter(Index, pFilterInfo); }
 	void RemoveFilter(int Index) { m_ServerBrowserFilter.RemoveFilter(Index); }
+	int NumFilters() const { return m_ServerBrowserFilter.NumFilters(); }
+
+	// ---- Filter presets and metadata ----
+	int AddFilterFromPreset(int Preset, const char *pName) { return m_ServerBrowserFilter.AddFilterFromPreset(Preset, pName); }
+	void ResetFilterToPreset(int FilterIndex) { m_ServerBrowserFilter.ResetFilterToPreset(FilterIndex); RequestResort(); }
+	int GetFilterPreset(int FilterIndex) const { return m_ServerBrowserFilter.GetFilterPreset(FilterIndex); }
+	void GetFilterName(int FilterIndex, char *pBuf, int Size) const { m_ServerBrowserFilter.GetFilterName(FilterIndex, pBuf, Size); }
+	void SetFilterName(int FilterIndex, const char *pName) { m_ServerBrowserFilter.SetFilterName(FilterIndex, pName); }
+
+	// ---- Aggregated getters/setters for persistence ----
+	int GetFilterFlags(int FilterIndex) const { return m_ServerBrowserFilter.GetFilterFlags(FilterIndex); }
+	void SetFilterFlags(int FilterIndex, int Flags) { m_ServerBrowserFilter.SetFilterFlags(FilterIndex, Flags); RequestResort(); }
+	int GetFilterLevelMask(int FilterIndex) const { return m_ServerBrowserFilter.GetFilterLevelMask(FilterIndex); }
+	void SetFilterLevelMask(int FilterIndex, int Mask) { m_ServerBrowserFilter.SetFilterLevelMask(FilterIndex, Mask); RequestResort(); }
 
 	// ---- Semantic filter state API ----
 	bool GetFilterFlag(int FilterIndex, int Flag) const { return m_ServerBrowserFilter.GetFilterFlag(FilterIndex, Flag); }

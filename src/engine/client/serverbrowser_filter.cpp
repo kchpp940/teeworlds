@@ -11,6 +11,24 @@
 #include "serverbrowser_entry.h"
 #include "serverbrowser_filter.h"
 
+// ---- Built-in filter presets (defined in engine, UI never needs these) ----
+static const CServerFilterInfo gs_FilterStandard = {IServerBrowser::FILTER_COMPAT_VERSION|IServerBrowser::FILTER_PURE|IServerBrowser::FILTER_PURE_MAP, 999, -1, 0, {{0}}, {0}, {0}};
+static const CServerFilterInfo gs_FilterRace = {IServerBrowser::FILTER_COMPAT_VERSION, 999, -1, 0, {{"Race"}}, {false}, {0}};
+static const CServerFilterInfo gs_FilterFavorites = {IServerBrowser::FILTER_COMPAT_VERSION|IServerBrowser::FILTER_FAVORITE, 999, -1, 0, {{0}}, {0}, {0}};
+static const CServerFilterInfo gs_FilterAll = {IServerBrowser::FILTER_COMPAT_VERSION, 999, -1, 0, {{0}}, {0}, {0}};
+
+static const CServerFilterInfo *GetPresetFilterInfo(int Preset)
+{
+	switch(Preset)
+	{
+	case IServerBrowser::PRESET_STANDARD: return &gs_FilterStandard;
+	case IServerBrowser::PRESET_RACE: return &gs_FilterRace;
+	case IServerBrowser::PRESET_FAVORITES: return &gs_FilterFavorites;
+	case IServerBrowser::PRESET_ALL: return &gs_FilterAll;
+	default: return &gs_FilterAll;
+	}
+}
+
 
 class SortWrap
 {
@@ -26,6 +44,8 @@ public:
 CServerBrowserFilter::CServerFilter::CServerFilter()
 {
 	m_pServerBrowserFilter = 0;
+	m_Preset = IServerBrowser::PRESET_CUSTOM;
+	m_aName[0] = 0;
 
 	m_FilterInfo.m_SortHash = 0;
 	m_FilterInfo.m_Ping = 0;
@@ -56,6 +76,8 @@ CServerBrowserFilter::CServerFilter& CServerBrowserFilter::CServerFilter::operat
 	if(&Other != this)
 	{
 		m_pServerBrowserFilter = Other.m_pServerBrowserFilter;
+		m_Preset = Other.m_Preset;
+		str_copy(m_aName, Other.m_aName, sizeof(m_aName));
 		m_FilterInfo.Set(&Other.m_FilterInfo);
 		m_NumSortedPlayers = Other.m_NumSortedPlayers;
 		m_NumSortedServers = Other.m_NumSortedServers;
@@ -577,4 +599,45 @@ bool CServerBrowserFilter::CServerFilter::IsClientHidden(int Index, int ClientIn
 		return true;
 	return (m_FilterInfo.m_SortHash & IServerBrowser::FILTER_BOTS) != 0
 		&& (Info.m_aClients[ClientIndex].m_PlayerType & CServerInfo::CClient::PLAYERFLAG_BOT) != 0;
+}
+
+// ---- Filter presets and metadata API implementations ----
+
+int CServerBrowserFilter::AddFilterFromPreset(int Preset, const char *pName)
+{
+	const CServerFilterInfo *pPresetInfo = GetPresetFilterInfo(Preset);
+	int FilterIndex = AddFilter(pPresetInfo);
+	m_lFilters[FilterIndex].m_Preset = Preset;
+	str_copy(m_lFilters[FilterIndex].m_aName, pName, sizeof(m_lFilters[FilterIndex].m_aName));
+	return FilterIndex;
+}
+
+void CServerBrowserFilter::ResetFilterToPreset(int FilterIndex)
+{
+	CServerFilter *pFilter = &m_lFilters[FilterIndex];
+	const CServerFilterInfo *pPresetInfo = GetPresetFilterInfo(pFilter->m_Preset);
+	pFilter->m_FilterInfo.Set(pPresetInfo);
+	pFilter->Sort();
+}
+
+void CServerBrowserFilter::SetFilterName(int FilterIndex, const char *pName)
+{
+	str_copy(m_lFilters[FilterIndex].m_aName, pName, sizeof(m_lFilters[FilterIndex].m_aName));
+}
+
+// ---- Aggregated persistence getters/setters ----
+
+void CServerBrowserFilter::SetFilterFlags(int FilterIndex, int Flags)
+{
+	CServerFilter *pFilter = &m_lFilters[FilterIndex];
+	const int FilterFlagsMask = 0xFFFF;
+	pFilter->m_FilterInfo.m_SortHash = (pFilter->m_FilterInfo.m_SortHash & ~FilterFlagsMask) | (Flags & FilterFlagsMask);
+	pFilter->Sort();
+}
+
+void CServerBrowserFilter::SetFilterLevelMask(int FilterIndex, int Mask)
+{
+	CServerFilter *pFilter = &m_lFilters[FilterIndex];
+	pFilter->m_FilterInfo.m_ServerLevel = Mask & ((1 << CServerInfo::NUM_SERVER_LEVELS) - 1);
+	pFilter->Sort();
 }
