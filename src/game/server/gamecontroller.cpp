@@ -214,444 +214,24 @@ void IGameController::DoTeamBalance()
 	GameServer()->SendGameMsg(GAMEMSG_TEAM_BALANCE, -1);
 }
 
-// scoring helpers
-void IGameController::DoPlayerScoreUpdate(CPlayer *pVictim, CPlayer *pKiller, int Weapon)
-{
-	if(!pKiller || Weapon == WEAPON_GAME)
-		return;
-	if(pKiller == pVictim)
-		pVictim->m_Score--;
-	else
-	{
-		if(IsTeamplay() && pVictim->GetTeam() == pKiller->GetTeam())
-			pKiller->m_Score--;
-		else
-			pKiller->m_Score++;
-	}
-}
-
-void IGameController::DoTeamScoreUpdate(CPlayer *pVictim, CPlayer *pKiller, int Weapon)
-{
-	if(!pKiller || Weapon == WEAPON_GAME)
-		return;
-	if(pKiller == pVictim || pKiller->GetTeam() == pVictim->GetTeam())
-		m_aTeamscore[pKiller->GetTeam()&1]--;
-	else
-		m_aTeamscore[pKiller->GetTeam()&1]++;
-}
-
-void IGameController::SetRespawnDelay(CPlayer *pPlayer, float Seconds)
-{
-	if(pPlayer)
-		pPlayer->m_RespawnTick = maximum(pPlayer->m_RespawnTick, Server()->Tick()+(int)(Server()->TickSpeed()*Seconds));
-}
-
-// survival helpers
-int IGameController::CountAlivePlayers(int Team) const
-{
-	int Count = 0;
-	for(int i = 0; i < MAX_CLIENTS; ++i)
-	{
-		if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS &&
-			(Team == -1 || GameServer()->m_apPlayers[i]->GetTeam() == Team) &&
-			(!GameServer()->m_apPlayers[i]->m_RespawnDisabled ||
-			(GameServer()->m_apPlayers[i]->GetCharacter() && GameServer()->m_apPlayers[i]->GetCharacter()->IsAlive())))
-			++Count;
-	}
-	return Count;
-}
-
-CPlayer *IGameController::FindAlivePlayer() const
-{
-	CPlayer *pAlive = 0;
-	for(int i = 0; i < MAX_CLIENTS; ++i)
-	{
-		if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS &&
-			(!GameServer()->m_apPlayers[i]->m_RespawnDisabled ||
-			(GameServer()->m_apPlayers[i]->GetCharacter() && GameServer()->m_apPlayers[i]->GetCharacter()->IsAlive())))
-			pAlive = GameServer()->m_apPlayers[i];
-	}
-	return pAlive;
-}
-
-void IGameController::CountAlivePlayersByTeam(int &RedAlive, int &BlueAlive) const
-{
-	RedAlive = 0;
-	BlueAlive = 0;
-	for(int i = 0; i < MAX_CLIENTS; ++i)
-	{
-		if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS &&
-			(!GameServer()->m_apPlayers[i]->m_RespawnDisabled ||
-			(GameServer()->m_apPlayers[i]->GetCharacter() && GameServer()->m_apPlayers[i]->GetCharacter()->IsAlive())))
-			++(GameServer()->m_apPlayers[i]->GetTeam() == TEAM_RED ? RedAlive : BlueAlive);
-	}
-}
-
-// wincheck helpers
-bool IGameController::IsSuddenDeathSettled() const
-{
-	if(IsTeamplay())
-		return m_aTeamscore[TEAM_RED] != m_aTeamscore[TEAM_BLUE];
-	else
-	{
-		int Topscore = 0;
-		int TopscoreCount = 0;
-		for(int i = 0; i < MAX_CLIENTS; i++)
-		{
-			if(GameServer()->m_apPlayers[i])
-			{
-				if(GameServer()->m_apPlayers[i]->m_Score > Topscore)
-				{
-					Topscore = GameServer()->m_apPlayers[i]->m_Score;
-					TopscoreCount = 1;
-				}
-				else if(GameServer()->m_apPlayers[i]->m_Score == Topscore)
-					TopscoreCount++;
-			}
-		}
-		return TopscoreCount == 1;
-	}
-}
-
-// broadcast message hooks
-const char *IGameController::GetTeamWinMessage(int Team) const
-{
-	return Team == TEAM_RED ? "Red team wins!" : "Blue team wins!";
-}
-
-const char *IGameController::GetDrawMessage() const
-{
-	return "Draw!";
-}
-
-const char *IGameController::GetSuddenDeathMessage() const
-{
-	return "Sudden Death!";
-}
-
-void IGameController::BroadcastSuddenDeathMessage()
-{
-	char aBuf[128];
-	str_format(aBuf, sizeof(aBuf), "%s", GetSuddenDeathMessage());
-	GameServer()->SendBroadcast(aBuf, -1);
-}
-
-void IGameController::BroadcastMatchResult(EWinResult Result, CPlayer *pWinner)
-{
-	char aBuf[256];
-	switch(Result)
-	{
-	case WIN_RESULT_RED:
-		str_format(aBuf, sizeof(aBuf), "%s", GetTeamWinMessage(TEAM_RED));
-		break;
-	case WIN_RESULT_BLUE:
-		str_format(aBuf, sizeof(aBuf), "%s", GetTeamWinMessage(TEAM_BLUE));
-		break;
-	case WIN_RESULT_DRAW:
-		str_format(aBuf, sizeof(aBuf), "%s", GetDrawMessage());
-		break;
-	case WIN_RESULT_PLAYER:
-		if(pWinner)
-			str_format(aBuf, sizeof(aBuf), "%s wins!", Server()->ClientName(pWinner->GetCID()));
-		else
-			str_copy(aBuf, "Game over!", sizeof(aBuf));
-		break;
-	default:
-		return;
-	}
-	GameServer()->SendBroadcast(aBuf, -1);
-}
-
-void IGameController::BroadcastRoundResult(const char *pCustomMsg)
-{
-	char aBuf[256];
-	if(pCustomMsg)
-		str_copy(aBuf, pCustomMsg, sizeof(aBuf));
-	else
-		str_copy(aBuf, "Round over!", sizeof(aBuf));
-	GameServer()->SendBroadcast(aBuf, -1);
-}
-
-// result construction helpers
-IGameController::CGameResult IGameController::MakeMatchTeamWin(int Team) const
-{
-	CGameResult R;
-	R.m_Result = (Team == TEAM_RED) ? WIN_RESULT_RED : WIN_RESULT_BLUE;
-	R.m_WinningTeam = Team;
-	return R;
-}
-
-IGameController::CGameResult IGameController::MakeMatchPlayerWin(CPlayer *pPlayer) const
-{
-	CGameResult R;
-	R.m_Result = WIN_RESULT_PLAYER;
-	R.m_pWinner = pPlayer;
-	return R;
-}
-
-IGameController::CGameResult IGameController::MakeMatchDraw() const
-{
-	CGameResult R;
-	R.m_Result = WIN_RESULT_DRAW;
-	return R;
-}
-
-IGameController::CGameResult IGameController::MakeSuddenDeathTrigger() const
-{
-	CGameResult R;
-	R.m_SuddenDeath = true;
-	return R;
-}
-
-IGameController::CGameResult IGameController::MakeRoundTeamWin(int Team) const
-{
-	CGameResult R;
-	R.m_Result = (Team == TEAM_RED) ? WIN_RESULT_RED : WIN_RESULT_BLUE;
-	R.m_WinningTeam = Team;
-	R.m_ShouldAddScore = true;
-	return R;
-}
-
-IGameController::CGameResult IGameController::MakeRoundPlayerWin(CPlayer *pPlayer) const
-{
-	CGameResult R;
-	R.m_Result = WIN_RESULT_PLAYER;
-	R.m_pWinner = pPlayer;
-	R.m_ShouldAddScore = true;
-	return R;
-}
-
-IGameController::CGameResult IGameController::MakeRoundDraw() const
-{
-	CGameResult R;
-	R.m_Result = WIN_RESULT_DRAW;
-	R.m_ShouldAddScore = true;
-	return R;
-}
-
-IGameController::CGameResult IGameController::MakeRoundEnd(const char *pMsg) const
-{
-	CGameResult R;
-	R.m_ShouldAddScore = false;
-	R.m_pCustomMessage = pMsg;
-	return R;
-}
-
-IGameController::CGameResult IGameController::MakeRoundEndWithSurvivorBonus(const char *pMsg) const
-{
-	CGameResult R;
-	R.m_ShouldAddScore = false;
-	R.m_BonusAllSurvivors = true;
-	R.m_pCustomMessage = pMsg;
-	return R;
-}
-
-// result builder helpers (combine conditions and return CGameResult)
-bool IGameController::IsMatchScoreLimitHit() const
-{
-	if(IsTeamplay())
-		return m_GameInfo.m_ScoreLimit > 0 && (m_aTeamscore[TEAM_RED] >= m_GameInfo.m_ScoreLimit || m_aTeamscore[TEAM_BLUE] >= m_GameInfo.m_ScoreLimit);
-	else
-	{
-		int Topscore = 0;
-		for(int i = 0; i < MAX_CLIENTS; i++)
-		{
-			if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->m_Score > Topscore)
-				Topscore = GameServer()->m_apPlayers[i]->m_Score;
-		}
-		return m_GameInfo.m_ScoreLimit > 0 && Topscore >= m_GameInfo.m_ScoreLimit;
-	}
-}
-
-bool IGameController::IsMatchTimeLimitHit() const
-{
-	return m_GameInfo.m_TimeLimit > 0 && (Server()->Tick()-m_GameStartTick) >= m_GameInfo.m_TimeLimit*Server()->TickSpeed()*60;
-}
-
-bool IGameController::IsRoundTimeLimitHit() const
-{
-	return m_GameInfo.m_TimeLimit > 0 && (Server()->Tick()-m_GameStartTick) >= m_GameInfo.m_TimeLimit*Server()->TickSpeed()*60;
-}
-
-IGameController::CGameResult IGameController::BuildMatchScoreLimitResult()
-{
-	if(!IsMatchScoreLimitHit())
-		return CGameResult();
-	return BuildMatchLimitResult();
-}
-
-IGameController::CGameResult IGameController::BuildMatchTimeLimitResult()
-{
-	if(!IsMatchTimeLimitHit())
-		return CGameResult();
-	return BuildMatchLimitResult();
-}
-
-IGameController::CGameResult IGameController::BuildMatchLimitResult()
-{
-	if(!IsMatchScoreLimitHit() && !IsMatchTimeLimitHit())
-		return CGameResult();
-
-	if(IsSuddenDeathSettled())
-	{
-		if(IsTeamplay())
-		{
-			if(m_aTeamscore[TEAM_RED] > m_aTeamscore[TEAM_BLUE])
-				return MakeMatchTeamWin(TEAM_RED);
-			else if(m_aTeamscore[TEAM_BLUE] > m_aTeamscore[TEAM_RED])
-				return MakeMatchTeamWin(TEAM_BLUE);
-			else if(m_GameFlags&GAMEFLAG_SURVIVAL)
-				return MakeMatchDraw();
-		}
-		else
-		{
-			CPlayer *pTopPlayer = 0;
-			int Topscore = -1;
-			for(int i = 0; i < MAX_CLIENTS; i++)
-			{
-				if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->m_Score > Topscore)
-				{
-					Topscore = GameServer()->m_apPlayers[i]->m_Score;
-					pTopPlayer = GameServer()->m_apPlayers[i];
-				}
-			}
-			return MakeMatchPlayerWin(pTopPlayer);
-		}
-	}
-
-	return MakeSuddenDeathTrigger();
-}
-
-IGameController::CGameResult IGameController::BuildSurvivalSoloResult()
-{
-	int Alive = CountAlivePlayers();
-	if(Alive == 0)
-		return MakeRoundEnd();
-	else if(Alive == 1)
-		return MakeRoundPlayerWin(FindAlivePlayer());
-	return CGameResult();
-}
-
-IGameController::CGameResult IGameController::BuildSurvivalTeamResult()
-{
-	int RedAlive = 0, BlueAlive = 0;
-	CountAlivePlayersByTeam(RedAlive, BlueAlive);
-	if(RedAlive+BlueAlive == 0)
-		return MakeRoundDraw();
-	else if(RedAlive == 0)
-		return MakeRoundTeamWin(TEAM_BLUE);
-	else if(BlueAlive == 0)
-		return MakeRoundTeamWin(TEAM_RED);
-	return CGameResult();
-}
-
-IGameController::CGameResult IGameController::BuildRoundTimeLimitResult()
-{
-	if(IsRoundTimeLimitHit())
-	{
-		if(IsTeamplay())
-			return MakeRoundDraw();
-		else
-			return MakeRoundEndWithSurvivorBonus();
-	}
-	return CGameResult();
-}
-
-// unified result application
-bool IGameController::ApplyMatchResult(const CGameResult &Result)
-{
-	if(!Result.ShouldApply())
-		return false;
-
-	if(Result.m_SuddenDeath)
-	{
-		if(m_SuddenDeath)
-			return false;
-		m_SuddenDeath = 1;
-		BroadcastSuddenDeathMessage();
-		return false;
-	}
-
-	if(Result.m_Result == WIN_RESULT_NONE)
-		return false;
-
-	BroadcastMatchResult(Result.m_Result, Result.m_pWinner);
-	EndMatch();
-	return true;
-}
-
-bool IGameController::ApplyRoundResult(const CGameResult &Result)
-{
-	if(!Result.ShouldApply())
-		return false;
-
-	if(Result.m_BonusAllSurvivors)
-	{
-		for(int i = 0; i < MAX_CLIENTS; ++i)
-		{
-			if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS &&
-				(!GameServer()->m_apPlayers[i]->m_RespawnDisabled ||
-				(GameServer()->m_apPlayers[i]->GetCharacter() && GameServer()->m_apPlayers[i]->GetCharacter()->IsAlive())))
-				GameServer()->m_apPlayers[i]->m_Score++;
-		}
-	}
-
-	if(Result.m_ShouldAddScore)
-	{
-		switch(Result.m_Result)
-		{
-		case WIN_RESULT_RED:
-		case WIN_RESULT_BLUE:
-			if(Result.m_WinningTeam >= 0 && Result.m_WinningTeam < NUM_TEAMS)
-				++m_aTeamscore[Result.m_WinningTeam];
-			break;
-		case WIN_RESULT_DRAW:
-			++m_aTeamscore[TEAM_RED];
-			++m_aTeamscore[TEAM_BLUE];
-			break;
-		case WIN_RESULT_PLAYER:
-			if(Result.m_pWinner)
-				Result.m_pWinner->m_Score++;
-			break;
-		default:
-			break;
-		}
-	}
-
-	const char *pMsg = Result.m_pCustomMessage;
-	if(Result.m_Result == WIN_RESULT_DRAW && !pMsg)
-		pMsg = GetDrawMessage();
-	BroadcastRoundResult(pMsg);
-	EndRound();
-	return true;
-}
-
-// wincheck framework (uses result builders internally)
-bool IGameController::DoTeamScoreWincheck()
-{
-	return ApplyMatchResult(BuildMatchLimitResult());
-}
-
-bool IGameController::DoPlayerScoreWincheck()
-{
-	return ApplyMatchResult(BuildMatchLimitResult());
-}
-
-bool IGameController::DoWincheckMatch()
-{
-	if(IsTeamplay())
-		return DoTeamScoreWincheck();
-	else
-		return DoPlayerScoreWincheck();
-}
-
 // event
 int IGameController::OnCharacterDeath(CCharacter *pVictim, CPlayer *pKiller, int Weapon)
 {
-	DoPlayerScoreUpdate(pVictim->GetPlayer(), pKiller, Weapon);
-
+	// do scoreing
+	if(!pKiller || Weapon == WEAPON_GAME)
+		return 0;
+	if(pKiller == pVictim->GetPlayer())
+		pVictim->GetPlayer()->m_Score--; // suicide or world
+	else
+	{
+		if(IsTeamplay() && pVictim->GetPlayer()->GetTeam() == pKiller->GetTeam())
+			pKiller->m_Score--; // teamkill
+		else
+			pKiller->m_Score++; // normal kill
+	}
 	if(Weapon == WEAPON_SELF)
-		SetRespawnDelay(pVictim->GetPlayer(), 3.0f);
+		pVictim->GetPlayer()->m_RespawnTick = Server()->Tick()+Server()->TickSpeed()*3.0f;
+
 
 	// update spectator modes for dead players in survival
 	if(m_GameFlags&GAMEFLAG_SURVIVAL)
@@ -832,6 +412,58 @@ void IGameController::OnReset()
 }
 
 // game
+bool IGameController::DoWincheckMatch()
+{
+	if(IsTeamplay())
+	{
+		// check score win condition
+		if((m_GameInfo.m_ScoreLimit > 0 && (m_aTeamscore[TEAM_RED] >= m_GameInfo.m_ScoreLimit || m_aTeamscore[TEAM_BLUE] >= m_GameInfo.m_ScoreLimit)) ||
+			(m_GameInfo.m_TimeLimit > 0 && (Server()->Tick()-m_GameStartTick) >= m_GameInfo.m_TimeLimit*Server()->TickSpeed()*60))
+		{
+			if(m_aTeamscore[TEAM_RED] != m_aTeamscore[TEAM_BLUE] || m_GameFlags&GAMEFLAG_SURVIVAL)
+			{
+				EndMatch();
+				return true;
+			}
+			else
+				m_SuddenDeath = 1;
+		}
+	}
+	else
+	{
+		// gather some stats
+		int Topscore = 0;
+		int TopscoreCount = 0;
+		for(int i = 0; i < MAX_CLIENTS; i++)
+		{
+			if(GameServer()->m_apPlayers[i])
+			{
+				if(GameServer()->m_apPlayers[i]->m_Score > Topscore)
+				{
+					Topscore = GameServer()->m_apPlayers[i]->m_Score;
+					TopscoreCount = 1;
+				}
+				else if(GameServer()->m_apPlayers[i]->m_Score == Topscore)
+					TopscoreCount++;
+			}
+		}
+
+		// check score win condition
+		if((m_GameInfo.m_ScoreLimit > 0 && Topscore >= m_GameInfo.m_ScoreLimit) ||
+			(m_GameInfo.m_TimeLimit > 0 && (Server()->Tick()-m_GameStartTick) >= m_GameInfo.m_TimeLimit*Server()->TickSpeed()*60))
+		{
+			if(TopscoreCount == 1)
+			{
+				EndMatch();
+				return true;
+			}
+			else
+				m_SuddenDeath = 1;
+		}
+	}
+	return false;
+}
+
 void IGameController::ResetGame()
 {
 	// reset the game

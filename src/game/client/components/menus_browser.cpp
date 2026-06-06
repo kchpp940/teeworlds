@@ -1145,7 +1145,7 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 
 	// bottom
 	float SpacingW = 3.0f;
-	float ButtonWidth = (Status.w/6.0f)-(SpacingW*5.0)/6.0f;
+	float ButtonWidth = DoButtons_CalcWidth(Status.w, 6, SpacingW);
 	float FontSize = ButtonHeight*CUI::ms_FontmodHeight*0.8f;
 
 	// cut view
@@ -2089,7 +2089,7 @@ void CMenus::RenderServerbrowserBottomBox(CUIRect MainView)
 {
 	// same size like tabs in top but variables not really needed
 	float Spacing = 3.0f;
-	float ButtonWidth = MainView.w/2.0f-Spacing/2.0f;
+	float ButtonWidth = DoButtons_CalcWidth(MainView.w, 2, Spacing);
 
 	// render background
 	RenderBackgroundShadow(&MainView, true);
@@ -2097,8 +2097,8 @@ void CMenus::RenderServerbrowserBottomBox(CUIRect MainView)
 	// back to main menu
 	CUIRect Button;
 	MainView.HSplitTop(25.0f, &MainView, 0);
-	MainView.VSplitLeft(ButtonWidth, &Button, &MainView);
 	static CButtonContainer s_RefreshButton;
+	DoButtons_VSplitRow(&MainView, &Button, ButtonWidth, 0.0f);
 	if(DoButton_Menu(&s_RefreshButton, Localize("Refresh"), 0, &Button) || (UI()->KeyPress(KEY_R) && (Input()->KeyIsPressed(KEY_LCTRL) || Input()->KeyIsPressed(KEY_RCTRL))))
 	{
 		if(m_MenuPage == PAGE_INTERNET)
@@ -2107,9 +2107,8 @@ void CMenus::RenderServerbrowserBottomBox(CUIRect MainView)
 			ServerBrowser()->Refresh(IServerBrowser::REFRESHFLAG_LAN);
 	}
 
-	MainView.VSplitLeft(Spacing, 0, &MainView); // little space
-	MainView.VSplitLeft(ButtonWidth, &Button, &MainView);
 	static CButtonContainer s_JoinButton;
+	DoButtons_VSplitRow(&MainView, &Button, ButtonWidth, Spacing);
 	if(DoButton_Menu(&s_JoinButton, Localize("Connect"), 0, &Button) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER))
 	{
 		Client()->Connect(GetServerBrowserAddress());
@@ -2219,7 +2218,7 @@ void CMenus::RenderServerbrowser(CUIRect MainView)
 
 	// connect box
 	float Spacing = 3.0f;
-	float ButtonWidth = (BottomBox.w/6.0f)-(Spacing*5.0)/6.0f;
+	float ButtonWidth = DoButtons_CalcWidth(BottomBox.w, 6, Spacing);
 	BottomBox.VSplitRight(20.0f, &BottomBox, 0);
 	BottomBox.VSplitRight(ButtonWidth*2.0f+Spacing, 0, &BottomBox);
 

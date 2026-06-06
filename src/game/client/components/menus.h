@@ -39,6 +39,7 @@ class CMenus : public CComponent
 {
 private:
 	typedef float (CMenus::*FDropdownCallback)(CUIRect View);
+	typedef void (CMenus::*FPopupButtonCallback)();
 
 	bool DoButton_SpriteID(CButtonContainer *pButtonContainer, int ImageID, int SpriteID, bool Checked, const CUIRect *pRect, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, bool Fade = true);
 	bool DoButton_Toggle(const void *pID, bool Checked, const CUIRect *pRect, bool Active);
@@ -47,7 +48,20 @@ private:
 
 	bool DoButton_CheckBox(const void *pID, const char *pText, bool Checked, const CUIRect *pRect, bool Locked = false);
 
+	bool DoButton_CheckBox_Config(int *pConfig, const char *pText, const CUIRect *pRect, bool Locked = false);
+
 	void DoIcon(int ImageId, int SpriteId, const CUIRect *pRect, const vec4 *pColor = 0);
+
+	float DoButton_MenuPage(CButtonContainer *pButtonContainer, const char *pText, int Page, const CUIRect *pRect, int HotKey = 0, const char *pImageName = 0, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f, vec4 ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f), bool TextFade = true);
+	bool DoButton_TabPage(CButtonContainer *pButtonContainer, const char *pText, int SettingsPage, int CameraPos, const CUIRect *pRect, float Alpha = 1.0f, float FontAlpha = 1.0f, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f);
+	void DoButton_Reset_Confirm(CUIRect *pBottomView, const char *pConfirmTitle, const char *pConfirmMsg, FPopupButtonCallback pfnResetCallback);
+
+	static float DoButtons_CalcWidth(float TotalWidth, int NumButtons, float Spacing);
+	static void DoButtons_VSplitRow(CUIRect *pRow, CUIRect *pButton, float ButtonWidth, float Spacing);
+	void DoButtons_HSplitColumn(CUIRect *pColumn, CUIRect *pButton, float ButtonHeight, float Spacing = 5.0f);
+
+	void DoSection_Header(CUIRect *pView, CUIRect *pContent, const char *pTitle, float ButtonHeight = 20.0f);
+	void DoSection_SplitTwoCol(CUIRect *pView, CUIRect *pLeft, CUIRect *pRight, float Spacing = 2.0f);
 	bool DoButton_GridHeader(const void *pID, const char *pText, bool Checked, int Align, const CUIRect *pRect, int Corners = CUIRect::CORNER_ALL);
 
 	float DoIndependentDropdownMenu(void *pID, const CUIRect *pRect, const char *pStr, float HeaderHeight, FDropdownCallback pfnCallback, bool *pActive);
@@ -114,7 +128,6 @@ private:
 	bool m_KeyReaderIsActive;
 
 	// generic popups
-	typedef void (CMenus::*FPopupButtonCallback)();
 	void DefaultButtonCallback() { /* do nothing */ };
 	enum
 	{

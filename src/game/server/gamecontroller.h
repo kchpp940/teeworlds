@@ -58,6 +58,9 @@ class IGameController
 	EGameState m_GameState;
 	int m_GameStateTimer;
 
+	virtual bool DoWincheckMatch();		// returns true when the match is over
+	virtual void DoWincheckRound() {}
+	bool HasEnoughPlayers() const { return (IsTeamplay() && m_aTeamSize[TEAM_RED] > 0 && m_aTeamSize[TEAM_BLUE] > 0) || (!IsTeamplay() && m_aTeamSize[TEAM_RED] > 1); }
 	void ResetGame();
 	void SetGameState(EGameState GameState, int Timer=0);
 	void StartMatch();
@@ -107,88 +110,6 @@ protected:
 
 	void EndMatch() { SetGameState(IGS_END_MATCH, TIMER_END); }
 	void EndRound() { SetGameState(IGS_END_ROUND, TIMER_END/2); }
-
-	enum EWinResult
-	{
-		WIN_RESULT_NONE = 0,
-		WIN_RESULT_RED,
-		WIN_RESULT_BLUE,
-		WIN_RESULT_DRAW,
-		WIN_RESULT_PLAYER,
-	};
-
-	struct CGameResult
-	{
-		EWinResult m_Result;
-		class CPlayer *m_pWinner;
-		int m_WinningTeam;
-		bool m_SuddenDeath;
-		bool m_ShouldAddScore;
-		bool m_BonusAllSurvivors;
-		bool m_ShouldRestart;
-		const char *m_pCustomMessage;
-
-		CGameResult()
-		: m_Result(WIN_RESULT_NONE), m_pWinner(0), m_WinningTeam(-1),
-		  m_SuddenDeath(false), m_ShouldAddScore(true), m_BonusAllSurvivors(false),
-		  m_ShouldRestart(true), m_pCustomMessage(0) {}
-
-		bool HasResult() const { return m_Result != WIN_RESULT_NONE || m_SuddenDeath || m_pCustomMessage; }
-		bool ShouldApply() const { return HasResult(); }
-	};
-
-	// unified result application
-	bool ApplyMatchResult(const CGameResult &Result);
-	bool ApplyRoundResult(const CGameResult &Result);
-
-	// result construction helpers (for subclasses to use)
-	CGameResult MakeMatchTeamWin(int Team) const;
-	CGameResult MakeMatchPlayerWin(class CPlayer *pPlayer) const;
-	CGameResult MakeMatchDraw() const;
-	CGameResult MakeSuddenDeathTrigger() const;
-	CGameResult MakeRoundTeamWin(int Team) const;
-	CGameResult MakeRoundPlayerWin(class CPlayer *pPlayer) const;
-	CGameResult MakeRoundDraw() const;
-	CGameResult MakeRoundEnd(const char *pMsg = 0) const;
-	CGameResult MakeRoundEndWithSurvivorBonus(const char *pMsg = 0) const;
-
-	// result builder helpers (combine conditions and return CGameResult)
-	bool IsMatchScoreLimitHit() const;
-	bool IsMatchTimeLimitHit() const;
-	bool IsRoundTimeLimitHit() const;
-	CGameResult BuildMatchLimitResult();
-	CGameResult BuildMatchScoreLimitResult();
-	CGameResult BuildMatchTimeLimitResult();
-	CGameResult BuildSurvivalSoloResult();
-	CGameResult BuildSurvivalTeamResult();
-	CGameResult BuildRoundTimeLimitResult();
-
-	// broadcast / message hooks (override for custom messages)
-	virtual void BroadcastSuddenDeathMessage();
-	virtual void BroadcastMatchResult(EWinResult Result, class CPlayer *pWinner = 0);
-	virtual void BroadcastRoundResult(const char *pCustomMsg = 0);
-	virtual const char *GetTeamWinMessage(int Team) const;
-	virtual const char *GetDrawMessage() const;
-	virtual const char *GetSuddenDeathMessage() const;
-
-	virtual bool DoWincheckMatch();
-	virtual void DoWincheckRound() {}
-	bool HasEnoughPlayers() const { return (IsTeamplay() && m_aTeamSize[TEAM_RED] > 0 && m_aTeamSize[TEAM_BLUE] > 0) || (!IsTeamplay() && m_aTeamSize[TEAM_RED] > 1); }
-
-	// scoring helpers
-	void DoPlayerScoreUpdate(class CPlayer *pVictim, class CPlayer *pKiller, int Weapon);
-	void DoTeamScoreUpdate(class CPlayer *pVictim, class CPlayer *pKiller, int Weapon);
-	void SetRespawnDelay(class CPlayer *pPlayer, float Seconds);
-
-	// survival helpers
-	int CountAlivePlayers(int Team = -1) const;
-	class CPlayer *FindAlivePlayer() const;
-	void CountAlivePlayersByTeam(int &RedAlive, int &BlueAlive) const;
-
-	// wincheck helpers
-	virtual bool DoTeamScoreWincheck();
-	virtual bool DoPlayerScoreWincheck();
-	virtual bool IsSuddenDeathSettled() const;
 
 	// info
 	int m_GameFlags;

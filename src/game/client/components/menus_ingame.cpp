@@ -59,7 +59,7 @@ void CMenus::RenderGame(CUIRect MainView)
 	CUIRect Button, ButtonRow, Label;
 
 	float Spacing = 3.0f;
-	float ButtonWidth = (MainView.w/6.0f)-(Spacing*5.0)/6.0f;
+	float ButtonWidth = DoButtons_CalcWidth(MainView.w, 6, Spacing);
 
 	// cut view
 	MainView.HSplitTop(20.0f, 0, &MainView);
@@ -100,9 +100,8 @@ void CMenus::RenderGame(CUIRect MainView)
 		else
 			str_copy(aBuf, Localize(Team != TEAM_SPECTATORS ? "Spectate" : "Spectating"), sizeof(aBuf)); // Localize("Spectating");
 
-		ButtonRow.VSplitLeft(ButtonWidth, &Button, &ButtonRow);
-		ButtonRow.VSplitLeft(Spacing, 0, &ButtonRow);
 		static CButtonContainer s_SpectateButton;
+		DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, Spacing);
 		if(DoButton_Menu(&s_SpectateButton, aBuf, Team == TEAM_SPECTATORS, &Button) && Team != TEAM_SPECTATORS && Info.m_AllowSpec)
 		{
 			m_pClient->SendSwitchTeam(TEAM_SPECTATORS);
@@ -129,9 +128,8 @@ void CMenus::RenderGame(CUIRect MainView)
 			else
 				str_copy(aBuf, Localize(Team != TEAM_RED ? "Join red" : "Joined red"), sizeof(aBuf)); // Localize("Join red");Localize("Joined red");
 
-			ButtonRow.VSplitLeft(ButtonWidth, &Button, &ButtonRow);
-			ButtonRow.VSplitLeft(Spacing, 0, &ButtonRow);
 			static CButtonContainer s_RedButton;
+			DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, Spacing);
 			if(DoButton_Menu(&s_RedButton, aBuf, Team == TEAM_RED, &Button, 0, CUIRect::CORNER_ALL, 5.0f, 0.0f, vec4(0.975f, 0.17f, 0.17f, 0.75f), false) && Team != TEAM_RED && !(Info.m_aNotification[0]) && !BlockRed)
 			{
 				m_pClient->SendSwitchTeam(TEAM_RED);
@@ -155,9 +153,8 @@ void CMenus::RenderGame(CUIRect MainView)
 			else
 				str_copy(aBuf, Localize(Team != TEAM_BLUE ? "Join blue" : "Joined blue"), sizeof(aBuf)); // Localize("Join blue");Localize("Joined blue");
 
-			ButtonRow.VSplitLeft(ButtonWidth, &Button, &ButtonRow);
-			ButtonRow.VSplitLeft(Spacing, 0, &ButtonRow);
 			static CButtonContainer s_BlueButton;
+			DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, Spacing);
 			if(DoButton_Menu(&s_BlueButton, aBuf, Team == TEAM_BLUE, &Button, 0, CUIRect::CORNER_ALL, 5.0f, 0.0f, vec4(0.17f, 0.46f, 0.975f, 0.75f), false) && Team != TEAM_BLUE && !(Info.m_aNotification[0]) && !BlockBlue)
 			{
 				m_pClient->SendSwitchTeam(TEAM_BLUE);
@@ -176,7 +173,7 @@ void CMenus::RenderGame(CUIRect MainView)
 			else
 				str_copy(aBuf, Localize(Team != TEAM_RED ? "Join" : "Joined"), sizeof(aBuf)); //Localize("Join");Localize("Joined");
 
-			ButtonRow.VSplitLeft(ButtonWidth, &Button, &ButtonRow);
+			DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, 0.0f);
 			static CButtonContainer s_JoinButton;
 			if(DoButton_Menu(&s_JoinButton, aBuf, Team == TEAM_RED, &Button) && Team != TEAM_RED && !(Info.m_aNotification[0]))
 			{

@@ -13,7 +13,7 @@ class CGameControllerCTF : public IGameController
 	// game
 	class CFlag *m_apFlags[2];
 
-	virtual bool IsSuddenDeathSettled() const;
+	virtual bool DoWincheckMatch();
 
 public:
 	CGameControllerCTF(class CGameContext *pGameServer);
