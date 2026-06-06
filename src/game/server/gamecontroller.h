@@ -147,6 +147,17 @@ protected:
 	CGameResult MakeRoundDraw() const;
 	CGameResult MakeRoundEnd(const char *pMsg = 0) const;
 
+	// result builder helpers (combine conditions and return CGameResult)
+	bool IsMatchScoreLimitHit() const;
+	bool IsMatchTimeLimitHit() const;
+	bool IsRoundTimeLimitHit() const;
+	CGameResult BuildMatchLimitResult();
+	CGameResult BuildMatchScoreLimitResult();
+	CGameResult BuildMatchTimeLimitResult();
+	CGameResult BuildSurvivalSoloResult();
+	CGameResult BuildSurvivalTeamResult();
+	CGameResult BuildRoundTimeLimitResult();
+
 	// broadcast / message hooks (override for custom messages)
 	virtual void BroadcastSuddenDeathMessage();
 	virtual void BroadcastMatchResult(EWinResult Result, class CPlayer *pWinner = 0);

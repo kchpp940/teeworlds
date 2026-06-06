@@ -31,13 +31,13 @@ void CGameControllerLTS::OnCharacterSpawn(class CCharacter *pChr)
 // game
 void CGameControllerLTS::DoWincheckRound()
 {
-	int CountRed = 0, CountBlue = 0;
-	CountAlivePlayersByTeam(CountRed, CountBlue);
+	CGameResult Result = BuildRoundTimeLimitResult();
+	if(Result.m_Result != WIN_RESULT_NONE)
+	{
+		ApplyRoundResult(Result);
+		return;
+	}
 
-	if(CountRed+CountBlue == 0 || (m_GameInfo.m_TimeLimit > 0 && (Server()->Tick()-m_GameStartTick) >= m_GameInfo.m_TimeLimit*Server()->TickSpeed()*60))
-		ApplyRoundResult(MakeRoundDraw());
-	else if(CountRed == 0)
-		ApplyRoundResult(MakeRoundTeamWin(TEAM_BLUE));
-	else if(CountBlue == 0)
-		ApplyRoundResult(MakeRoundTeamWin(TEAM_RED));
+	Result = BuildSurvivalTeamResult();
+	ApplyRoundResult(Result);
 }

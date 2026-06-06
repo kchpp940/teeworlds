@@ -31,8 +31,8 @@ void CGameControllerLMS::OnCharacterSpawn(CCharacter *pChr)
 // game
 void CGameControllerLMS::DoWincheckRound()
 {
-	// check for time based win
-	if(m_GameInfo.m_TimeLimit > 0 && (Server()->Tick()-m_GameStartTick) >= m_GameInfo.m_TimeLimit*Server()->TickSpeed()*60)
+	CGameResult Result = BuildRoundTimeLimitResult();
+	if(Result.m_Result != WIN_RESULT_NONE || Result.m_pCustomMessage)
 	{
 		for(int i = 0; i < MAX_CLIENTS; ++i)
 		{
@@ -41,16 +41,10 @@ void CGameControllerLMS::DoWincheckRound()
 				(GameServer()->m_apPlayers[i]->GetCharacter() && GameServer()->m_apPlayers[i]->GetCharacter()->IsAlive())))
 				GameServer()->m_apPlayers[i]->m_Score++;
 		}
+		ApplyRoundResult(Result);
+		return;
+	}
 
-		ApplyRoundResult(MakeRoundEnd());
-	}
-	else
-	{
-		// check for survival win
-		int AlivePlayerCount = CountAlivePlayers();
-		if(AlivePlayerCount == 0)
-			ApplyRoundResult(MakeRoundEnd());
-		else if(AlivePlayerCount == 1)
-			ApplyRoundResult(MakeRoundPlayerWin(FindAlivePlayer()));
-	}
+	Result = BuildSurvivalSoloResult();
+	ApplyRoundResult(Result);
 }
