@@ -13,6 +13,10 @@ public:
 		MAX_KILL_EVENTS = 32,
 		MAX_RACE_EVENTS = 16,
 		MAX_CHECKPOINT_EVENTS = 16,
+
+		FLAG_ATSTAND = 0,
+		FLAG_TAKEN = 1,
+		FLAG_DROPPED = 2,
 	};
 
 	struct CKillEvent
@@ -45,6 +49,21 @@ public:
 		int64 m_TimeStamp;
 		int m_ClientID;
 		int m_Diff;
+	};
+
+	struct CTeamState
+	{
+		int m_Score;
+		int m_Size;
+		int m_AliveCount;
+	};
+
+	struct CPlayerActivityState
+	{
+		int m_Score;
+		int m_Latency;
+		int m_PlayerFlags;
+		bool m_Active;
 	};
 
 	class CPlayerMatchStats
@@ -88,11 +107,26 @@ private:
 	int m_CheckpointEventGeneration;
 
 	CPlayerMatchStats m_aPlayerStats[MAX_CLIENTS];
+	CPlayerActivityState m_aPlayerActivity[MAX_CLIENTS];
 
 	int m_LastFlagCarrierRed;
 	int m_LastFlagCarrierBlue;
+	int m_FlagDropTickRed;
+	int m_FlagDropTickBlue;
+	int m_FlagStateRed;
+	int m_FlagStateBlue;
+
+	CTeamState m_aTeamState[2];
 
 	int m_GameStartTick;
+	int m_GameStateFlags;
+	int m_GameStateEndTick;
+	int m_SnapNotReadyCount;
+
+	int m_RaceBestTime;
+	int m_RaceFlags;
+
+	int m_NumSpectators;
 
 	static bool IsCarryingFlag(int ClientID, int FlagCarrierRed, int FlagCarrierBlue);
 
@@ -120,6 +154,8 @@ public:
 	const CPlayerMatchStats *GetPlayerStats(int ClientID) const { return &m_aPlayerStats[ClientID]; }
 	CPlayerMatchStats *PlayerStats(int ClientID) { return &m_aPlayerStats[ClientID]; }
 
+	const CPlayerActivityState *GetPlayerActivity(int ClientID) const { return &m_aPlayerActivity[ClientID]; }
+
 	void OnFlagGrab(int ClientID);
 	void OnFlagCapture(int ClientID);
 	void OnPlayerEnter(int ClientID, int Team);
@@ -132,8 +168,24 @@ public:
 	bool IsFlagCarrierBlue(int ClientID) const { return m_LastFlagCarrierBlue == ClientID; }
 	int GetFlagCarrierRed() const { return m_LastFlagCarrierRed; }
 	int GetFlagCarrierBlue() const { return m_LastFlagCarrierBlue; }
+	int GetFlagDropTickRed() const { return m_FlagDropTickRed; }
+	int GetFlagDropTickBlue() const { return m_FlagDropTickBlue; }
+	int GetFlagStateRed() const { return m_FlagStateRed; }
+	int GetFlagStateBlue() const { return m_FlagStateBlue; }
+
+	int TeamScore(int Team) const { return m_aTeamState[Team].m_Score; }
+	int TeamSize(int Team) const { return m_aTeamState[Team].m_Size; }
+	int TeamAliveCount(int Team) const { return m_aTeamState[Team].m_AliveCount; }
 
 	int GameStartTick() const { return m_GameStartTick; }
+	int GameStateFlags() const { return m_GameStateFlags; }
+	int GameStateEndTick() const { return m_GameStateEndTick; }
+	int SnapNotReadyCount() const { return m_SnapNotReadyCount; }
+
+	int RaceBestTime() const { return m_RaceBestTime; }
+	int RaceFlags() const { return m_RaceFlags; }
+
+	int NumSpectators() const { return m_NumSpectators; }
 };
 
 #endif

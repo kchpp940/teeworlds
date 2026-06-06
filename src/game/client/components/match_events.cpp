@@ -35,7 +35,13 @@ CMatchEvents::CMatchEvents()
 void CMatchEvents::OnReset()
 {
 	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
 		m_aPlayerStats[i].Reset();
+		m_aPlayerActivity[i].m_Score = 0;
+		m_aPlayerActivity[i].m_Latency = 0;
+		m_aPlayerActivity[i].m_PlayerFlags = 0;
+		m_aPlayerActivity[i].m_Active = false;
+	}
 
 	m_KillEventCount = 0;
 	m_KillEventNext = 0;
@@ -49,7 +55,27 @@ void CMatchEvents::OnReset()
 
 	m_LastFlagCarrierRed = -1;
 	m_LastFlagCarrierBlue = -1;
+	m_FlagDropTickRed = 0;
+	m_FlagDropTickBlue = 0;
+	m_FlagStateRed = 0;
+	m_FlagStateBlue = 0;
+
+	m_aTeamState[0].m_Score = 0;
+	m_aTeamState[0].m_Size = 0;
+	m_aTeamState[0].m_AliveCount = 0;
+	m_aTeamState[1].m_Score = 0;
+	m_aTeamState[1].m_Size = 0;
+	m_aTeamState[1].m_AliveCount = 0;
+
 	m_GameStartTick = 0;
+	m_GameStateFlags = 0;
+	m_GameStateEndTick = 0;
+	m_SnapNotReadyCount = 0;
+
+	m_RaceBestTime = -1;
+	m_RaceFlags = 0;
+
+	m_NumSpectators = 0;
 }
 
 bool CMatchEvents::IsCarryingFlag(int ClientID, int FlagCarrierRed, int FlagCarrierBlue)
@@ -99,18 +125,86 @@ void CMatchEvents::OnNewSnapshot()
 	if(m_pClient->m_Snap.m_pGameData)
 	{
 		m_GameStartTick = m_pClient->m_Snap.m_pGameData->m_GameStartTick;
+		m_GameStateFlags = m_pClient->m_Snap.m_pGameData->m_GameStateFlags;
+		m_GameStateEndTick = m_pClient->m_Snap.m_pGameData->m_GameStateEndTick;
 	}
+	else
+	{
+		m_GameStartTick = 0;
+		m_GameStateFlags = 0;
+		m_GameStateEndTick = 0;
+	}
+
+	m_SnapNotReadyCount = m_pClient->m_Snap.m_NotReadyCount;
 
 	if(m_pClient->m_Snap.m_pGameDataFlag)
 	{
 		m_LastFlagCarrierRed = m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierRed;
 		m_LastFlagCarrierBlue = m_pClient->m_Snap.m_pGameDataFlag->m_FlagCarrierBlue;
+		m_FlagDropTickRed = m_pClient->m_Snap.m_pGameDataFlag->m_FlagDropTickRed;
+		m_FlagDropTickBlue = m_pClient->m_Snap.m_pGameDataFlag->m_FlagDropTickBlue;
+		m_FlagStateRed = (m_LastFlagCarrierRed >= 0) ? FLAG_TAKEN : (m_FlagDropTickRed != 0 ? FLAG_DROPPED : FLAG_ATSTAND);
+		m_FlagStateBlue = (m_LastFlagCarrierBlue >= 0) ? FLAG_TAKEN : (m_FlagDropTickBlue != 0 ? FLAG_DROPPED : FLAG_ATSTAND);
 	}
 	else
 	{
 		m_LastFlagCarrierRed = -1;
 		m_LastFlagCarrierBlue = -1;
+		m_FlagDropTickRed = 0;
+		m_FlagDropTickBlue = 0;
+		m_FlagStateRed = 0;
+		m_FlagStateBlue = 0;
 	}
+
+	if(m_pClient->m_Snap.m_pGameDataTeam)
+	{
+		m_aTeamState[TEAM_RED].m_Score = m_pClient->m_Snap.m_pGameDataTeam->m_TeamscoreRed;
+		m_aTeamState[TEAM_BLUE].m_Score = m_pClient->m_Snap.m_pGameDataTeam->m_TeamscoreBlue;
+	}
+	else
+	{
+		m_aTeamState[TEAM_RED].m_Score = 0;
+		m_aTeamState[TEAM_BLUE].m_Score = 0;
+	}
+
+	m_aTeamState[TEAM_RED].m_Size = m_pClient->m_GameInfo.m_aTeamSize[TEAM_RED];
+	m_aTeamState[TEAM_BLUE].m_Size = m_pClient->m_GameInfo.m_aTeamSize[TEAM_BLUE];
+	m_aTeamState[TEAM_RED].m_AliveCount = m_pClient->m_Snap.m_AliveCount[TEAM_RED];
+	m_aTeamState[TEAM_BLUE].m_AliveCount = m_pClient->m_Snap.m_AliveCount[TEAM_BLUE];
+
+	if(m_pClient->m_Snap.m_pGameDataRace)
+	{
+		m_RaceBestTime = m_pClient->m_Snap.m_pGameDataRace->m_BestTime;
+		m_RaceFlags = m_pClient->m_Snap.m_pGameDataRace->m_RaceFlags;
+	}
+	else
+	{
+		m_RaceBestTime = -1;
+		m_RaceFlags = 0;
+	}
+
+	int NumSpec = 0;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		m_aPlayerActivity[i].m_Active = m_pClient->m_aClients[i].m_Active;
+		const CNetObj_PlayerInfo *pInfo = m_pClient->m_Snap.m_apPlayerInfos[i];
+		if(pInfo && m_aPlayerActivity[i].m_Active)
+		{
+			m_aPlayerActivity[i].m_Score = pInfo->m_Score;
+			m_aPlayerActivity[i].m_Latency = pInfo->m_Latency;
+			m_aPlayerActivity[i].m_PlayerFlags = pInfo->m_PlayerFlags;
+		}
+		else
+		{
+			m_aPlayerActivity[i].m_Score = 0;
+			m_aPlayerActivity[i].m_Latency = 0;
+			m_aPlayerActivity[i].m_PlayerFlags = 0;
+		}
+
+		if(m_aPlayerActivity[i].m_Active && m_pClient->m_aClients[i].m_Team == TEAM_SPECTATORS)
+			NumSpec++;
+	}
+	m_NumSpectators = NumSpec;
 }
 
 void CMatchEvents::OnMessage(int MsgType, void *pRawMsg)
