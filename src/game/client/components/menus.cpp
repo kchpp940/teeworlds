@@ -470,14 +470,25 @@ void CMenus::ExecuteMenuAction(const CMenuAction *pAction)
 		(this->*pAction->m_pfnAction)();
 }
 
-bool CMenus::DoMenuActionButton(CButtonContainer *pButton, const CMenuAction *pAction, const CUIRect *pRect)
+bool CMenus::DoMenuActionButton(CButtonContainer *pButton, const CMenuAction *pAction, const CUIRect *pRect,
+	const char *pOverrideLabel, int OverrideChecked, bool bExecute)
 {
 	bool Triggered = false;
-	const bool Checked = pAction->m_Checked < 0 ? false : (pAction->m_Checked != 0);
+	const char *pLabel = pOverrideLabel ? pOverrideLabel : pAction->m_pLabel;
+	int CheckedRaw = OverrideChecked >= 0 ? OverrideChecked : pAction->m_Checked;
+	const bool Checked = CheckedRaw < 0 ? false : (CheckedRaw != 0);
 
-	Triggered |= DoButton_Menu(pButton, pAction->m_pLabel, Checked, pRect,
-		pAction->m_pImageName, pAction->m_Corners, pAction->m_Rounding,
-		pAction->m_FontFactor, pAction->m_ColorHot, pAction->m_TextFade);
+	if(pAction->m_SpriteImageID >= 0)
+	{
+		Triggered |= DoButton_SpriteID(pButton, pAction->m_SpriteImageID, pAction->m_SpriteID, Checked, pRect,
+			pAction->m_Corners, pAction->m_Rounding, pAction->m_SpriteFade);
+	}
+	else
+	{
+		Triggered |= DoButton_Menu(pButton, pLabel, Checked, pRect,
+			pAction->m_pImageName, pAction->m_Corners, pAction->m_Rounding,
+			pAction->m_FontFactor, pAction->m_ColorHot, pAction->m_TextFade);
+	}
 
 	if(pAction->m_UiHotkey)
 		Triggered |= UI()->ConsumeHotkey((unsigned)pAction->m_UiHotkey);
@@ -490,9 +501,26 @@ bool CMenus::DoMenuActionButton(CButtonContainer *pButton, const CMenuAction *pA
 			Triggered |= CheckHotKey(pAction->m_HotKey);
 	}
 
-	if(Triggered)
+	if(Triggered && bExecute)
 		ExecuteMenuAction(pAction);
 	return Triggered;
+}
+
+bool CMenus::DoConfig_CheckBox_Bitfield(void *pID, int *pConfig, int Mask, const char *pText, const CUIRect *pRect, FConfigChangedCallback pfnOnChanged, bool Locked)
+{
+	if(DoButton_CheckBox(pID ? pID : pConfig, pText, (*pConfig & Mask) != 0, pRect, Locked))
+	{
+		*pConfig ^= Mask;
+		if(pfnOnChanged)
+			(this->*pfnOnChanged)();
+		return true;
+	}
+	return false;
+}
+
+void CMenus::DoConfig_SliderIntEx(int *pConfig, int *pConfigTmp, const CUIRect *pRect, const char *pLabel, int Min, int Max, const IScrollbarScale *pScale, unsigned char Options)
+{
+	UI()->DoScrollbarOption(pConfig, pConfigTmp, pRect, pLabel, Min, Max, pScale, Options);
 }
 
 void CMenus::ActionDisconnect() { Client()->Disconnect(); }

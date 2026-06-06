@@ -2202,11 +2202,9 @@ void CMenus::RenderServerbrowser(CUIRect MainView)
 	// sidebar button
 	SidebarButton.HMargin(150.0f, &SidebarButton);
 	static CButtonContainer s_SidebarButton;
-	if(DoButton_SpriteID(&s_SidebarButton, IMAGE_ARROWICONS, m_SidebarActive?SPRITE_ARROW_RIGHT_A:SPRITE_ARROW_LEFT_A, false, &SidebarButton, CUIRect::CORNER_R, 5.0f, true))
-	{
-		CMenuAction A = CMenuAction::Direct(0, &CMenus::ActionToggleSidebar);
-		ExecuteMenuAction(&A);
-	}
+	CMenuAction SidebarAction = CMenuAction::Sprite(IMAGE_ARROWICONS, 0, &CMenus::ActionToggleSidebar, 0, CUIRect::CORNER_R, 5.0f, true);
+	SidebarAction.m_SpriteID = m_SidebarActive ? SPRITE_ARROW_RIGHT_A : SPRITE_ARROW_LEFT_A;
+	DoMenuActionButton(&s_SidebarButton, &SidebarAction, &SidebarButton);
 
 	// back button
 	BottomBox.HSplitTop(20.0f, 0, &BottomBox);

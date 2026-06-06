@@ -102,10 +102,11 @@ void CMenus::RenderGame(CUIRect MainView)
 
 		static CButtonContainer s_SpectateButton;
 		DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, Spacing);
-		if(DoButton_Menu(&s_SpectateButton, aBuf, Team == TEAM_SPECTATORS, &Button) && Team != TEAM_SPECTATORS && Info.m_AllowSpec)
 		{
-			CMenuAction A = CMenuAction::Direct(0, &CMenus::ActionJoinSpectators);
-			ExecuteMenuAction(&A);
+			CMenuAction SpecAction = CMenuAction::Direct(0, &CMenus::ActionJoinSpectators);
+			if(DoMenuActionButton(&s_SpectateButton, &SpecAction, &Button, aBuf, Team == TEAM_SPECTATORS ? 1 : 0, false)
+			   && Team != TEAM_SPECTATORS && Info.m_AllowSpec)
+				ExecuteMenuAction(&SpecAction);
 		}
 
 		// team button
@@ -130,10 +131,13 @@ void CMenus::RenderGame(CUIRect MainView)
 
 			static CButtonContainer s_RedButton;
 			DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, Spacing);
-			if(DoButton_Menu(&s_RedButton, aBuf, Team == TEAM_RED, &Button, 0, CUIRect::CORNER_ALL, 5.0f, 0.0f, vec4(0.975f, 0.17f, 0.17f, 0.75f), false) && Team != TEAM_RED && !(Info.m_aNotification[0]) && !BlockRed)
 			{
-				CMenuAction A = CMenuAction::Direct(0, &CMenus::ActionJoinRed);
-				ExecuteMenuAction(&A);
+				CMenuAction RedAction = CMenuAction::Direct(0, &CMenus::ActionJoinRed);
+				RedAction.m_ColorHot = vec4(0.975f, 0.17f, 0.17f, 0.75f);
+				RedAction.m_TextFade = false;
+				if(DoMenuActionButton(&s_RedButton, &RedAction, &Button, aBuf, Team == TEAM_RED ? 1 : 0, false)
+				   && Team != TEAM_RED && !(Info.m_aNotification[0]) && !BlockRed)
+					ExecuteMenuAction(&RedAction);
 			}
 
 			RedTeamSizeNew = m_pClient->m_GameInfo.m_aTeamSize[TEAM_RED];
@@ -155,10 +159,13 @@ void CMenus::RenderGame(CUIRect MainView)
 
 			static CButtonContainer s_BlueButton;
 			DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, Spacing);
-			if(DoButton_Menu(&s_BlueButton, aBuf, Team == TEAM_BLUE, &Button, 0, CUIRect::CORNER_ALL, 5.0f, 0.0f, vec4(0.17f, 0.46f, 0.975f, 0.75f), false) && Team != TEAM_BLUE && !(Info.m_aNotification[0]) && !BlockBlue)
 			{
-				CMenuAction A = CMenuAction::Direct(0, &CMenus::ActionJoinBlue);
-				ExecuteMenuAction(&A);
+				CMenuAction BlueAction = CMenuAction::Direct(0, &CMenus::ActionJoinBlue);
+				BlueAction.m_ColorHot = vec4(0.17f, 0.46f, 0.975f, 0.75f);
+				BlueAction.m_TextFade = false;
+				if(DoMenuActionButton(&s_BlueButton, &BlueAction, &Button, aBuf, Team == TEAM_BLUE ? 1 : 0, false)
+				   && Team != TEAM_BLUE && !(Info.m_aNotification[0]) && !BlockBlue)
+					ExecuteMenuAction(&BlueAction);
 			}
 		}
 		else
@@ -175,10 +182,11 @@ void CMenus::RenderGame(CUIRect MainView)
 
 			DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, 0.0f);
 			static CButtonContainer s_JoinButton;
-			if(DoButton_Menu(&s_JoinButton, aBuf, Team == TEAM_RED, &Button) && Team != TEAM_RED && !(Info.m_aNotification[0]))
 			{
-				CMenuAction A = CMenuAction::Direct(0, &CMenus::ActionJoin);
-				ExecuteMenuAction(&A);
+				CMenuAction JoinAction = CMenuAction::Direct(0, &CMenus::ActionJoin);
+				if(DoMenuActionButton(&s_JoinButton, &JoinAction, &Button, aBuf, Team == TEAM_RED ? 1 : 0, false)
+				   && Team != TEAM_RED && !(Info.m_aNotification[0]))
+					ExecuteMenuAction(&JoinAction);
 			}
 		}
 

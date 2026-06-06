@@ -841,25 +841,7 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 	// TODO: make space for camera settings
 	CUIRect CheckBoxLeft, CheckBoxRight;
 	Button.VSplitMid(&CheckBoxLeft, &CheckBoxRight);
-	if(DoButton_CheckBox(&Config()->m_ClDynamicCamera, Localize("Dynamic Camera"), Config()->m_ClDynamicCamera, &CheckBoxLeft))
-	{
-		if(Config()->m_ClDynamicCamera)
-		{
-			Config()->m_ClDynamicCamera = 0;
-			// force to defaults when using the GUI
-			Config()->m_ClMouseMaxDistanceStatic = 400;
-			// Config()->m_ClMouseFollowfactor = 0;
-			// Config()->m_ClMouseDeadzone = 0;
-		}
-		else
-		{
-			Config()->m_ClDynamicCamera = 1;
-			// force to defaults when using the GUI
-			Config()->m_ClMouseMaxDistanceDynamic = 1000;
-			Config()->m_ClMouseFollowfactor = 60;
-			Config()->m_ClMouseDeadzone = 300;
-		}
-	}
+	DoButton_CheckBox_ConfigEx(&Config()->m_ClDynamicCamera, Localize("Dynamic Camera"), &CheckBoxLeft, &CMenus::OnDynamicCameraChanged);
 
 	DoButton_CheckBox_ConfigEx(&Config()->m_ClCameraSmoothness, Localize("Smooth Camera"), &CheckBoxRight, &CMenus::OnSmoothCameraChanged);
 
@@ -877,7 +859,7 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 
 		DoButtons_HSplitColumn(&GameLeft, &Button, ButtonHeight, Spacing);
 		Button.VSplitLeft(ButtonHeight, 0, &Button);
-		UI()->DoScrollbarOption(&Config()->m_ClNameplatesSize, &Config()->m_ClNameplatesSize, &Button, Localize("Size"), 0, 100);
+		DoConfig_SliderInt(&Config()->m_ClNameplatesSize, &Config()->m_ClNameplatesSize, &Button, Localize("Size"), 0, 100);
 
 		DoButtons_HSplitColumn(&GameLeft, &Button, ButtonHeight, Spacing);
 		Button.VSplitLeft(ButtonHeight, 0, &Button);
@@ -904,7 +886,7 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 		GameRight.HSplitTop(Spacing, 0, &GameRight);
 		GameRight.HSplitTop(ButtonHeight, &Button, &GameRight);
 		const char *apLabels[] = { Localize("everyone", "Show chat messages from"), Localize("friends only", "Show chat messages from"), Localize("no one", "Show chat messages from") };
-		UI()->DoScrollbarOptionLabeled(&Config()->m_ClFilterchat, &Config()->m_ClFilterchat, &Button, Localize("Show chat messages from"), apLabels, sizeof(apLabels)/sizeof(char *));
+		DoConfig_SliderLabeled(&Config()->m_ClFilterchat, &Config()->m_ClFilterchat, &Button, Localize("Show chat messages from"), apLabels, sizeof(apLabels)/sizeof(char *));
 	}
 
 	DoButtons_HSplitColumn(&GameRight, &Button, ButtonHeight, Spacing);
@@ -924,21 +906,21 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 	DoButton_CheckBox_Config(&Config()->m_UiWideview, Localize("Wide menu"), &ClientRight);
 
 	DoButtons_HSplitColumn(&Client, &Button, ButtonHeight, Spacing);
-	UI()->DoScrollbarOption(&Config()->m_ClMenuAlpha, &Config()->m_ClMenuAlpha, &Button, Localize("Menu background opacity"), 0, 75);
+	DoConfig_SliderInt(&Config()->m_ClMenuAlpha, &Config()->m_ClMenuAlpha, &Button, Localize("Menu background opacity"), 0, 75);
 
 	DoButtons_HSplitColumn(&Client, &Button, ButtonHeight, Spacing);
 	Button.VSplitMid(&ClientLeft, &ClientRight, Spacing);
 	DoButton_CheckBox_Config(&Config()->m_ClAutoDemoRecord, Localize("Automatically record demos"), &ClientLeft);
 
 	if(Config()->m_ClAutoDemoRecord)
-		UI()->DoScrollbarOption(&Config()->m_ClAutoDemoMax, &Config()->m_ClAutoDemoMax, &ClientRight, Localize("Max"), 0, 1000, &CUI::ms_LogarithmicScrollbarScale, CUI::SCROLLBAR_OPTION_INFINITE);
+		DoConfig_SliderIntEx(&Config()->m_ClAutoDemoMax, &Config()->m_ClAutoDemoMax, &ClientRight, Localize("Max"), 0, 1000, &CUI::ms_LogarithmicScrollbarScale, CUI::SCROLLBAR_OPTION_INFINITE);
 
 	DoButtons_HSplitColumn(&Client, &Button, ButtonHeight, Spacing);
 	Button.VSplitMid(&ClientLeft, &ClientRight, Spacing);
 	DoButton_CheckBox_Config(&Config()->m_ClAutoScreenshot, Localize("Automatically take game over screenshot"), &ClientLeft);
 
 	if(Config()->m_ClAutoScreenshot)
-		UI()->DoScrollbarOption(&Config()->m_ClAutoScreenshotMax, &Config()->m_ClAutoScreenshotMax, &ClientRight, Localize("Max"), 0, 1000, &CUI::ms_LogarithmicScrollbarScale, CUI::SCROLLBAR_OPTION_INFINITE);
+		DoConfig_SliderIntEx(&Config()->m_ClAutoScreenshotMax, &Config()->m_ClAutoScreenshotMax, &ClientRight, Localize("Max"), 0, 1000, &CUI::ms_LogarithmicScrollbarScale, CUI::SCROLLBAR_OPTION_INFINITE);
 
 	MainView.HSplitTop(10.0f, 0, &MainView);
 
@@ -1191,12 +1173,12 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 		// player name
 		Name.HSplitTop(ButtonHeight, &Button, &Name);
 		static CLineInput s_NameInput(Config()->m_PlayerName, sizeof(Config()->m_PlayerName), MAX_NAME_LENGTH);
-		UI()->DoEditBoxOption(&s_NameInput, &Button, Localize("Name"), 100.0f);
+		DoConfig_EditBox(&s_NameInput, &Button, Localize("Name"));
 
 		// player clan
 		Clan.HSplitTop(ButtonHeight, &Button, &Clan);
 		static CLineInput s_ClanInput(Config()->m_PlayerClan, sizeof(Config()->m_PlayerClan), MAX_CLAN_LENGTH);
-		UI()->DoEditBoxOption(&s_ClanInput, &Button, Localize("Clan"), 100.0f);
+		DoConfig_EditBox(&s_ClanInput, &Button, Localize("Clan"));
 
 		// country selector
 		Bottom.Draw(vec4(0.0f, 0.0f, 0.0f, 0.25f));
@@ -1390,52 +1372,41 @@ float CMenus::RenderSettingsControlsStats(CUIRect View)
 	CUIRect Button;
 
 	View.HSplitTop(RowHeight, &Button, &View);
-	if(DoButton_CheckBox(s_aCheckboxIds + 0, Localize("Kills"), Config()->m_ClStatboardInfos & TC_STATS_KILLS, &Button))
-		Config()->m_ClStatboardInfos ^= TC_STATS_KILLS;
+	DoConfig_CheckBox_Bitfield(s_aCheckboxIds + 0, &Config()->m_ClStatboardInfos, TC_STATS_KILLS, Localize("Kills"), &Button);
 
 	View.HSplitTop(RowHeight, &Button, &View);
-	if(DoButton_CheckBox(s_aCheckboxIds + 1, Localize("Deaths"), Config()->m_ClStatboardInfos & TC_STATS_DEATHS, &Button))
-		Config()->m_ClStatboardInfos ^= TC_STATS_DEATHS;
+	DoConfig_CheckBox_Bitfield(s_aCheckboxIds + 1, &Config()->m_ClStatboardInfos, TC_STATS_DEATHS, Localize("Deaths"), &Button);
 
 	View.HSplitTop(RowHeight, &Button, &View);
-	if(DoButton_CheckBox(s_aCheckboxIds + 2, Localize("Suicides"), Config()->m_ClStatboardInfos & TC_STATS_SUICIDES, &Button))
-		Config()->m_ClStatboardInfos ^= TC_STATS_SUICIDES;
+	DoConfig_CheckBox_Bitfield(s_aCheckboxIds + 2, &Config()->m_ClStatboardInfos, TC_STATS_SUICIDES, Localize("Suicides"), &Button);
 
 	View.HSplitTop(RowHeight, &Button, &View);
-	if(DoButton_CheckBox(s_aCheckboxIds + 3, Localize("Ratio"), Config()->m_ClStatboardInfos & TC_STATS_RATIO, &Button))
-		Config()->m_ClStatboardInfos ^= TC_STATS_RATIO;
+	DoConfig_CheckBox_Bitfield(s_aCheckboxIds + 3, &Config()->m_ClStatboardInfos, TC_STATS_RATIO, Localize("Ratio"), &Button);
 	UI()->DoTooltip(s_aCheckboxIds + 3, &Button, Localize("The ratio of kills to deaths."));
 
 	View.HSplitTop(RowHeight, &Button, &View);
-	if(DoButton_CheckBox(s_aCheckboxIds + 4, Localize("Net score"), Config()->m_ClStatboardInfos & TC_STATS_NET, &Button))
-		Config()->m_ClStatboardInfos ^= TC_STATS_NET;
+	DoConfig_CheckBox_Bitfield(s_aCheckboxIds + 4, &Config()->m_ClStatboardInfos, TC_STATS_NET, Localize("Net score"), &Button);
 	UI()->DoTooltip(s_aCheckboxIds + 4, &Button, Localize("The number of kills minus the number of deaths."));
 
 	View.HSplitTop(RowHeight, &Button, &View);
-	if(DoButton_CheckBox(s_aCheckboxIds + 5, Localize("Kills per minute"), Config()->m_ClStatboardInfos & TC_STATS_KPM, &Button))
-		Config()->m_ClStatboardInfos ^= TC_STATS_KPM;
+	DoConfig_CheckBox_Bitfield(s_aCheckboxIds + 5, &Config()->m_ClStatboardInfos, TC_STATS_KPM, Localize("Kills per minute"), &Button);
 
 	View.HSplitTop(RowHeight, &Button, &View);
-	if(DoButton_CheckBox(s_aCheckboxIds + 6, Localize("Current spree"), Config()->m_ClStatboardInfos & TC_STATS_SPREE, &Button))
-		Config()->m_ClStatboardInfos ^= TC_STATS_SPREE;
+	DoConfig_CheckBox_Bitfield(s_aCheckboxIds + 6, &Config()->m_ClStatboardInfos, TC_STATS_SPREE, Localize("Current spree"), &Button);
 
 	View.HSplitTop(RowHeight, &Button, &View);
-	if(DoButton_CheckBox(s_aCheckboxIds + 7, Localize("Best spree"), Config()->m_ClStatboardInfos & TC_STATS_BESTSPREE, &Button))
-		Config()->m_ClStatboardInfos ^= TC_STATS_BESTSPREE;
+	DoConfig_CheckBox_Bitfield(s_aCheckboxIds + 7, &Config()->m_ClStatboardInfos, TC_STATS_BESTSPREE, Localize("Best spree"), &Button);
 
 	View.HSplitTop(RowHeight, &Button, &View);
-	if(DoButton_CheckBox(s_aCheckboxIds + 8, Localize("Weapons stats"), Config()->m_ClStatboardInfos & TC_STATS_WEAPS, &Button))
-		Config()->m_ClStatboardInfos ^= TC_STATS_WEAPS;
+	DoConfig_CheckBox_Bitfield(s_aCheckboxIds + 8, &Config()->m_ClStatboardInfos, TC_STATS_WEAPS, Localize("Weapons stats"), &Button);
 	UI()->DoTooltip(s_aCheckboxIds + 8, &Button, Localize("The proportion of kills gotten with each weapon."));
 
 	View.HSplitTop(RowHeight, &Button, &View);
-	if(DoButton_CheckBox(s_aCheckboxIds + 9, Localize("Flag grabs"), Config()->m_ClStatboardInfos & TC_STATS_FLAGGRABS, &Button))
-		Config()->m_ClStatboardInfos ^= TC_STATS_FLAGGRABS;
+	DoConfig_CheckBox_Bitfield(s_aCheckboxIds + 9, &Config()->m_ClStatboardInfos, TC_STATS_FLAGGRABS, Localize("Flag grabs"), &Button);
 	UI()->DoTooltip(s_aCheckboxIds + 9, &Button, Localize("The number of times that the flag was touched in CTF (1 point)."));
 
 	View.HSplitTop(RowHeight, &Button, &View);
-	if(DoButton_CheckBox(s_aCheckboxIds + 10, Localize("Flag captures"), Config()->m_ClStatboardInfos & TC_STATS_FLAGCAPTURES, &Button))
-		Config()->m_ClStatboardInfos ^= TC_STATS_FLAGCAPTURES;
+	DoConfig_CheckBox_Bitfield(s_aCheckboxIds + 10, &Config()->m_ClStatboardInfos, TC_STATS_FLAGCAPTURES, Localize("Flag captures"), &Button);
 	UI()->DoTooltip(s_aCheckboxIds + 10, &Button, Localize("The number of times that the flag was captured in CTF (100 points)."));
 
 	return NUM_TC_STATS * RowHeight;
