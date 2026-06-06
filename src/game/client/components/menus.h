@@ -64,6 +64,51 @@ private:
 	void DoSection_SplitTwoCol(CUIRect *pView, CUIRect *pLeft, CUIRect *pRight, float Spacing = 2.0f);
 	bool DoButton_GridHeader(const void *pID, const char *pText, bool Checked, int Align, const CUIRect *pRect, int Corners = CUIRect::CORNER_ALL);
 
+	typedef void (CMenus::*FNavigationPrepareCallback)();
+	typedef void (CMenus::*FActionCallback)();
+	typedef void (CMenus::*FConfigChangedCallback)();
+
+	struct CPageDescriptor
+	{
+		int m_PageID;
+		int m_CameraPos;
+		const char *m_pLabel;
+		int m_HotKey;
+		bool m_OnlineOnly;
+		bool m_OfflineOnly;
+		void (CMenus::*m_pfnRender)(CUIRect);
+	};
+
+	struct CSubPageDescriptor
+	{
+		const char *m_pLabel;
+		int m_SubPageID;
+	};
+
+	struct CSettingsPageDescriptor
+	{
+		int m_SettingsPage;
+		int m_CameraPos;
+		const char *m_pLabel;
+		void (CMenus::*m_pfnRender)(CUIRect);
+	};
+
+	bool NavigateToPage(int PageID, FNavigationPrepareCallback pfnPrepare = 0);
+	bool DoButton_PageNavigate(CButtonContainer *pButtonContainer, const char *pText, int PageID, const CUIRect *pRect, int HotKey = 0, FNavigationPrepareCallback pfnPrepare = 0, const char *pImageName = 0, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f, vec4 ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f), bool TextFade = true);
+	int NavigateCurrentPage(CUIRect MainView, bool IsOnline);
+
+	bool DoButton_ConfirmAction(CButtonContainer *pButtonContainer, const char *pBtnText, const char *pConfirmTitle, const char *pConfirmMsg, const char *pConfirmBtn, const char *pCancelBtn, FActionCallback pfnAction, const CUIRect *pRect, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f, vec4 ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f), bool TextFade = true);
+	bool DoButton_DeleteConfirm(CButtonContainer *pButtonContainer, const char *pBtnText, const char *pConfirmTitle, const char *pConfirmMsg, FActionCallback pfnAction, const CUIRect *pRect, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f);
+
+	bool DoButton_CheckBox_ConfigEx(int *pConfig, const char *pText, const CUIRect *pRect, FConfigChangedCallback pfnOnChanged = 0, bool Locked = false);
+	void DoConfig_SliderInt(int *pConfig, int *pConfigTmp, const CUIRect *pRect, const char *pLabel, int Min, int Max);
+	void DoConfig_SliderLabeled(int *pConfig, int *pConfigTmp, const CUIRect *pRect, const char *pLabel, const char **ppLabels, int NumLabels);
+	void DoConfig_EditBox(CLineInput *pInput, const CUIRect *pRect, const char *pLabel, float LabelWidth = 100.0f);
+
+	void DoPageFrame_Settings(CUIRect *pMainView, CUIRect *pContent, CUIRect *pBottomView, const char *pTitle, float BottomHeight = 80.0f);
+	void DoPageFrame_Info(CUIRect *pMainView, CUIRect *pContent, const char *pTitle, float BottomMargin = 80.0f);
+	bool DoSubPage_Tabs(int *pActivePage, const CSubPageDescriptor *pPages, CButtonContainer *pButtons, int NumPages, CUIRect *pTabBar, float NotActiveAlpha = 0.5f);
+
 	float DoIndependentDropdownMenu(void *pID, const CUIRect *pRect, const char *pStr, float HeaderHeight, FDropdownCallback pfnCallback, bool *pActive);
 	void DoInfoBox(const CUIRect *pRect, const char *pLable, const char *pValue);
 
@@ -112,6 +157,11 @@ private:
 		ACTLB_LANG,
 		ACTLB_THEME,
 	};
+
+	static const CPageDescriptor s_aOfflinePages[];
+	static const CPageDescriptor s_aOnlinePages[];
+	static const CPageDescriptor *LookupPageDescriptor(int PageID, bool IsOnline);
+	static int LookupCameraPos(int PageID);
 
 	int m_GamePage;
 	int m_Popup;
@@ -326,6 +376,16 @@ private:
 
 	void DemolistOnUpdate(bool Reset);
 	void DemolistPopulate();
+	void DemolistPrepare() { DemolistPopulate(); DemolistOnUpdate(false); }
+	void OnSndEnableChanged() { if(Config()->m_SndEnable) Config()->m_SndInit = 1; UpdateMusicState(); }
+	void OnSmoothCameraChanged()
+	{
+		if(Config()->m_ClCameraSmoothness)
+		{
+			Config()->m_ClCameraSmoothness = 50;
+			Config()->m_ClCameraStabilizing = 50;
+		}
+	}
 	static int DemolistFetchCallback(const CFsFileInfo* pFileInfo, int IsDir, int StorageType, void *pUser);
 
 	// friends

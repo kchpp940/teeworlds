@@ -351,6 +351,202 @@ void CMenus::DoSection_SplitTwoCol(CUIRect *pView, CUIRect *pLeft, CUIRect *pRig
 	pLeft->VSplitMid(pLeft, pRight, Spacing);
 }
 
+bool CMenus::NavigateToPage(int PageID, FNavigationPrepareCallback pfnPrepare)
+{
+	if(PageID == -1)
+		return false;
+	if(pfnPrepare)
+		(this->*pfnPrepare)();
+	SetMenuPage(PageID);
+	return true;
+}
+
+bool CMenus::DoButton_PageNavigate(CButtonContainer *pButtonContainer, const char *pText, int PageID, const CUIRect *pRect, int HotKey, FNavigationPrepareCallback pfnPrepare, const char *pImageName, int Corners, float Rounding, float FontFactor, vec4 ColorHot, bool TextFade)
+{
+	if(DoButton_Menu(pButtonContainer, pText, 0, pRect, pImageName, Corners, Rounding, FontFactor, ColorHot, TextFade) || (HotKey && CheckHotKey(HotKey)))
+	{
+		if(pfnPrepare)
+			(this->*pfnPrepare)();
+		SetMenuPage(PageID);
+		return true;
+	}
+	return false;
+}
+
+int CMenus::NavigateCurrentPage(CUIRect MainView, bool IsOnline)
+{
+	int Page = IsOnline ? m_GamePage : m_MenuPage;
+	if(Page == PAGE_INTERNET)
+	{
+		RenderServerbrowser(MainView);
+		return 0;
+	}
+	else if(Page == PAGE_LAN)
+	{
+		RenderServerbrowser(MainView);
+		return 0;
+	}
+	return -1;
+}
+
+bool CMenus::DoButton_ConfirmAction(CButtonContainer *pButtonContainer, const char *pBtnText, const char *pConfirmTitle, const char *pConfirmMsg, const char *pConfirmBtn, const char *pCancelBtn, FActionCallback pfnAction, const CUIRect *pRect, int Corners, float Rounding, float FontFactor, vec4 ColorHot, bool TextFade)
+{
+	if(DoButton_Menu(pButtonContainer, pBtnText, 0, pRect, 0, Corners, Rounding, FontFactor, ColorHot, TextFade))
+	{
+		PopupConfirm(pConfirmTitle, pConfirmMsg, pConfirmBtn, pCancelBtn, pfnAction);
+		return true;
+	}
+	return false;
+}
+
+bool CMenus::DoButton_DeleteConfirm(CButtonContainer *pButtonContainer, const char *pBtnText, const char *pConfirmTitle, const char *pConfirmMsg, FActionCallback pfnAction, const CUIRect *pRect, int Corners, float Rounding)
+{
+	return DoButton_ConfirmAction(pButtonContainer, pBtnText, pConfirmTitle, pConfirmMsg, Localize("Yes"), Localize("No"), pfnAction, pRect, Corners, Rounding);
+}
+
+bool CMenus::DoButton_CheckBox_ConfigEx(int *pConfig, const char *pText, const CUIRect *pRect, FConfigChangedCallback pfnOnChanged, bool Locked)
+{
+	if(DoButton_CheckBox(pConfig, pText, *pConfig, pRect, Locked))
+	{
+		*pConfig ^= 1;
+		if(pfnOnChanged)
+			(this->*pfnOnChanged)();
+		return true;
+	}
+	return false;
+}
+
+void CMenus::DoConfig_SliderInt(int *pConfig, int *pConfigTmp, const CUIRect *pRect, const char *pLabel, int Min, int Max)
+{
+	UI()->DoScrollbarOption(pConfig, pConfigTmp, pRect, pLabel, Min, Max);
+}
+
+void CMenus::DoConfig_SliderLabeled(int *pConfig, int *pConfigTmp, const CUIRect *pRect, const char *pLabel, const char **ppLabels, int NumLabels)
+{
+	UI()->DoScrollbarOptionLabeled(pConfig, pConfigTmp, pRect, pLabel, ppLabels, NumLabels);
+}
+
+void CMenus::DoConfig_EditBox(CLineInput *pInput, const CUIRect *pRect, const char *pLabel, float LabelWidth)
+{
+	CUIRect Label, Edit;
+	pRect->VSplitLeft(LabelWidth, &Label, &Edit);
+	Label.y += 2.0f;
+	const float FontSize = pRect->h * CUI::ms_FontmodHeight * 0.8f;
+	UI()->DoLabel(&Label, pLabel, FontSize, TEXTALIGN_LEFT);
+	UI()->DoEditBox(pInput, &Edit, FontSize);
+}
+
+void CMenus::DoPageFrame_Settings(CUIRect *pMainView, CUIRect *pContent, CUIRect *pBottomView, const char *pTitle, float BottomHeight)
+{
+	const float ButtonHeight = 20.0f;
+	pMainView->HSplitBottom(BottomHeight, pContent, pBottomView);
+	pBottomView->HSplitTop(20.0f, 0, pBottomView);
+
+	CUIRect TitleRect;
+	if(Client()->State() == IClient::STATE_ONLINE)
+	{
+		TitleRect = *pContent;
+	}
+	else
+	{
+		pContent->HSplitTop(ButtonHeight, 0, &TitleRect);
+	}
+	TitleRect.Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha / 100.0f), 5.0f, Client()->State() == IClient::STATE_OFFLINE ? CUIRect::CORNER_ALL : CUIRect::CORNER_B);
+	pContent->HSplitTop(ButtonHeight, 0, pContent);
+}
+
+void CMenus::DoPageFrame_Info(CUIRect *pMainView, CUIRect *pContent, const char *pTitle, float BottomMargin)
+{
+	const float ButtonHeight = 20.0f;
+	pMainView->HSplitBottom(BottomMargin, pContent, 0);
+	pMainView->HSplitTop(ButtonHeight, 0, pContent);
+	pContent->Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha / 100.0f));
+
+	CUIRect Label;
+	pContent->HSplitTop(ButtonHeight, &Label, pContent);
+	Label.y += 2.0f;
+	UI()->DoLabel(&Label, pTitle, ButtonHeight * CUI::ms_FontmodHeight * 0.8f, TEXTALIGN_CENTER);
+	pContent->Draw(vec4(0.0, 0.0, 0.0, 0.25f));
+}
+
+bool CMenus::DoSubPage_Tabs(int *pActivePage, const CSubPageDescriptor *pPages, CButtonContainer *pButtons, int NumPages, CUIRect *pTabBar, float NotActiveAlpha)
+{
+	bool Changed = false;
+	const float Spacing = 1.5f;
+	float TabWidth = (pTabBar->w - Spacing * (NumPages - 1)) / NumPages;
+
+	CUIRect Row = *pTabBar;
+	for(int i = 0; i < NumPages; i++)
+	{
+		CUIRect Tab;
+		if(i == 0)
+		{
+			Row.VSplitLeft(TabWidth, &Tab, &Row);
+		}
+		else if(i == NumPages - 1)
+		{
+			Row.VSplitLeft(Spacing, 0, &Row);
+			Tab = Row;
+		}
+		else
+		{
+			Row.VSplitLeft(Spacing, 0, &Row);
+			Row.VSplitLeft(TabWidth, &Tab, &Row);
+		}
+		Tab.VMargin(i == 0 ? 0.0f : (i == NumPages - 1 ? 0.0f : Spacing), &Tab);
+
+		const bool Checked = *pActivePage == pPages[i].m_SubPageID;
+		if(DoButton_MenuTabTop(&pButtons[i], Localize(pPages[i].m_pLabel), false, &Tab, Checked ? 1.0f : NotActiveAlpha, 1.0f, CUIRect::CORNER_T, 5.0f, 0.25f))
+		{
+			if(*pActivePage != pPages[i].m_SubPageID)
+			{
+				*pActivePage = pPages[i].m_SubPageID;
+				Changed = true;
+			}
+		}
+	}
+	return Changed;
+}
+
+const CMenus::CPageDescriptor CMenus::s_aOfflinePages[] = {
+	{ CMenus::PAGE_START, CCamera::POS_START, "Start", 0, false, true, 0 },
+	{ CMenus::PAGE_NEWS, CCamera::POS_START, "News", 0, false, true, &CMenus::RenderNews },
+	{ CMenus::PAGE_INTERNET, CCamera::POS_INTERNET, "Internet", 0, false, true, &CMenus::RenderServerbrowser },
+	{ CMenus::PAGE_LAN, CCamera::POS_LAN, "LAN", 0, false, true, &CMenus::RenderServerbrowser },
+	{ CMenus::PAGE_DEMOS, CCamera::POS_DEMOS, "Demos", 0, false, true, &CMenus::RenderDemoList },
+	{ CMenus::PAGE_SETTINGS, CCamera::POS_SETTINGS_GENERAL, "Settings", 0, false, true, &CMenus::RenderSettings },
+};
+
+const CMenus::CPageDescriptor CMenus::s_aOnlinePages[] = {
+	{ CMenus::PAGE_GAME, -1, "Game", 0, true, false, &CMenus::RenderGame },
+	{ CMenus::PAGE_PLAYERS, -1, "Players", 0, true, false, &CMenus::RenderPlayers },
+	{ CMenus::PAGE_SERVER_INFO, -1, "Server info", 0, true, false, &CMenus::RenderServerInfo },
+	{ CMenus::PAGE_CALLVOTE, -1, "Call vote", 0, true, false, &CMenus::RenderServerControl },
+	{ CMenus::PAGE_SETTINGS, CCamera::POS_SETTINGS_GENERAL, "Settings", 0, true, false, &CMenus::RenderSettings },
+	{ CMenus::PAGE_INTERNET, CCamera::POS_INTERNET, "Internet", 0, true, false, &CMenus::RenderServerbrowser },
+	{ CMenus::PAGE_LAN, CCamera::POS_LAN, "LAN", 0, true, false, &CMenus::RenderServerbrowser },
+};
+
+const CMenus::CPageDescriptor *CMenus::LookupPageDescriptor(int PageID, bool IsOnline)
+{
+	const CPageDescriptor *pTable = IsOnline ? s_aOnlinePages : s_aOfflinePages;
+	int Count = IsOnline ? (int)(sizeof(s_aOnlinePages)/sizeof(s_aOnlinePages[0])) : (int)(sizeof(s_aOfflinePages)/sizeof(s_aOfflinePages[0]));
+	for(int i = 0; i < Count; i++)
+	{
+		if(pTable[i].m_PageID == PageID && pTable[i].m_pfnRender)
+			return &pTable[i];
+	}
+	return 0;
+}
+
+int CMenus::LookupCameraPos(int PageID)
+{
+	const CPageDescriptor *pDesc = LookupPageDescriptor(PageID, false);
+	if(!pDesc)
+		pDesc = LookupPageDescriptor(PageID, true);
+	return pDesc ? pDesc->m_CameraPos : -1;
+}
+
 bool CMenus::DoButton_SpriteID(CButtonContainer *pButtonContainer, int ImageID, int SpriteID, bool Checked, const CUIRect *pRect, int Corners, float Rounding, bool Fade)
 {
 	const float FadeVal = Fade ? pButtonContainer->GetFade(Checked) : 0.0f;
@@ -1132,35 +1328,12 @@ void CMenus::RenderMenu(CUIRect Screen)
 			}
 
 			// render current page
-			if(Client()->State() != IClient::STATE_OFFLINE)
 			{
-				if(m_GamePage == PAGE_GAME)
-					RenderGame(MainView);
-				else if(m_GamePage == PAGE_PLAYERS)
-					RenderPlayers(MainView);
-				else if(m_GamePage == PAGE_SERVER_INFO)
-					RenderServerInfo(MainView);
-				else if(m_GamePage == PAGE_CALLVOTE)
-					RenderServerControl(MainView);
-				else if(m_GamePage == PAGE_SETTINGS)
-					RenderSettings(MainView);
-				else if(m_GamePage == PAGE_INTERNET)
-					RenderServerbrowser(MainView);
-				else if(m_GamePage == PAGE_LAN)
-					RenderServerbrowser(MainView);
-			}
-			else
-			{
-				if(m_MenuPage == PAGE_NEWS)
-					RenderNews(MainView);
-				else if(m_MenuPage == PAGE_INTERNET)
-					RenderServerbrowser(MainView);
-				else if(m_MenuPage == PAGE_LAN)
-					RenderServerbrowser(MainView);
-				else if(m_MenuPage == PAGE_DEMOS)
-					RenderDemoList(MainView);
-				else if(m_MenuPage == PAGE_SETTINGS)
-					RenderSettings(MainView);
+				bool IsOnline = Client()->State() != IClient::STATE_OFFLINE;
+				int PageID = IsOnline ? m_GamePage : m_MenuPage;
+				const CPageDescriptor *pDesc = LookupPageDescriptor(PageID, IsOnline);
+				if(pDesc && pDesc->m_pfnRender)
+					(this->*pDesc->m_pfnRender)(MainView);
 			}
 		}
 
@@ -1891,20 +2064,11 @@ void CMenus::SetMenuPage(int NewPage)
 
 	m_MenuPage = NewPage;
 
-	// update camera position
+	int CameraPos = LookupCameraPos(NewPage);
+	if(CameraPos != -1 && m_pClient && m_pClient->m_pCamera)
 	{
-		int CameraPos = -1;
-
-		switch(m_MenuPage)
-		{
-		case PAGE_START: CameraPos = CCamera::POS_START; break;
-		case PAGE_DEMOS: CameraPos = CCamera::POS_DEMOS; break;
-		case PAGE_SETTINGS: CameraPos = CCamera::POS_SETTINGS_GENERAL+Config()->m_UiSettingsPage; break;
-		case PAGE_INTERNET: CameraPos = CCamera::POS_INTERNET; break;
-		case PAGE_LAN: CameraPos = CCamera::POS_LAN;
-		}
-
-		if(CameraPos != -1 && m_pClient && m_pClient->m_pCamera)
-			m_pClient->m_pCamera->ChangePosition(CameraPos);
+		if(NewPage == PAGE_SETTINGS)
+			CameraPos += Config()->m_UiSettingsPage;
+		m_pClient->m_pCamera->ChangePosition(CameraPos);
 	}
 }

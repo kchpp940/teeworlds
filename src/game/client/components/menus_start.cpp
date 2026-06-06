@@ -36,26 +36,19 @@ void CMenus::RenderStartMenu(CUIRect MainView)
 	TopMenu.HSplitTop(145.0f, 0, &TopMenu);
 
 	CUIRect Button;
-	int NewPage = -1;
 	const char *pImage;
 
 	// Settings button
 	pImage = Config()->m_ClShowStartMenuImages ? "settings" : 0;
 	DoButtons_HSplitColumn(&TopMenu, &Button, ButtonHeight, Spacing);
 	static CButtonContainer s_SettingsButton;
-	if(int Page = DoButton_MenuPage(&s_SettingsButton, Localize("Settings"), PAGE_SETTINGS, &Button, KEY_S, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f))
-		NewPage = Page;
+	DoButton_PageNavigate(&s_SettingsButton, Localize("Settings"), PAGE_SETTINGS, &Button, KEY_S, 0, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f);
 
 	// Demos button
 	pImage = Config()->m_ClShowStartMenuImages ? "demos" : 0;
 	DoButtons_HSplitColumn(&TopMenu, &Button, ButtonHeight, Spacing);
 	static CButtonContainer s_DemoButton;
-	if(DoButton_Menu(&s_DemoButton, Localize("Demos"), 0, &Button, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f) || CheckHotKey(KEY_D))
-	{
-		NewPage = PAGE_DEMOS;
-		DemolistPopulate();
-		DemolistOnUpdate(false);
-	}
+	DoButton_PageNavigate(&s_DemoButton, Localize("Demos"), PAGE_DEMOS, &Button, KEY_D, &CMenus::DemolistPrepare, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f);
 
 	// Editor button (has special hotkey logic)
 	static bool EditorHotkeyWasPressed = true;
@@ -80,7 +73,7 @@ void CMenus::RenderStartMenu(CUIRect MainView)
 	DoButtons_HSplitColumn(&TopMenu, &Button, ButtonHeight, Spacing);
 	static CButtonContainer s_PlayButton;
 	if(DoButton_Menu(&s_PlayButton, Localize("Play"), 0, &Button, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER) || CheckHotKey(KEY_P))
-		NewPage = Config()->m_UiBrowserPage;
+		SetMenuPage(Config()->m_UiBrowserPage);
 
 	// Bottom menu with Quit button
 	BottomMenu.HSplitTop(90.0f, 0, &BottomMenu);
@@ -106,7 +99,4 @@ void CMenus::RenderStartMenu(CUIRect MainView)
 		TextRender()->TextColor(CUI::ms_DefaultTextColor);
 		TextRender()->TextSecondaryColor(CUI::ms_DefaultTextOutlineColor);
 	}
-
-	if(NewPage != -1)
-		SetMenuPage(NewPage);
 }

@@ -687,22 +687,14 @@ void CMenus::RenderServerControl(CUIRect MainView)
 	CUIRect Bottom, Extended, Button, Row;
 	MainView.HSplitTop(3.0f, 0, &MainView);
 	MainView.HSplitTop(25.0f, &Row, &MainView);
-	Row.VSplitLeft(Row.w/3-1.5f, &Button, &Row);
-	static CButtonContainer s_Button0;
-	if(DoButton_MenuTabTop(&s_Button0, Localize("Change settings"), false, &Button, s_ControlPage == 0 ? 1.0f : NotActiveAlpha, 1.0f, CUIRect::CORNER_T, 5.0f, 0.25f))
-		s_ControlPage = 0;
 
-	Row.VSplitLeft(1.5f, 0, &Row);
-	Row.VSplitMid(&Button, &Row);
-	Button.VMargin(1.5f, &Button);
-	static CButtonContainer s_Button1;
-	if(DoButton_MenuTabTop(&s_Button1, Localize("Kick player"), false, &Button, s_ControlPage == 1 ? 1.0f : NotActiveAlpha, 1.0f, CUIRect::CORNER_T, 5.0f, 0.25f))
-		s_ControlPage = 1;
-
-	Row.VSplitLeft(1.5f, 0, &Button);
-	static CButtonContainer s_Button2;
-	if(DoButton_MenuTabTop(&s_Button2, Localize("Move player to spectators"), false, &Button, s_ControlPage == 2 ? 1.0f : NotActiveAlpha, 1.0f, CUIRect::CORNER_T, 5.0f, 0.25f))
-		s_ControlPage = 2;
+	static const CSubPageDescriptor s_aSubPages[] = {
+		{ "Change settings", 0 },
+		{ "Kick player", 1 },
+		{ "Move player to spectators", 2 },
+	};
+	static CButtonContainer s_aSubPageButtons[3];
+	DoSubPage_Tabs(&s_ControlPage, s_aSubPages, s_aSubPageButtons, 3, &Row, NotActiveAlpha);
 
 	if(s_ControlPage == 1)
 	{

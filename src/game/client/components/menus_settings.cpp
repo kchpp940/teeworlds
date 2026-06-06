@@ -19,6 +19,7 @@
 #include <game/client/components/maplayers.h>
 #include <game/client/components/sounds.h>
 #include <game/client/components/stats.h>
+#include <game/client/components/camera.h>
 #include <game/client/ui.h>
 #include <game/client/render.h>
 #include <game/client/gameclient.h>
@@ -868,18 +869,7 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 		}
 	}
 
-	if(DoButton_CheckBox(&Config()->m_ClCameraSmoothness, Localize("Smooth Camera"), Config()->m_ClCameraSmoothness, &CheckBoxRight))
-	{
-		if(Config()->m_ClCameraSmoothness)
-		{
-			Config()->m_ClCameraSmoothness = 0;
-		}
-		else
-		{
-			Config()->m_ClCameraSmoothness = 50;
-			Config()->m_ClCameraStabilizing = 50;
-		}
-	}
+	DoButton_CheckBox_ConfigEx(&Config()->m_ClCameraSmoothness, Localize("Smooth Camera"), &CheckBoxRight, &CMenus::OnSmoothCameraChanged);
 
 	DoButtons_HSplitColumn(&GameLeft, &Button, ButtonHeight, Spacing);
 	DoButton_CheckBox_Config(&Config()->m_ClAutoswitchWeapons, Localize("Switch weapon on pickup"), &Button);
@@ -1857,15 +1847,7 @@ void CMenus::RenderSettingsSound(CUIRect MainView)
 			m_NeedRestartSound = Config()->m_SndInit && (!s_SndInit || s_SndRate != Config()->m_SndRate);
 	}
 
-	if(DoButton_CheckBox(&Config()->m_SndEnable, Localize("Use sounds"), Config()->m_SndEnable, &UseSoundButton))
-	{
-		Config()->m_SndEnable ^= 1;
-		if(Config()->m_SndEnable)
-		{
-			Config()->m_SndInit = 1;
-		}
-		UpdateMusicState();
-	}
+	DoButton_CheckBox_ConfigEx(&Config()->m_SndEnable, Localize("Use sounds"), &UseSoundButton, &CMenus::OnSndEnableChanged);
 
 	// reset button
 	BottomView.HSplitBottom(60.0f, 0, &BottomView);
@@ -1952,19 +1934,24 @@ void CMenus::PopupConfirmPlayerCountry()
 
 void CMenus::RenderSettings(CUIRect MainView)
 {
-	// handle which page should be rendered
-	if(Config()->m_UiSettingsPage == SETTINGS_GENERAL)
-		RenderSettingsGeneral(MainView);
-	else if(Config()->m_UiSettingsPage == SETTINGS_PLAYER)
-		RenderSettingsPlayer(MainView);
-	else if(Config()->m_UiSettingsPage == SETTINGS_TBD) // TODO: replace removed tee page to something else	
-		Config()->m_UiSettingsPage = SETTINGS_PLAYER; // TODO: remove this
-	else if(Config()->m_UiSettingsPage == SETTINGS_CONTROLS)
-		RenderSettingsControls(MainView);
-	else if(Config()->m_UiSettingsPage == SETTINGS_GRAPHICS)
-		RenderSettingsGraphics(MainView);
-	else if(Config()->m_UiSettingsPage == SETTINGS_SOUND)
-		RenderSettingsSound(MainView);
+	static const CSettingsPageDescriptor s_aPages[] = {
+		{ SETTINGS_GENERAL, CCamera::POS_SETTINGS_GENERAL, "General", &CMenus::RenderSettingsGeneral },
+		{ SETTINGS_PLAYER, CCamera::POS_SETTINGS_PLAYER, "Player", &CMenus::RenderSettingsPlayer },
+		{ SETTINGS_TBD, CCamera::POS_SETTINGS_PLAYER, 0, 0 },
+		{ SETTINGS_CONTROLS, CCamera::POS_SETTINGS_CONTROLS, "Controls", &CMenus::RenderSettingsControls },
+		{ SETTINGS_GRAPHICS, CCamera::POS_SETTINGS_GRAPHICS, "Graphics", &CMenus::RenderSettingsGraphics },
+		{ SETTINGS_SOUND, CCamera::POS_SETTINGS_SOUND, "Sound", &CMenus::RenderSettingsSound },
+	};
+
+	int Page = Config()->m_UiSettingsPage;
+	if(Page >= 0 && Page < (int)(sizeof(s_aPages)/sizeof(s_aPages[0])) && s_aPages[Page].m_pfnRender)
+	{
+		(this->*s_aPages[Page].m_pfnRender)(MainView);
+	}
+	else if(Page == SETTINGS_TBD)
+	{
+		Config()->m_UiSettingsPage = SETTINGS_PLAYER;
+	}
 
 	MainView.HSplitBottom(32.0f, 0, &MainView);
 
