@@ -35,9 +35,9 @@ void CGameControllerLTS::DoWincheckRound()
 	CountAlivePlayersByTeam(CountRed, CountBlue);
 
 	if(CountRed+CountBlue == 0 || (m_GameInfo.m_TimeLimit > 0 && (Server()->Tick()-m_GameStartTick) >= m_GameInfo.m_TimeLimit*Server()->TickSpeed()*60))
-		FinishRoundDraw();
+		ApplyRoundResult(MakeRoundDraw());
 	else if(CountRed == 0)
-		FinishRoundTeamWin(TEAM_BLUE);
+		ApplyRoundResult(MakeRoundTeamWin(TEAM_BLUE));
 	else if(CountBlue == 0)
-		FinishRoundTeamWin(TEAM_RED);
+		ApplyRoundResult(MakeRoundTeamWin(TEAM_RED));
 }

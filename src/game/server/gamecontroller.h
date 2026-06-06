@@ -117,16 +117,35 @@ protected:
 		WIN_RESULT_PLAYER,
 	};
 
-	// match end helpers
-	bool DoWincheckMatchWithLimit(bool ScoreLimitHit, bool TimeLimitHit);
-	void FinishMatch(EWinResult Result, class CPlayer *pWinner = 0);
-	void TriggerSuddenDeath();
+	struct CGameResult
+	{
+		EWinResult m_Result;
+		class CPlayer *m_pWinner;
+		int m_WinningTeam;
+		bool m_SuddenDeath;
+		bool m_ShouldAddScore;
+		bool m_ShouldRestart;
+		const char *m_pCustomMessage;
 
-	// round end helpers (survival modes)
-	void FinishRoundTeamWin(int WinningTeam);
-	void FinishRoundDraw();
-	void FinishRoundPlayerWin(class CPlayer *pWinner = 0);
-	void FinishRoundNoWinner();
+		CGameResult()
+		: m_Result(WIN_RESULT_NONE), m_pWinner(0), m_WinningTeam(-1),
+		  m_SuddenDeath(false), m_ShouldAddScore(true), m_ShouldRestart(true),
+		  m_pCustomMessage(0) {}
+	};
+
+	// unified result application
+	bool ApplyMatchResult(const CGameResult &Result);
+	bool ApplyRoundResult(const CGameResult &Result);
+
+	// result construction helpers (for subclasses to use)
+	CGameResult MakeMatchTeamWin(int Team) const;
+	CGameResult MakeMatchPlayerWin(class CPlayer *pPlayer) const;
+	CGameResult MakeMatchDraw() const;
+	CGameResult MakeSuddenDeathTrigger() const;
+	CGameResult MakeRoundTeamWin(int Team) const;
+	CGameResult MakeRoundPlayerWin(class CPlayer *pPlayer) const;
+	CGameResult MakeRoundDraw() const;
+	CGameResult MakeRoundEnd(const char *pMsg = 0) const;
 
 	// broadcast / message hooks (override for custom messages)
 	virtual void BroadcastSuddenDeathMessage();
@@ -136,7 +155,7 @@ protected:
 	virtual const char *GetDrawMessage() const;
 	virtual const char *GetSuddenDeathMessage() const;
 
-	virtual bool DoWincheckMatch();		// returns true when the match is over
+	virtual bool DoWincheckMatch();
 	virtual void DoWincheckRound() {}
 	bool HasEnoughPlayers() const { return (IsTeamplay() && m_aTeamSize[TEAM_RED] > 0 && m_aTeamSize[TEAM_BLUE] > 0) || (!IsTeamplay() && m_aTeamSize[TEAM_RED] > 1); }
 

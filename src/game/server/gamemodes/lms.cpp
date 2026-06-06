@@ -42,15 +42,15 @@ void CGameControllerLMS::DoWincheckRound()
 				GameServer()->m_apPlayers[i]->m_Score++;
 		}
 
-		FinishRoundNoWinner();
+		ApplyRoundResult(MakeRoundEnd());
 	}
 	else
 	{
 		// check for survival win
 		int AlivePlayerCount = CountAlivePlayers();
 		if(AlivePlayerCount == 0)
-			FinishRoundNoWinner();
+			ApplyRoundResult(MakeRoundEnd());
 		else if(AlivePlayerCount == 1)
-			FinishRoundPlayerWin(FindAlivePlayer());
+			ApplyRoundResult(MakeRoundPlayerWin(FindAlivePlayer()));
 	}
 }
