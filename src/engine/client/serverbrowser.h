@@ -43,6 +43,9 @@ public:
 	const CServerInfo *SortedGet(int FilterIndex, int Index) const { return &m_aServerlist[m_ActServerlistType].m_ppServerlist[m_ServerBrowserFilter.GetIndex(FilterIndex, Index)]->m_Info; }
 	const void *GetID(int FilterIndex, int Index) const { return m_ServerBrowserFilter.GetID(FilterIndex, Index); }
 
+	void GetDisplayCounts(int FilterIndex, int Index, int *pNum, int *pMax) const { m_ServerBrowserFilter.GetDisplayCounts(FilterIndex, m_ServerBrowserFilter.GetIndex(FilterIndex, Index), pNum, pMax); }
+	bool IsClientHidden(int FilterIndex, int Index, int ClientIndex) const { return m_ServerBrowserFilter.IsClientHidden(FilterIndex, m_ServerBrowserFilter.GetIndex(FilterIndex, Index), ClientIndex); }
+
 	void AddFavorite(const CServerInfo *pInfo);
 	void RemoveFavorite(const CServerInfo *pInfo);
 	void UpdateFavoriteState(CServerInfo *pInfo);

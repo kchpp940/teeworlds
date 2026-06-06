@@ -25,62 +25,79 @@ void CMenus::RenderStartMenu(CUIRect MainView)
 	Graphics()->QuadsEnd();
 
 	const float Rounding = 10.0f;
-	const float ButtonHeight = 40.0f;
-	const float Spacing = 5.0f;
 
 	CUIRect TopMenu, BottomMenu;
 	MainView.VMargin(MainView.w/2-190.0f, &TopMenu);
 	TopMenu.HSplitTop(365.0f, &TopMenu, &BottomMenu);
+	//TopMenu.HSplitBottom(145.0f, &TopMenu, 0);
 	RenderBackgroundShadow(&TopMenu, false, Rounding);
 
 	TopMenu.HSplitTop(145.0f, 0, &TopMenu);
 
 	CUIRect Button;
-	const char *pImage;
+	int NewPage = -1;
 
-	// Settings button
-	pImage = Config()->m_ClShowStartMenuImages ? "settings" : 0;
-	DoButtons_HSplitColumn(&TopMenu, &Button, ButtonHeight, Spacing);
+	TopMenu.HSplitBottom(40.0f, &TopMenu, &Button);
 	static CButtonContainer s_SettingsButton;
-	CMenuAction SettingsAction = CMenuAction::Navigate(Localize("Settings"), PAGE_SETTINGS, KEY_S, 0, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f);
-	DoMenuActionButton(&s_SettingsButton, &SettingsAction, &Button);
+	if(DoButton_Menu(&s_SettingsButton, Localize("Settings"), 0, &Button, Config()->m_ClShowStartMenuImages ? "settings" : 0, CUIRect::CORNER_ALL, Rounding, 0.5f) || CheckHotKey(KEY_S))
+		NewPage = PAGE_SETTINGS;
+	
+	/*TopMenu.HSplitBottom(5.0f, &TopMenu, 0); // little space
+	TopMenu.HSplitBottom(40.0f, &TopMenu, &Bottom);
+	static int s_LocalServerButton = 0;
+	if(Config()->m_ClShowStartMenuImages)
+	{
+		if(DoButton_MenuImage(&s_LocalServerButton, Localize("Local server"), 0, &Button, "local_server", Rounding, 0.5f))
+		{
+		}
+	}
+	else
+	{
+		if(DoButton_Menu(&s_LocalServerButton, Localize("Local server"), 0, &Button, CUIRect::CORNER_ALL, Rounding, 0.5f))
+		{
+		}
+	}*/
 
-	// Demos button
-	pImage = Config()->m_ClShowStartMenuImages ? "demos" : 0;
-	DoButtons_HSplitColumn(&TopMenu, &Button, ButtonHeight, Spacing);
+	TopMenu.HSplitBottom(5.0f, &TopMenu, 0); // little space
+	TopMenu.HSplitBottom(40.0f, &TopMenu, &Button);
 	static CButtonContainer s_DemoButton;
-	CMenuAction DemosAction = CMenuAction::Navigate(Localize("Demos"), PAGE_DEMOS, KEY_D, &CMenus::DemolistPrepare, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f);
-	DoMenuActionButton(&s_DemoButton, &DemosAction, &Button);
+	if(DoButton_Menu(&s_DemoButton, Localize("Demos"), 0, &Button, Config()->m_ClShowStartMenuImages ? "demos" : 0, CUIRect::CORNER_ALL, Rounding, 0.5f) || CheckHotKey(KEY_D))
+	{
+		NewPage = PAGE_DEMOS;
+		DemolistPopulate();
+		DemolistOnUpdate(false);
+	}
 
-	// Editor button (has special hotkey logic)
 	static bool EditorHotkeyWasPressed = true;
 	static float EditorHotKeyChecktime = 0;
-	pImage = Config()->m_ClShowStartMenuImages ? "editor" : 0;
-	DoButtons_HSplitColumn(&TopMenu, &Button, ButtonHeight, Spacing);
+	TopMenu.HSplitBottom(5.0f, &TopMenu, 0); // little space
+	TopMenu.HSplitBottom(40.0f, &TopMenu, &Button);
 	static CButtonContainer s_MapEditorButton;
-	CMenuAction EditorAction = CMenuAction::Direct(Localize("Editor"), &CMenus::ActionEnterEditor, 0, 0, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f);
-	if(DoMenuActionButton(&s_MapEditorButton, &EditorAction, &Button) || (!EditorHotkeyWasPressed && Client()->LocalTime() - EditorHotKeyChecktime < 0.1f && CheckHotKey(KEY_E)))
+	if(DoButton_Menu(&s_MapEditorButton, Localize("Editor"), 0, &Button, Config()->m_ClShowStartMenuImages ? "editor" : 0, CUIRect::CORNER_ALL, Rounding, 0.5f) || (!EditorHotkeyWasPressed && Client()->LocalTime() - EditorHotKeyChecktime < 0.1f && CheckHotKey(KEY_E)))
+	{
+		Config()->m_ClEditor = 1;
+		Input()->MouseModeRelative();
 		EditorHotkeyWasPressed = true;
+	}
 	if(!Input()->KeyIsPressed(KEY_E))
 	{
 		EditorHotkeyWasPressed = false;
 		EditorHotKeyChecktime = Client()->LocalTime();
 	}
 
-	// Play button
-	pImage = Config()->m_ClShowStartMenuImages ? "play_game" : 0;
-	DoButtons_HSplitColumn(&TopMenu, &Button, ButtonHeight, Spacing);
+	TopMenu.HSplitBottom(5.0f, &TopMenu, 0); // little space
+	TopMenu.HSplitBottom(40.0f, &TopMenu, &Button);
 	static CButtonContainer s_PlayButton;
-	CMenuAction PlayAction = CMenuAction::Direct(Localize("Play"), &CMenus::ActionNavigateBrowserPage, KEY_P, CUI::HOTKEY_ENTER, pImage, CUIRect::CORNER_ALL, Rounding, 0.5f);
-	DoMenuActionButton(&s_PlayButton, &PlayAction, &Button);
-
-	// Bottom menu with Quit button
+	if(DoButton_Menu(&s_PlayButton, Localize("Play"), 0, &Button, Config()->m_ClShowStartMenuImages ? "play_game" : 0, CUIRect::CORNER_ALL, Rounding, 0.5f) || UI()->ConsumeHotkey(CUI::HOTKEY_ENTER) || CheckHotKey(KEY_P))
+		NewPage = Config()->m_UiBrowserPage;
+	
 	BottomMenu.HSplitTop(90.0f, 0, &BottomMenu);
 	RenderBackgroundShadow(&BottomMenu, true, Rounding);
-	BottomMenu.HSplitTop(ButtonHeight, &Button, &TopMenu);
+
+	BottomMenu.HSplitTop(40.0f, &Button, &TopMenu);
 	static CButtonContainer s_QuitButton;
-	CMenuAction QuitAction = CMenuAction::Direct(Localize("Quit"), &CMenus::ActionShowQuitPopup, KEY_Q, CUI::HOTKEY_ESCAPE, 0, CUIRect::CORNER_ALL, Rounding, 0.5f);
-	DoMenuActionButton(&s_QuitButton, &QuitAction, &Button);
+	if(DoButton_Menu(&s_QuitButton, Localize("Quit"), 0, &Button, 0, CUIRect::CORNER_ALL, Rounding, 0.5f) || UI()->ConsumeHotkey(CUI::HOTKEY_ESCAPE) || CheckHotKey(KEY_Q))
+		m_Popup = POPUP_QUIT;
 
 	// render version
 	CUIRect Version;
@@ -98,4 +115,7 @@ void CMenus::RenderStartMenu(CUIRect MainView)
 		TextRender()->TextColor(CUI::ms_DefaultTextColor);
 		TextRender()->TextSecondaryColor(CUI::ms_DefaultTextOutlineColor);
 	}
+
+	if(NewPage != -1)
+		SetMenuPage(NewPage);
 }

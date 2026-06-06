@@ -91,12 +91,27 @@ void CServerBrowserFilter::CServerFilter::Filter()
 		bool Filtered = false;
 
 		int RelevantClientCount = (m_FilterInfo.m_SortHash&IServerBrowser::FILTER_SPECTATORS) ? m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumPlayers : m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumClients;
+		int RelevantMaxCount = (m_FilterInfo.m_SortHash&IServerBrowser::FILTER_SPECTATORS) ? m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_MaxPlayers : m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_MaxClients;
 		if(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_BOTS)
 		{
 			RelevantClientCount -= m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumBotPlayers;
+			RelevantMaxCount -= m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumBotPlayers;
 			if(!(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_SPECTATORS))
+			{
 				RelevantClientCount -= m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumBotSpectators;
+				RelevantMaxCount -= m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumBotSpectators;
+			}
 		}
+		if(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_SPECTATORS)
+		{
+			int SpecNum = m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumClients - m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumPlayers;
+			if(m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_MaxClients - m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_MaxPlayers < SpecNum)
+				RelevantMaxCount -= SpecNum;
+		}
+
+		// store derived display fields so UI never has to recompute
+		m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumDisplayClients = RelevantClientCount;
+		m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_MaxDisplayClients = RelevantMaxCount;
 
 		if(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_EMPTY && RelevantClientCount == 0)
 			Filtered = true;
@@ -230,6 +245,14 @@ int CServerBrowserFilter::CServerFilter::GetSortHash() const
 	if(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_PURE) i |= 1<<12;
 	if(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_PURE_MAP) i |= 1<<13;
 	if(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_COUNTRY) i |= 1<<14;
+	// fold quick-search string into hash so any change triggers a re-filter
+	if(Config()->m_BrFilterString[0])
+	{
+		unsigned h = 2166136261u;
+		for(const char *p = Config()->m_BrFilterString; *p; ++p)
+			h = (h ^ (unsigned char)*p) * 16777619u;
+		i ^= (int)(h & 0x7FFF) << 15;
+	}
 	return i;
 }
 
@@ -402,4 +425,28 @@ void CServerBrowserFilter::SetFilter(int Index, const CServerFilterInfo *pFilter
 void CServerBrowserFilter::RemoveFilter(int Index)
 {
 	m_lFilters.remove_index(Index);
+}
+
+void CServerBrowserFilter::CServerFilter::GetDisplayCounts(int Index, int *pNum, int *pMax) const
+{
+	if(Index < 0 || Index >= m_pServerBrowserFilter->m_NumServers)
+	{
+		if(pNum) *pNum = 0;
+		if(pMax) *pMax = 0;
+		return;
+	}
+	const CServerInfo &Info = m_pServerBrowserFilter->m_ppServerlist[Index]->m_Info;
+	if(pNum) *pNum = Info.m_NumDisplayClients;
+	if(pMax) *pMax = Info.m_MaxDisplayClients;
+}
+
+bool CServerBrowserFilter::CServerFilter::IsClientHidden(int Index, int ClientIndex) const
+{
+	if(Index < 0 || Index >= m_pServerBrowserFilter->m_NumServers)
+		return true;
+	const CServerInfo &Info = m_pServerBrowserFilter->m_ppServerlist[Index]->m_Info;
+	if(ClientIndex < 0 || ClientIndex >= Info.m_NumClients)
+		return true;
+	return (m_FilterInfo.m_SortHash & IServerBrowser::FILTER_BOTS) != 0
+		&& (Info.m_aClients[ClientIndex].m_PlayerType & CServerInfo::CClient::PLAYERFLAG_BOT) != 0;
 }

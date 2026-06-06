@@ -269,447 +269,6 @@ bool CMenus::DoButton_CheckBox(const void *pID, const char *pText, bool Checked,
 	return UI()->DoButtonLogic(pID, pRect);
 }
 
-bool CMenus::DoButton_CheckBox_Config(int *pConfig, const char *pText, const CUIRect *pRect, bool Locked)
-{
-	if(DoButton_CheckBox(pConfig, pText, *pConfig, pRect, Locked))
-	{
-		*pConfig ^= 1;
-		return true;
-	}
-	return false;
-}
-
-float CMenus::DoButton_MenuPage(CButtonContainer *pButtonContainer, const char *pText, int Page, const CUIRect *pRect, int HotKey, const char *pImageName, int Corners, float Rounding, float FontFactor, vec4 ColorHot, bool TextFade)
-{
-	int NewPage = -1;
-	if(DoButton_Menu(pButtonContainer, pText, 0, pRect, pImageName, Corners, Rounding, FontFactor, ColorHot, TextFade) || (HotKey && CheckHotKey(HotKey)))
-		NewPage = Page;
-	return NewPage;
-}
-
-bool CMenus::DoButton_TabPage(CButtonContainer *pButtonContainer, const char *pText, int SettingsPage, int CameraPos, const CUIRect *pRect, float Alpha, float FontAlpha, int Corners, float Rounding, float FontFactor)
-{
-	const bool Checked = Client()->State() == IClient::STATE_OFFLINE && Config()->m_UiSettingsPage == SettingsPage;
-	if(DoButton_MenuTabTop(pButtonContainer, pText, Checked, pRect, Config()->m_UiSettingsPage == SettingsPage ? 1.0f : Alpha, FontAlpha, Corners, Rounding, FontFactor))
-	{
-		m_pClient->m_pCamera->ChangePosition(CameraPos);
-		Config()->m_UiSettingsPage = SettingsPage;
-		return true;
-	}
-	return false;
-}
-
-void CMenus::DoButton_Reset_Confirm(CUIRect *pBottomView, const char *pConfirmTitle, const char *pConfirmMsg, FPopupButtonCallback pfnResetCallback)
-{
-	const float Spacing = 3.0f;
-	const float ButtonWidth = DoButtons_CalcWidth(pBottomView->w, 6, Spacing);
-
-	pBottomView->VSplitRight(ButtonWidth, 0, pBottomView);
-	RenderBackgroundShadow(pBottomView, true);
-
-	pBottomView->HSplitTop(25.0f, pBottomView, 0);
-	CUIRect Button = *pBottomView;
-	static CButtonContainer s_ResetButton;
-	if(DoButton_Menu(&s_ResetButton, Localize("Reset"), 0, &Button))
-	{
-		PopupConfirm(pConfirmTitle, pConfirmMsg, Localize("Reset"), Localize("Cancel"), pfnResetCallback);
-	}
-}
-
-float CMenus::DoButtons_CalcWidth(float TotalWidth, int NumButtons, float Spacing)
-{
-	return (TotalWidth / NumButtons) - (Spacing * (NumButtons - 1)) / NumButtons;
-}
-
-void CMenus::DoButtons_VSplitRow(CUIRect *pRow, CUIRect *pButton, float ButtonWidth, float Spacing)
-{
-	pRow->VSplitLeft(ButtonWidth, pButton, pRow);
-	if(Spacing > 0.0f)
-		pRow->VSplitLeft(Spacing, 0, pRow);
-}
-
-void CMenus::DoButtons_HSplitColumn(CUIRect *pColumn, CUIRect *pButton, float ButtonHeight, float Spacing)
-{
-	pColumn->HSplitBottom(ButtonHeight, pColumn, pButton);
-	if(Spacing > 0.0f)
-		pColumn->HSplitBottom(Spacing, pColumn, 0);
-}
-
-void CMenus::DoSection_Header(CUIRect *pView, CUIRect *pContent, const char *pTitle, float ButtonHeight)
-{
-	pView->HSplitTop(ButtonHeight, pContent, pView);
-	CUIRect Label = *pContent;
-	Label.y += 2.0f;
-	UI()->DoLabel(&Label, pTitle, ButtonHeight * CUI::ms_FontmodHeight * 0.8f, TEXTALIGN_CENTER);
-	pView->Draw(vec4(0.0f, 0.0f, 0.0f, 0.25f));
-}
-
-void CMenus::DoSection_SplitTwoCol(CUIRect *pView, CUIRect *pLeft, CUIRect *pRight, float Spacing)
-{
-	pView->HSplitTop(Spacing, 0, pView);
-	pView->HSplitTop(20.0f, pLeft, pView);
-	pLeft->VSplitMid(pLeft, pRight, Spacing);
-}
-
-bool CMenus::NavigateToPage(int PageID, FNavigationPrepareCallback pfnPrepare)
-{
-	if(PageID == -1)
-		return false;
-	if(pfnPrepare)
-		(this->*pfnPrepare)();
-	SetMenuPage(PageID);
-	return true;
-}
-
-bool CMenus::DoButton_PageNavigate(CButtonContainer *pButtonContainer, const char *pText, int PageID, const CUIRect *pRect, int HotKey, FNavigationPrepareCallback pfnPrepare, const char *pImageName, int Corners, float Rounding, float FontFactor, vec4 ColorHot, bool TextFade)
-{
-	if(DoButton_Menu(pButtonContainer, pText, 0, pRect, pImageName, Corners, Rounding, FontFactor, ColorHot, TextFade) || (HotKey && CheckHotKey(HotKey)))
-	{
-		if(pfnPrepare)
-			(this->*pfnPrepare)();
-		SetMenuPage(PageID);
-		return true;
-	}
-	return false;
-}
-
-int CMenus::NavigateCurrentPage(CUIRect MainView, bool IsOnline)
-{
-	int Page = IsOnline ? m_GamePage : m_MenuPage;
-	if(Page == PAGE_INTERNET)
-	{
-		RenderServerbrowser(MainView);
-		return 0;
-	}
-	else if(Page == PAGE_LAN)
-	{
-		RenderServerbrowser(MainView);
-		return 0;
-	}
-	return -1;
-}
-
-bool CMenus::DoButton_ConfirmAction(CButtonContainer *pButtonContainer, const char *pBtnText, const char *pConfirmTitle, const char *pConfirmMsg, const char *pConfirmBtn, const char *pCancelBtn, FActionCallback pfnAction, const CUIRect *pRect, int Corners, float Rounding, float FontFactor, vec4 ColorHot, bool TextFade)
-{
-	if(DoButton_Menu(pButtonContainer, pBtnText, 0, pRect, 0, Corners, Rounding, FontFactor, ColorHot, TextFade))
-	{
-		PopupConfirm(pConfirmTitle, pConfirmMsg, pConfirmBtn, pCancelBtn, pfnAction);
-		return true;
-	}
-	return false;
-}
-
-bool CMenus::DoButton_DeleteConfirm(CButtonContainer *pButtonContainer, const char *pBtnText, const char *pConfirmTitle, const char *pConfirmMsg, FActionCallback pfnAction, const CUIRect *pRect, int Corners, float Rounding)
-{
-	return DoButton_ConfirmAction(pButtonContainer, pBtnText, pConfirmTitle, pConfirmMsg, Localize("Yes"), Localize("No"), pfnAction, pRect, Corners, Rounding);
-}
-
-bool CMenus::DoConfirm(const char *pConfirmTitle, const char *pConfirmMsgFallback, const char *pConfirmBtn, const char *pCancelBtn, FActionCallback pfnAction, FConfirmPrepareCallback pfnPrepare)
-{
-	const char *pMsg = pConfirmMsgFallback;
-	char aBuf[256];
-	if(pfnPrepare)
-	{
-		aBuf[0] = 0;
-		if(!(this->*pfnPrepare)(aBuf, (int)sizeof(aBuf)))
-			return false;
-		if(aBuf[0])
-			pMsg = aBuf;
-	}
-	PopupConfirm(pConfirmTitle, pMsg, pConfirmBtn, pCancelBtn, pfnAction);
-	return true;
-}
-
-bool CMenus::PrepareDeleteDemo(char *pMsgBuf, int MsgBufSize)
-{
-	if(m_DemolistSelectedIndex < 0)
-		return false;
-	UI()->SetActiveItem(0);
-	str_format(pMsgBuf, MsgBufSize, Localize("Are you sure that you want to delete the demo '%s'?"), m_lDemos[m_DemolistSelectedIndex].m_aFilename);
-	return true;
-}
-
-bool CMenus::PrepareRemoveFilter(char *pMsgBuf, int MsgBufSize)
-{
-	if(!m_RemoveFilterIndex || m_RemoveFilterIndex < 0 || m_RemoveFilterIndex >= (int)m_lFilters.size())
-		return false;
-	str_format(pMsgBuf, MsgBufSize, Localize("Are you sure that you want to remove the filter '%s' from the server browser?"), m_lFilters[m_RemoveFilterIndex].Name());
-	return true;
-}
-
-bool CMenus::PrepareRemoveFriend(char *pMsgBuf, int MsgBufSize)
-{
-	if(!m_pDeleteFriend)
-		return false;
-	const bool IsPlayer = m_pDeleteFriend->m_FriendState == CContactInfo::CONTACT_PLAYER;
-	str_format(pMsgBuf, MsgBufSize,
-		IsPlayer ? Localize("Are you sure that you want to remove the player '%s' from your friends list?") : Localize("Are you sure that you want to remove the clan '%s' from your friends list?"),
-		IsPlayer ? m_pDeleteFriend->m_aName : m_pDeleteFriend->m_aClan);
-	return true;
-}
-
-void CMenus::ExecuteMenuAction(const CMenuAction *pAction)
-{
-	if(pAction->m_pConfirmTitle)
-	{
-		DoConfirm(pAction->m_pConfirmTitle,
-			pAction->m_pConfirmMsg ? pAction->m_pConfirmMsg : Localize("Are you sure?"),
-			Localize("Yes"), Localize("No"),
-			pAction->m_pfnAction,
-			pAction->m_pfnConfirmPrepare);
-		return;
-	}
-
-	if(pAction->m_NavigateToPage >= 0)
-	{
-		NavigateToPage(pAction->m_NavigateToPage, pAction->m_pfnNavPrepare);
-		return;
-	}
-
-	if(pAction->m_pfnAction)
-		(this->*pAction->m_pfnAction)();
-}
-
-bool CMenus::DoMenuActionButton(CButtonContainer *pButton, const CMenuAction *pAction, const CUIRect *pRect,
-	const char *pOverrideLabel, int OverrideChecked, bool bExecute)
-{
-	bool Triggered = false;
-	const char *pLabel = pOverrideLabel ? pOverrideLabel : pAction->m_pLabel;
-	int CheckedRaw = OverrideChecked >= 0 ? OverrideChecked : pAction->m_Checked;
-	const bool Checked = CheckedRaw < 0 ? false : (CheckedRaw != 0);
-
-	if(pAction->m_SpriteImageID >= 0)
-	{
-		Triggered |= DoButton_SpriteID(pButton, pAction->m_SpriteImageID, pAction->m_SpriteID, Checked, pRect,
-			pAction->m_Corners, pAction->m_Rounding, pAction->m_SpriteFade);
-	}
-	else
-	{
-		Triggered |= DoButton_Menu(pButton, pLabel, Checked, pRect,
-			pAction->m_pImageName, pAction->m_Corners, pAction->m_Rounding,
-			pAction->m_FontFactor, pAction->m_ColorHot, pAction->m_TextFade);
-	}
-
-	if(pAction->m_UiHotkey)
-		Triggered |= UI()->ConsumeHotkey((unsigned)pAction->m_UiHotkey);
-
-	if(pAction->m_HotKey)
-	{
-		if(pAction->m_HotKeyRequireCtrl)
-			Triggered |= (UI()->KeyPress(pAction->m_HotKey) && (Input()->KeyIsPressed(KEY_LCTRL) || Input()->KeyIsPressed(KEY_RCTRL)));
-		else
-			Triggered |= CheckHotKey(pAction->m_HotKey);
-	}
-
-	if(Triggered && bExecute)
-		ExecuteMenuAction(pAction);
-	return Triggered;
-}
-
-bool CMenus::DoConfig_CheckBox_Bitfield(void *pID, int *pConfig, int Mask, const char *pText, const CUIRect *pRect, FConfigChangedCallback pfnOnChanged, bool Locked)
-{
-	if(DoButton_CheckBox(pID ? pID : pConfig, pText, (*pConfig & Mask) != 0, pRect, Locked))
-	{
-		*pConfig ^= Mask;
-		if(pfnOnChanged)
-			(this->*pfnOnChanged)();
-		return true;
-	}
-	return false;
-}
-
-void CMenus::DoConfig_SliderIntEx(int *pConfig, int *pConfigTmp, const CUIRect *pRect, const char *pLabel, int Min, int Max, const IScrollbarScale *pScale, unsigned char Options)
-{
-	UI()->DoScrollbarOption(pConfig, pConfigTmp, pRect, pLabel, Min, Max, pScale, Options);
-}
-
-void CMenus::ActionDisconnect() { Client()->Disconnect(); }
-
-void CMenus::ActionRefreshBrowser()
-{
-	if(m_MenuPage == PAGE_INTERNET)
-		ServerBrowser()->Refresh(IServerBrowser::REFRESHFLAG_INTERNET);
-	else if(m_MenuPage == PAGE_LAN)
-		ServerBrowser()->Refresh(IServerBrowser::REFRESHFLAG_LAN);
-}
-
-void CMenus::ActionConnectSelected()
-{
-	Client()->Connect(GetServerBrowserAddress());
-}
-
-void CMenus::ActionToggleRecord()
-{
-	if(!DemoRecorder()->IsRecording())
-		Client()->DemoRecorder_Start("demo", true);
-	else
-		Client()->DemoRecorder_Stop();
-}
-
-void CMenus::ActionJoinSpectators()
-{
-	m_pClient->SendSwitchTeam(TEAM_SPECTATORS);
-	SetActive(false);
-}
-
-void CMenus::ActionJoinRed()
-{
-	m_pClient->SendSwitchTeam(TEAM_RED);
-	SetActive(false);
-}
-
-void CMenus::ActionJoinBlue()
-{
-	m_pClient->SendSwitchTeam(TEAM_BLUE);
-	SetActive(false);
-}
-
-bool CMenus::DoButton_CheckBox_ConfigEx(int *pConfig, const char *pText, const CUIRect *pRect, FConfigChangedCallback pfnOnChanged, bool Locked)
-{
-	if(DoButton_CheckBox(pConfig, pText, *pConfig, pRect, Locked))
-	{
-		*pConfig ^= 1;
-		if(pfnOnChanged)
-			(this->*pfnOnChanged)();
-		return true;
-	}
-	return false;
-}
-
-void CMenus::DoConfig_SliderInt(int *pConfig, int *pConfigTmp, const CUIRect *pRect, const char *pLabel, int Min, int Max)
-{
-	UI()->DoScrollbarOption(pConfig, pConfigTmp, pRect, pLabel, Min, Max);
-}
-
-void CMenus::DoConfig_SliderLabeled(int *pConfig, int *pConfigTmp, const CUIRect *pRect, const char *pLabel, const char **ppLabels, int NumLabels)
-{
-	UI()->DoScrollbarOptionLabeled(pConfig, pConfigTmp, pRect, pLabel, ppLabels, NumLabels);
-}
-
-void CMenus::DoConfig_EditBox(CLineInput *pInput, const CUIRect *pRect, const char *pLabel, float LabelWidth)
-{
-	CUIRect Label, Edit;
-	pRect->VSplitLeft(LabelWidth, &Label, &Edit);
-	Label.y += 2.0f;
-	const float FontSize = pRect->h * CUI::ms_FontmodHeight * 0.8f;
-	UI()->DoLabel(&Label, pLabel, FontSize, TEXTALIGN_LEFT);
-	UI()->DoEditBox(pInput, &Edit, FontSize);
-}
-
-void CMenus::DoPageFrame_Settings(CUIRect *pMainView, CUIRect *pContent, CUIRect *pBottomView, const char *pTitle, float BottomHeight)
-{
-	const float ButtonHeight = 20.0f;
-	pMainView->HSplitBottom(BottomHeight, pContent, pBottomView);
-	pBottomView->HSplitTop(20.0f, 0, pBottomView);
-
-	CUIRect TitleRect;
-	if(Client()->State() == IClient::STATE_ONLINE)
-	{
-		TitleRect = *pContent;
-	}
-	else
-	{
-		pContent->HSplitTop(ButtonHeight, 0, &TitleRect);
-	}
-	TitleRect.Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha / 100.0f), 5.0f, Client()->State() == IClient::STATE_OFFLINE ? CUIRect::CORNER_ALL : CUIRect::CORNER_B);
-	pContent->HSplitTop(ButtonHeight, 0, pContent);
-}
-
-void CMenus::DoPageFrame_Info(CUIRect *pMainView, CUIRect *pContent, const char *pTitle, float BottomMargin)
-{
-	const float ButtonHeight = 20.0f;
-	pMainView->HSplitBottom(BottomMargin, pContent, 0);
-	pMainView->HSplitTop(ButtonHeight, 0, pContent);
-	pContent->Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha / 100.0f));
-
-	if(pTitle && pTitle[0])
-	{
-		CUIRect Label;
-		pContent->HSplitTop(ButtonHeight, &Label, pContent);
-		Label.y += 2.0f;
-		UI()->DoLabel(&Label, pTitle, ButtonHeight * CUI::ms_FontmodHeight * 0.8f, TEXTALIGN_CENTER);
-		pContent->Draw(vec4(0.0, 0.0, 0.0, 0.25f));
-	}
-}
-
-bool CMenus::DoSubPage_Tabs(int *pActivePage, const CSubPageDescriptor *pPages, CButtonContainer *pButtons, int NumPages, CUIRect *pTabBar, float NotActiveAlpha)
-{
-	bool Changed = false;
-	const float Spacing = 1.5f;
-	float TabWidth = (pTabBar->w - Spacing * (NumPages - 1)) / NumPages;
-
-	CUIRect Row = *pTabBar;
-	for(int i = 0; i < NumPages; i++)
-	{
-		CUIRect Tab;
-		if(i == 0)
-		{
-			Row.VSplitLeft(TabWidth, &Tab, &Row);
-		}
-		else if(i == NumPages - 1)
-		{
-			Row.VSplitLeft(Spacing, 0, &Row);
-			Tab = Row;
-		}
-		else
-		{
-			Row.VSplitLeft(Spacing, 0, &Row);
-			Row.VSplitLeft(TabWidth, &Tab, &Row);
-		}
-		Tab.VMargin(i == 0 ? 0.0f : (i == NumPages - 1 ? 0.0f : Spacing), &Tab);
-
-		const bool Checked = *pActivePage == pPages[i].m_SubPageID;
-		if(DoButton_MenuTabTop(&pButtons[i], Localize(pPages[i].m_pLabel), false, &Tab, Checked ? 1.0f : NotActiveAlpha, 1.0f, CUIRect::CORNER_T, 5.0f, 0.25f))
-		{
-			if(*pActivePage != pPages[i].m_SubPageID)
-			{
-				*pActivePage = pPages[i].m_SubPageID;
-				Changed = true;
-			}
-		}
-	}
-	return Changed;
-}
-
-const CMenus::CPageDescriptor CMenus::s_aOfflinePages[] = {
-	{ CMenus::PAGE_START, CCamera::POS_START, "Start", 0, false, true, 0 },
-	{ CMenus::PAGE_NEWS, CCamera::POS_START, "News", 0, false, true, &CMenus::RenderNews },
-	{ CMenus::PAGE_INTERNET, CCamera::POS_INTERNET, "Internet", 0, false, true, &CMenus::RenderServerbrowser },
-	{ CMenus::PAGE_LAN, CCamera::POS_LAN, "LAN", 0, false, true, &CMenus::RenderServerbrowser },
-	{ CMenus::PAGE_DEMOS, CCamera::POS_DEMOS, "Demos", 0, false, true, &CMenus::RenderDemoList },
-	{ CMenus::PAGE_SETTINGS, CCamera::POS_SETTINGS_GENERAL, "Settings", 0, false, true, &CMenus::RenderSettings },
-};
-
-const CMenus::CPageDescriptor CMenus::s_aOnlinePages[] = {
-	{ CMenus::PAGE_GAME, -1, "Game", 0, true, false, &CMenus::RenderGame },
-	{ CMenus::PAGE_PLAYERS, -1, "Players", 0, true, false, &CMenus::RenderPlayers },
-	{ CMenus::PAGE_SERVER_INFO, -1, "Server info", 0, true, false, &CMenus::RenderServerInfo },
-	{ CMenus::PAGE_CALLVOTE, -1, "Call vote", 0, true, false, &CMenus::RenderServerControl },
-	{ CMenus::PAGE_SETTINGS, CCamera::POS_SETTINGS_GENERAL, "Settings", 0, true, false, &CMenus::RenderSettings },
-	{ CMenus::PAGE_INTERNET, CCamera::POS_INTERNET, "Internet", 0, true, false, &CMenus::RenderServerbrowser },
-	{ CMenus::PAGE_LAN, CCamera::POS_LAN, "LAN", 0, true, false, &CMenus::RenderServerbrowser },
-};
-
-const CMenus::CPageDescriptor *CMenus::LookupPageDescriptor(int PageID, bool IsOnline)
-{
-	const CPageDescriptor *pTable = IsOnline ? s_aOnlinePages : s_aOfflinePages;
-	int Count = IsOnline ? (int)(sizeof(s_aOnlinePages)/sizeof(s_aOnlinePages[0])) : (int)(sizeof(s_aOfflinePages)/sizeof(s_aOfflinePages[0]));
-	for(int i = 0; i < Count; i++)
-	{
-		if(pTable[i].m_PageID == PageID && pTable[i].m_pfnRender)
-			return &pTable[i];
-	}
-	return 0;
-}
-
-int CMenus::LookupCameraPos(int PageID)
-{
-	const CPageDescriptor *pDesc = LookupPageDescriptor(PageID, false);
-	if(!pDesc)
-		pDesc = LookupPageDescriptor(PageID, true);
-	return pDesc ? pDesc->m_CameraPos : -1;
-}
-
 bool CMenus::DoButton_SpriteID(CButtonContainer *pButtonContainer, int ImageID, int SpriteID, bool Checked, const CUIRect *pRect, int Corners, float Rounding, bool Fade)
 {
 	const float FadeVal = Fade ? pButtonContainer->GetFade(Checked) : 0.0f;
@@ -916,7 +475,7 @@ void CMenus::RenderMenubar(CUIRect Rect)
 	{
 		int NumButtons = 6;
 		float Spacing = 3.0f;
-		float ButtonWidth = DoButtons_CalcWidth(Box.w, NumButtons, Spacing);
+		float ButtonWidth = (Box.w/NumButtons)-(Spacing*(NumButtons-1))/NumButtons;
 		float Alpha = 1.0f;
 		if(m_GamePage == PAGE_SETTINGS)
 			Alpha = InactiveAlpha;
@@ -931,23 +490,26 @@ void CMenus::RenderMenubar(CUIRect Rect)
 		Left.HSplitBottom(25.0f, 0, &Left);
 		Right.HSplitBottom(25.0f, 0, &Right);
 
+		Left.VSplitLeft(ButtonWidth, &Button, &Left);
 		static CButtonContainer s_GameButton;
-		DoButtons_VSplitRow(&Left, &Button, ButtonWidth, 0.0f);
 		if(DoButton_MenuTabTop(&s_GameButton, Localize("Game"), m_ActivePage == PAGE_GAME, &Button, Alpha, Alpha) || CheckHotKey(KEY_G))
 			NewPage = PAGE_GAME;
 
+		Left.VSplitLeft(Spacing, 0, &Left); // little space
+		Left.VSplitLeft(ButtonWidth, &Button, &Left);
 		static CButtonContainer s_PlayersButton;
-		DoButtons_VSplitRow(&Left, &Button, ButtonWidth, Spacing);
 		if(DoButton_MenuTabTop(&s_PlayersButton, Localize("Players"), m_ActivePage == PAGE_PLAYERS, &Button, Alpha, Alpha) || CheckHotKey(KEY_P))
 			NewPage = PAGE_PLAYERS;
 
+		Left.VSplitLeft(Spacing, 0, &Left); // little space
+		Left.VSplitLeft(ButtonWidth, &Button, &Left);
 		static CButtonContainer s_ServerInfoButton;
-		DoButtons_VSplitRow(&Left, &Button, ButtonWidth, Spacing);
 		if(DoButton_MenuTabTop(&s_ServerInfoButton, Localize("Server info"), m_ActivePage == PAGE_SERVER_INFO, &Button, Alpha, Alpha) || CheckHotKey(KEY_I))
 			NewPage = PAGE_SERVER_INFO;
 
+		Left.VSplitLeft(Spacing, 0, &Left); // little space
+		Left.VSplitLeft(ButtonWidth, &Button, &Left);
 		static CButtonContainer s_CallVoteButton;
-		DoButtons_VSplitRow(&Left, &Button, ButtonWidth, Spacing);
 		if(DoButton_MenuTabTop(&s_CallVoteButton, Localize("Call vote"), m_ActivePage == PAGE_CALLVOTE, &Button, Alpha, Alpha) || CheckHotKey(KEY_V))
 			NewPage = PAGE_CALLVOTE;
 
@@ -973,7 +535,7 @@ void CMenus::RenderMenubar(CUIRect Rect)
 	{
 		int NumButtons = 5;
 		float Spacing = 3.0f;
-		float ButtonWidth = DoButtons_CalcWidth(Box.w, NumButtons, Spacing);
+		float ButtonWidth = (Box.w/NumButtons)-(Spacing*(NumButtons-1))/NumButtons;
 		float NotActiveAlpha = Client()->State() == IClient::STATE_ONLINE ? 0.5f : 1.0f;
 		int Corners = Client()->State() == IClient::STATE_ONLINE ? CUIRect::CORNER_T : CUIRect::CORNER_ALL;
 
@@ -983,35 +545,75 @@ void CMenus::RenderMenubar(CUIRect Rect)
 
 		Box.HSplitBottom(25.0f, 0, &Box);
 
+		Box.VSplitLeft(ButtonWidth, &Button, &Box);
 		static CButtonContainer s_GeneralButton;
-		DoButtons_VSplitRow(&Box, &Button, ButtonWidth, 0.0f);
-		DoButton_TabPage(&s_GeneralButton, Localize("General"), SETTINGS_GENERAL, CCamera::POS_SETTINGS_GENERAL, &Button, NotActiveAlpha, 1.0f, Corners);
+		if(DoButton_MenuTabTop(&s_GeneralButton, Localize("General"), Client()->State() == IClient::STATE_OFFLINE && Config()->m_UiSettingsPage==SETTINGS_GENERAL, &Button,
+			Config()->m_UiSettingsPage == SETTINGS_GENERAL ? 1.0f : NotActiveAlpha, 1.0f, Corners))
+		{
+			m_pClient->m_pCamera->ChangePosition(CCamera::POS_SETTINGS_GENERAL);
+			Config()->m_UiSettingsPage = SETTINGS_GENERAL;
+		}
 
-		static CButtonContainer s_PlayerButton;
-		DoButtons_VSplitRow(&Box, &Button, ButtonWidth, Spacing);
-		DoButton_TabPage(&s_PlayerButton, Localize("Player"), SETTINGS_PLAYER, CCamera::POS_SETTINGS_PLAYER, &Button, NotActiveAlpha, 1.0f, Corners);
+		Box.VSplitLeft(Spacing, 0, &Box); // little space
+		Box.VSplitLeft(ButtonWidth, &Button, &Box);
+		{
+			static CButtonContainer s_PlayerButton;
+			if(DoButton_MenuTabTop(&s_PlayerButton, Localize("Player"), Client()->State() == IClient::STATE_OFFLINE && Config()->m_UiSettingsPage == SETTINGS_PLAYER, &Button,
+				Config()->m_UiSettingsPage == SETTINGS_PLAYER ? 1.0f : NotActiveAlpha, 1.0f, Corners))
+			{
+				m_pClient->m_pCamera->ChangePosition(CCamera::POS_SETTINGS_PLAYER);
+				Config()->m_UiSettingsPage = SETTINGS_PLAYER;
+			}
+		}
+
 
 		// TODO: replace tee page to something else
-		// static CButtonContainer s_TeeButton;
-		// DoButtons_VSplitRow(&Box, &Button, ButtonWidth, Spacing);
-		// DoButton_TabPage(&s_TeeButton, Localize("TBD"), SETTINGS_TBD, CCamera::POS_SETTINGS_TBD, &Button, NotActiveAlpha, 1.0f, Corners);
+		// Box.VSplitLeft(Spacing, 0, &Box); // little space
+		// Box.VSplitLeft(ButtonWidth, &Button, &Box);
+		// {
+		// 	static CButtonContainer s_TeeButton;
+		// 	if(DoButton_MenuTabTop(&s_TeeButton, Localize("TBD"), Client()->State() == IClient::STATE_OFFLINE && Config()->m_UiSettingsPage == SETTINGS_TBD, &Button,
+		// 		Config()->m_UiSettingsPage == SETTINGS_TBD ? 1.0f : NotActiveAlpha, 1.0f, Corners))
+		// 	{
+		// 		m_pClient->m_pCamera->ChangePosition(CCamera::POS_SETTINGS_TBD);
+		// 		Config()->m_UiSettingsPage = SETTINGS_TBD;
+		// 	}
+		// }
 
+		Box.VSplitLeft(Spacing, 0, &Box); // little space
+		Box.VSplitLeft(ButtonWidth, &Button, &Box);
 		static CButtonContainer s_ControlsButton;
-		DoButtons_VSplitRow(&Box, &Button, ButtonWidth, Spacing);
-		DoButton_TabPage(&s_ControlsButton, Localize("Controls"), SETTINGS_CONTROLS, CCamera::POS_SETTINGS_CONTROLS, &Button, NotActiveAlpha, 1.0f, Corners);
+		if(DoButton_MenuTabTop(&s_ControlsButton, Localize("Controls"), Client()->State() == IClient::STATE_OFFLINE && Config()->m_UiSettingsPage==SETTINGS_CONTROLS, &Button,
+			Config()->m_UiSettingsPage == SETTINGS_CONTROLS ? 1.0f : NotActiveAlpha, 1.0f, Corners))
+		{
+			m_pClient->m_pCamera->ChangePosition(CCamera::POS_SETTINGS_CONTROLS);
+			Config()->m_UiSettingsPage = SETTINGS_CONTROLS;
+		}
 
+		Box.VSplitLeft(Spacing, 0, &Box); // little space
+		Box.VSplitLeft(ButtonWidth, &Button, &Box);
 		static CButtonContainer s_GraphicsButton;
-		DoButtons_VSplitRow(&Box, &Button, ButtonWidth, Spacing);
-		DoButton_TabPage(&s_GraphicsButton, Localize("Graphics"), SETTINGS_GRAPHICS, CCamera::POS_SETTINGS_GRAPHICS, &Button, NotActiveAlpha, 1.0f, Corners);
+		if(DoButton_MenuTabTop(&s_GraphicsButton, Localize("Graphics"), Client()->State() == IClient::STATE_OFFLINE && Config()->m_UiSettingsPage==SETTINGS_GRAPHICS, &Button,
+			Config()->m_UiSettingsPage == SETTINGS_GRAPHICS ? 1.0f : NotActiveAlpha, 1.0f, Corners))
+		{
+			m_pClient->m_pCamera->ChangePosition(CCamera::POS_SETTINGS_GRAPHICS);
+			Config()->m_UiSettingsPage = SETTINGS_GRAPHICS;
+		}
 
+		Box.VSplitLeft(Spacing, 0, &Box); // little space
+		Box.VSplitLeft(ButtonWidth, &Button, &Box);
 		static CButtonContainer s_SoundButton;
-		DoButtons_VSplitRow(&Box, &Button, ButtonWidth, Spacing);
-		DoButton_TabPage(&s_SoundButton, Localize("Sound"), SETTINGS_SOUND, CCamera::POS_SETTINGS_SOUND, &Button, NotActiveAlpha, 1.0f, Corners);
+		if(DoButton_MenuTabTop(&s_SoundButton, Localize("Sound"), Client()->State() == IClient::STATE_OFFLINE && Config()->m_UiSettingsPage==SETTINGS_SOUND, &Button,
+			Config()->m_UiSettingsPage == SETTINGS_SOUND ? 1.0f : NotActiveAlpha, 1.0f, Corners))
+		{
+			m_pClient->m_pCamera->ChangePosition(CCamera::POS_SETTINGS_SOUND);
+			Config()->m_UiSettingsPage = SETTINGS_SOUND;
+		}
 	}
 	else if((Client()->State() == IClient::STATE_OFFLINE && m_MenuPage >= PAGE_INTERNET && m_MenuPage <= PAGE_LAN) || (Client()->State() == IClient::STATE_ONLINE && m_GamePage >= PAGE_INTERNET && m_GamePage <= PAGE_LAN))
 	{
 		float Spacing = 3.0f;
-		float ButtonWidth = DoButtons_CalcWidth(Box.w, 6, Spacing);
+		float ButtonWidth = (Box.w/6.0f)-(Spacing*5.0)/6.0f;
 		int Corners = Client()->State() == IClient::STATE_ONLINE ? CUIRect::CORNER_T : CUIRect::CORNER_ALL;
 		float NotActiveAlpha = Client()->State() == IClient::STATE_ONLINE ? 0.5f : 1.0f;
 
@@ -1024,8 +626,8 @@ void CMenus::RenderMenubar(CUIRect Rect)
 
 		Left.HSplitBottom(25.0f, 0, &Left);
 
+		Left.VSplitLeft(ButtonWidth, &Button, &Left);
 		static CButtonContainer s_InternetButton;
-		DoButtons_VSplitRow(&Left, &Button, ButtonWidth, 0.0f);
 		if(DoButton_MenuTabTop(&s_InternetButton, Localize("Global"), m_ActivePage==PAGE_INTERNET && Client()->State() == IClient::STATE_OFFLINE, &Button,
 			m_ActivePage==PAGE_INTERNET ? 1.0f : NotActiveAlpha, 1.0f, Corners) || CheckHotKey(KEY_G))
 		{
@@ -1035,8 +637,9 @@ void CMenus::RenderMenubar(CUIRect Rect)
 			Config()->m_UiBrowserPage = PAGE_INTERNET;
 		}
 
+		Left.VSplitLeft(Spacing, 0, &Left); // little space
+		Left.VSplitLeft(ButtonWidth, &Button, &Left);
 		static CButtonContainer s_LanButton;
-		DoButtons_VSplitRow(&Left, &Button, ButtonWidth, Spacing);
 		if(DoButton_MenuTabTop(&s_LanButton, Localize("Local"), m_ActivePage==PAGE_LAN && Client()->State() == IClient::STATE_OFFLINE, &Button,
 			m_ActivePage==PAGE_LAN ? 1.0f : NotActiveAlpha, 1.0f, Corners) || CheckHotKey(KEY_L))
 		{
@@ -1491,12 +1094,35 @@ void CMenus::RenderMenu(CUIRect Screen)
 			}
 
 			// render current page
+			if(Client()->State() != IClient::STATE_OFFLINE)
 			{
-				bool IsOnline = Client()->State() != IClient::STATE_OFFLINE;
-				int PageID = IsOnline ? m_GamePage : m_MenuPage;
-				const CPageDescriptor *pDesc = LookupPageDescriptor(PageID, IsOnline);
-				if(pDesc && pDesc->m_pfnRender)
-					(this->*pDesc->m_pfnRender)(MainView);
+				if(m_GamePage == PAGE_GAME)
+					RenderGame(MainView);
+				else if(m_GamePage == PAGE_PLAYERS)
+					RenderPlayers(MainView);
+				else if(m_GamePage == PAGE_SERVER_INFO)
+					RenderServerInfo(MainView);
+				else if(m_GamePage == PAGE_CALLVOTE)
+					RenderServerControl(MainView);
+				else if(m_GamePage == PAGE_SETTINGS)
+					RenderSettings(MainView);
+				else if(m_GamePage == PAGE_INTERNET)
+					RenderServerbrowser(MainView);
+				else if(m_GamePage == PAGE_LAN)
+					RenderServerbrowser(MainView);
+			}
+			else
+			{
+				if(m_MenuPage == PAGE_NEWS)
+					RenderNews(MainView);
+				else if(m_MenuPage == PAGE_INTERNET)
+					RenderServerbrowser(MainView);
+				else if(m_MenuPage == PAGE_LAN)
+					RenderServerbrowser(MainView);
+				else if(m_MenuPage == PAGE_DEMOS)
+					RenderDemoList(MainView);
+				else if(m_MenuPage == PAGE_SETTINGS)
+					RenderSettings(MainView);
 			}
 		}
 
@@ -2227,11 +1853,20 @@ void CMenus::SetMenuPage(int NewPage)
 
 	m_MenuPage = NewPage;
 
-	int CameraPos = LookupCameraPos(NewPage);
-	if(CameraPos != -1 && m_pClient && m_pClient->m_pCamera)
+	// update camera position
 	{
-		if(NewPage == PAGE_SETTINGS)
-			CameraPos += Config()->m_UiSettingsPage;
-		m_pClient->m_pCamera->ChangePosition(CameraPos);
+		int CameraPos = -1;
+
+		switch(m_MenuPage)
+		{
+		case PAGE_START: CameraPos = CCamera::POS_START; break;
+		case PAGE_DEMOS: CameraPos = CCamera::POS_DEMOS; break;
+		case PAGE_SETTINGS: CameraPos = CCamera::POS_SETTINGS_GENERAL+Config()->m_UiSettingsPage; break;
+		case PAGE_INTERNET: CameraPos = CCamera::POS_INTERNET; break;
+		case PAGE_LAN: CameraPos = CCamera::POS_LAN;
+		}
+
+		if(CameraPos != -1 && m_pClient && m_pClient->m_pCamera)
+			m_pClient->m_pCamera->ChangePosition(CameraPos);
 	}
 }

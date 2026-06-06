@@ -68,6 +68,12 @@ public:
 	char m_aVersion[32];
 	char m_aAddress[NETADDR_MAXSTRSIZE];
 	CClient m_aClients[MAX_CLIENTS];
+
+	// ---- derived display fields (calculated during filter) ----
+	// NumClients/NumPlayers adjusted by bot-filter and spectator-filter settings,
+	// ready for UI display without re-running the business rules.
+	int m_NumDisplayClients;
+	int m_MaxDisplayClients;
 };
 
 class CServerFilterInfo
@@ -172,6 +178,11 @@ public:
 	virtual int NumSortedPlayers(int Index) const = 0;
 	virtual const CServerInfo *SortedGet(int FilterIndex, int Index) const = 0;
 	virtual const void *GetID(int FilterIndex, int Index) const = 0;
+
+	// UI-facing helpers: run all business rules inside engine so menus don't
+	// need to know about FILTER_* flags or recompute counts.
+	virtual void GetDisplayCounts(int FilterIndex, int Index, int *pNum, int *pMax) const = 0;
+	virtual bool IsClientHidden(int FilterIndex, int Index, int ClientIndex) const = 0;
 
 	virtual void AddFavorite(const CServerInfo *pInfo) = 0;
 	virtual void RemoveFavorite(const CServerInfo *pInfo) = 0;

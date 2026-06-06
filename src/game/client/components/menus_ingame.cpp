@@ -59,7 +59,7 @@ void CMenus::RenderGame(CUIRect MainView)
 	CUIRect Button, ButtonRow, Label;
 
 	float Spacing = 3.0f;
-	float ButtonWidth = DoButtons_CalcWidth(MainView.w, 6, Spacing);
+	float ButtonWidth = (MainView.w/6.0f)-(Spacing*5.0)/6.0f;
 
 	// cut view
 	MainView.HSplitTop(20.0f, 0, &MainView);
@@ -98,15 +98,15 @@ void CMenus::RenderGame(CUIRect MainView)
 				str_copy(aBuf, Localize("locked"), sizeof(aBuf));
 		}
 		else
-			str_copy(aBuf, Localize(Team != TEAM_SPECTATORS ? "Spectate" : "Spectating"), sizeof(aBuf));
+			str_copy(aBuf, Localize(Team != TEAM_SPECTATORS ? "Spectate" : "Spectating"), sizeof(aBuf)); // Localize("Spectating");
 
+		ButtonRow.VSplitLeft(ButtonWidth, &Button, &ButtonRow);
+		ButtonRow.VSplitLeft(Spacing, 0, &ButtonRow);
 		static CButtonContainer s_SpectateButton;
-		DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, Spacing);
+		if(DoButton_Menu(&s_SpectateButton, aBuf, Team == TEAM_SPECTATORS, &Button) && Team != TEAM_SPECTATORS && Info.m_AllowSpec)
 		{
-			CMenuAction SpecAction = CMenuAction::Direct(0, &CMenus::ActionJoinSpectators);
-			if(DoMenuActionButton(&s_SpectateButton, &SpecAction, &Button, aBuf, Team == TEAM_SPECTATORS ? 1 : 0, false)
-			   && Team != TEAM_SPECTATORS && Info.m_AllowSpec)
-				ExecuteMenuAction(&SpecAction);
+			m_pClient->SendSwitchTeam(TEAM_SPECTATORS);
+			SetActive(false);
 		}
 
 		// team button
@@ -127,17 +127,15 @@ void CMenus::RenderGame(CUIRect MainView)
 					str_copy(aBuf, Localize("locked"), sizeof(aBuf));
 			}
 			else
-				str_copy(aBuf, Localize(Team != TEAM_RED ? "Join red" : "Joined red"), sizeof(aBuf));
+				str_copy(aBuf, Localize(Team != TEAM_RED ? "Join red" : "Joined red"), sizeof(aBuf)); // Localize("Join red");Localize("Joined red");
 
+			ButtonRow.VSplitLeft(ButtonWidth, &Button, &ButtonRow);
+			ButtonRow.VSplitLeft(Spacing, 0, &ButtonRow);
 			static CButtonContainer s_RedButton;
-			DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, Spacing);
+			if(DoButton_Menu(&s_RedButton, aBuf, Team == TEAM_RED, &Button, 0, CUIRect::CORNER_ALL, 5.0f, 0.0f, vec4(0.975f, 0.17f, 0.17f, 0.75f), false) && Team != TEAM_RED && !(Info.m_aNotification[0]) && !BlockRed)
 			{
-				CMenuAction RedAction = CMenuAction::Direct(0, &CMenus::ActionJoinRed);
-				RedAction.m_ColorHot = vec4(0.975f, 0.17f, 0.17f, 0.75f);
-				RedAction.m_TextFade = false;
-				if(DoMenuActionButton(&s_RedButton, &RedAction, &Button, aBuf, Team == TEAM_RED ? 1 : 0, false)
-				   && Team != TEAM_RED && !(Info.m_aNotification[0]) && !BlockRed)
-					ExecuteMenuAction(&RedAction);
+				m_pClient->SendSwitchTeam(TEAM_RED);
+				SetActive(false);
 			}
 
 			RedTeamSizeNew = m_pClient->m_GameInfo.m_aTeamSize[TEAM_RED];
@@ -155,17 +153,15 @@ void CMenus::RenderGame(CUIRect MainView)
 					str_copy(aBuf, Localize("locked"), sizeof(aBuf));
 			}
 			else
-				str_copy(aBuf, Localize(Team != TEAM_BLUE ? "Join blue" : "Joined blue"), sizeof(aBuf));
+				str_copy(aBuf, Localize(Team != TEAM_BLUE ? "Join blue" : "Joined blue"), sizeof(aBuf)); // Localize("Join blue");Localize("Joined blue");
 
+			ButtonRow.VSplitLeft(ButtonWidth, &Button, &ButtonRow);
+			ButtonRow.VSplitLeft(Spacing, 0, &ButtonRow);
 			static CButtonContainer s_BlueButton;
-			DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, Spacing);
+			if(DoButton_Menu(&s_BlueButton, aBuf, Team == TEAM_BLUE, &Button, 0, CUIRect::CORNER_ALL, 5.0f, 0.0f, vec4(0.17f, 0.46f, 0.975f, 0.75f), false) && Team != TEAM_BLUE && !(Info.m_aNotification[0]) && !BlockBlue)
 			{
-				CMenuAction BlueAction = CMenuAction::Direct(0, &CMenus::ActionJoinBlue);
-				BlueAction.m_ColorHot = vec4(0.17f, 0.46f, 0.975f, 0.75f);
-				BlueAction.m_TextFade = false;
-				if(DoMenuActionButton(&s_BlueButton, &BlueAction, &Button, aBuf, Team == TEAM_BLUE ? 1 : 0, false)
-				   && Team != TEAM_BLUE && !(Info.m_aNotification[0]) && !BlockBlue)
-					ExecuteMenuAction(&BlueAction);
+				m_pClient->SendSwitchTeam(TEAM_BLUE);
+				SetActive(false);
 			}
 		}
 		else
@@ -178,32 +174,35 @@ void CMenus::RenderGame(CUIRect MainView)
 					str_copy(aBuf, Localize("locked"), sizeof(aBuf));
 			}
 			else
-				str_copy(aBuf, Localize(Team != TEAM_RED ? "Join" : "Joined"), sizeof(aBuf));
+				str_copy(aBuf, Localize(Team != TEAM_RED ? "Join" : "Joined"), sizeof(aBuf)); //Localize("Join");Localize("Joined");
 
-			DoButtons_VSplitRow(&ButtonRow, &Button, ButtonWidth, 0.0f);
+			ButtonRow.VSplitLeft(ButtonWidth, &Button, &ButtonRow);
 			static CButtonContainer s_JoinButton;
+			if(DoButton_Menu(&s_JoinButton, aBuf, Team == TEAM_RED, &Button) && Team != TEAM_RED && !(Info.m_aNotification[0]))
 			{
-				CMenuAction JoinAction = CMenuAction::Direct(0, &CMenus::ActionJoin);
-				if(DoMenuActionButton(&s_JoinButton, &JoinAction, &Button, aBuf, Team == TEAM_RED ? 1 : 0, false)
-				   && Team != TEAM_RED && !(Info.m_aNotification[0]))
-					ExecuteMenuAction(&JoinAction);
+				m_pClient->SendSwitchTeam(TEAM_RED);
+				SetActive(false);
 			}
 		}
 
 		// disconnect button
 		ButtonRow.VSplitRight(ButtonWidth, &ButtonRow, &Button);
 		static CButtonContainer s_DisconnectButton;
-		CMenuAction DiscAction = CMenuAction::Direct(Localize("Disconnect"), &CMenus::ActionDisconnect);
-		DoMenuActionButton(&s_DisconnectButton, &DiscAction, &Button);
+		if(DoButton_Menu(&s_DisconnectButton, Localize("Disconnect"), 0, &Button))
+			Client()->Disconnect();
 
 		// Record button
 		ButtonRow.VSplitRight(50.0f, &ButtonRow, 0);
 		ButtonRow.VSplitRight(ButtonWidth, &ButtonRow, &Button);
 		static CButtonContainer s_DemoButton;
 		bool Recording = DemoRecorder()->IsRecording();
-		CMenuAction RecAction = CMenuAction::Direct(Localize(Recording ? "Stop record" : "Record"), &CMenus::ActionToggleRecord);
-		RecAction.m_Checked = Recording ? 1 : 0;
-		DoMenuActionButton(&s_DemoButton, &RecAction, &Button);
+		if(DoButton_Menu(&s_DemoButton, Localize(Recording ? "Stop record" : "Record"), Recording, &Button))	// Localize("Stop record");Localize("Record");
+		{
+			if(!Recording)
+				Client()->DemoRecorder_Start("demo", true);
+			else
+				Client()->DemoRecorder_Stop();
+		}
 	}
 }
 
@@ -214,7 +213,15 @@ void CMenus::RenderPlayers(CUIRect MainView)
 	const float NameWidth = 250.0f;
 	const float ClanWidth = 250.0f;
 	CUIRect Label, Row;
-	DoPageFrame_Info(&MainView, &MainView, Localize("Player options"), 80.0f);
+	MainView.HSplitBottom(80.0f, &MainView, 0);
+	MainView.HSplitTop(20.0f, 0, &MainView);
+	MainView.Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha/100.0f));
+
+	// player options
+	MainView.HSplitTop(ButtonHeight, &Label, &MainView);
+	Label.y += 2.0f;
+	UI()->DoLabel(&Label, Localize("Player options"), ButtonHeight*CUI::ms_FontmodHeight*0.8f, TEXTALIGN_CENTER);
+	MainView.Draw(vec4(0.0, 0.0, 0.0, 0.25f));
 
 	// prepare headline
 	MainView.HSplitTop(ButtonHeight, &Row, &MainView);
@@ -348,7 +355,10 @@ void CMenus::RenderServerInfo(CUIRect MainView)
 	CServerInfo CurrentServerInfo;
 	Client()->GetServerInfo(&CurrentServerInfo);
 
-	DoPageFrame_Info(&MainView, &MainView, 0, 80.0f);
+	// render background
+	MainView.HSplitBottom(80.0f, &MainView, 0);
+	MainView.HSplitTop(20.0f, 0, &MainView);
+	MainView.Draw(vec4(0.0f, 0.0f, 0.0f, Config()->m_ClMenuAlpha/100.0f));
 
 	CUIRect ServerInfo, GameInfo, Motd, Label;
 
@@ -680,14 +690,22 @@ void CMenus::RenderServerControl(CUIRect MainView)
 	CUIRect Bottom, Extended, Button, Row;
 	MainView.HSplitTop(3.0f, 0, &MainView);
 	MainView.HSplitTop(25.0f, &Row, &MainView);
+	Row.VSplitLeft(Row.w/3-1.5f, &Button, &Row);
+	static CButtonContainer s_Button0;
+	if(DoButton_MenuTabTop(&s_Button0, Localize("Change settings"), false, &Button, s_ControlPage == 0 ? 1.0f : NotActiveAlpha, 1.0f, CUIRect::CORNER_T, 5.0f, 0.25f))
+		s_ControlPage = 0;
 
-	static const CSubPageDescriptor s_aSubPages[] = {
-		{ "Change settings", 0 },
-		{ "Kick player", 1 },
-		{ "Move player to spectators", 2 },
-	};
-	static CButtonContainer s_aSubPageButtons[3];
-	DoSubPage_Tabs(&s_ControlPage, s_aSubPages, s_aSubPageButtons, 3, &Row, NotActiveAlpha);
+	Row.VSplitLeft(1.5f, 0, &Row);
+	Row.VSplitMid(&Button, &Row);
+	Button.VMargin(1.5f, &Button);
+	static CButtonContainer s_Button1;
+	if(DoButton_MenuTabTop(&s_Button1, Localize("Kick player"), false, &Button, s_ControlPage == 1 ? 1.0f : NotActiveAlpha, 1.0f, CUIRect::CORNER_T, 5.0f, 0.25f))
+		s_ControlPage = 1;
+
+	Row.VSplitLeft(1.5f, 0, &Button);
+	static CButtonContainer s_Button2;
+	if(DoButton_MenuTabTop(&s_Button2, Localize("Move player to spectators"), false, &Button, s_ControlPage == 2 ? 1.0f : NotActiveAlpha, 1.0f, CUIRect::CORNER_T, 5.0f, 0.25f))
+		s_ControlPage = 2;
 
 	if(s_ControlPage == 1)
 	{

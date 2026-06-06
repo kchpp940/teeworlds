@@ -37,6 +37,10 @@ public:
 		int GetSortHash() const;
 		void Sort();
 
+		// UI-facing helpers
+		void GetDisplayCounts(int Index, int *pNum, int *pMax) const;
+		bool IsClientHidden(int Index, int ClientIndex) const;
+
 		// sorting criterions
 		bool SortCompareName(int Index1, int Index2) const;
 		bool SortCompareMap(int Index1, int Index2) const;
@@ -65,6 +69,10 @@ public:
 	int GetIndex(int FilterIndex, int Index) const { return m_lFilters[FilterIndex].m_pSortedServerlist[Index]; }
 	int GetNumSortedServers(int FilterIndex) const { return m_lFilters[FilterIndex].m_NumSortedServers; }
 	int GetNumSortedPlayers(int FilterIndex) const { return m_lFilters[FilterIndex].m_NumSortedPlayers; }
+
+	// UI-facing helpers
+	void GetDisplayCounts(int FilterIndex, int Index, int *pNum, int *pMax) const { m_lFilters[FilterIndex].GetDisplayCounts(Index, pNum, pMax); }
+	bool IsClientHidden(int FilterIndex, int Index, int ClientIndex) const { return m_lFilters[FilterIndex].IsClientHidden(Index, ClientIndex); }
 
 private:
 	class CConfig *m_pConfig;

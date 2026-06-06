@@ -39,7 +39,6 @@ class CMenus : public CComponent
 {
 private:
 	typedef float (CMenus::*FDropdownCallback)(CUIRect View);
-	typedef void (CMenus::*FPopupButtonCallback)();
 
 	bool DoButton_SpriteID(CButtonContainer *pButtonContainer, int ImageID, int SpriteID, bool Checked, const CUIRect *pRect, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, bool Fade = true);
 	bool DoButton_Toggle(const void *pID, bool Checked, const CUIRect *pRect, bool Active);
@@ -48,216 +47,8 @@ private:
 
 	bool DoButton_CheckBox(const void *pID, const char *pText, bool Checked, const CUIRect *pRect, bool Locked = false);
 
-	bool DoButton_CheckBox_Config(int *pConfig, const char *pText, const CUIRect *pRect, bool Locked = false);
-
 	void DoIcon(int ImageId, int SpriteId, const CUIRect *pRect, const vec4 *pColor = 0);
-
-	float DoButton_MenuPage(CButtonContainer *pButtonContainer, const char *pText, int Page, const CUIRect *pRect, int HotKey = 0, const char *pImageName = 0, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f, vec4 ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f), bool TextFade = true);
-	bool DoButton_TabPage(CButtonContainer *pButtonContainer, const char *pText, int SettingsPage, int CameraPos, const CUIRect *pRect, float Alpha = 1.0f, float FontAlpha = 1.0f, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f);
-	void DoButton_Reset_Confirm(CUIRect *pBottomView, const char *pConfirmTitle, const char *pConfirmMsg, FPopupButtonCallback pfnResetCallback);
-
-	static float DoButtons_CalcWidth(float TotalWidth, int NumButtons, float Spacing);
-	static void DoButtons_VSplitRow(CUIRect *pRow, CUIRect *pButton, float ButtonWidth, float Spacing);
-	void DoButtons_HSplitColumn(CUIRect *pColumn, CUIRect *pButton, float ButtonHeight, float Spacing = 5.0f);
-
-	void DoSection_Header(CUIRect *pView, CUIRect *pContent, const char *pTitle, float ButtonHeight = 20.0f);
-	void DoSection_SplitTwoCol(CUIRect *pView, CUIRect *pLeft, CUIRect *pRight, float Spacing = 2.0f);
 	bool DoButton_GridHeader(const void *pID, const char *pText, bool Checked, int Align, const CUIRect *pRect, int Corners = CUIRect::CORNER_ALL);
-
-	typedef void (CMenus::*FNavigationPrepareCallback)();
-	typedef void (CMenus::*FActionCallback)();
-	typedef void (CMenus::*FConfigChangedCallback)();
-	typedef bool (CMenus::*FConfirmPrepareCallback)(char *pMsgBuf, int MsgBufSize);
-
-	struct CPageDescriptor
-	{
-		int m_PageID;
-		int m_CameraPos;
-		const char *m_pLabel;
-		int m_HotKey;
-		bool m_OnlineOnly;
-		bool m_OfflineOnly;
-		void (CMenus::*m_pfnRender)(CUIRect);
-	};
-
-	struct CSubPageDescriptor
-	{
-		const char *m_pLabel;
-		int m_SubPageID;
-	};
-
-	struct CSettingsPageDescriptor
-	{
-		int m_SettingsPage;
-		int m_CameraPos;
-		const char *m_pLabel;
-		void (CMenus::*m_pfnRender)(CUIRect);
-	};
-
-	struct CMenuAction
-	{
-		const char *m_pLabel;
-		int m_Checked;
-		const char *m_pImageName;
-		int m_Corners;
-		float m_Rounding;
-		float m_FontFactor;
-		vec4 m_ColorHot;
-		bool m_TextFade;
-
-		int m_SpriteImageID;
-		int m_SpriteID;
-		bool m_SpriteFade;
-
-		int m_HotKey;
-		int m_HotKeyRequireCtrl;
-		int m_UiHotkey;
-
-		const char *m_pConfirmTitle;
-		const char *m_pConfirmMsg;
-		FConfirmPrepareCallback m_pfnConfirmPrepare;
-
-		int m_NavigateToPage;
-		FNavigationPrepareCallback m_pfnNavPrepare;
-
-		FActionCallback m_pfnAction;
-
-		static CMenuAction Navigate(const char *pLabel, int Page, int HotKey = 0,
-			FNavigationPrepareCallback pfnPrepare = 0, const char *pImageName = 0,
-			int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f)
-		{
-			CMenuAction A = {0};
-			A.m_pLabel = pLabel;
-			A.m_Checked = -1;
-			A.m_pImageName = pImageName;
-			A.m_Corners = Corners;
-			A.m_Rounding = Rounding;
-			A.m_FontFactor = FontFactor;
-			A.m_ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f);
-			A.m_TextFade = true;
-			A.m_SpriteImageID = -1;
-			A.m_SpriteID = 0;
-			A.m_SpriteFade = true;
-			A.m_HotKey = HotKey;
-			A.m_HotKeyRequireCtrl = 0;
-			A.m_UiHotkey = 0;
-			A.m_pConfirmTitle = 0;
-			A.m_pConfirmMsg = 0;
-			A.m_pfnConfirmPrepare = 0;
-			A.m_NavigateToPage = Page;
-			A.m_pfnNavPrepare = pfnPrepare;
-			A.m_pfnAction = 0;
-			return A;
-		}
-
-		static CMenuAction Direct(const char *pLabel, FActionCallback pfnAction,
-			int HotKey = 0, int UiHotkey = 0, const char *pImageName = 0,
-			int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f)
-		{
-			CMenuAction A = {0};
-			A.m_pLabel = pLabel;
-			A.m_Checked = -1;
-			A.m_pImageName = pImageName;
-			A.m_Corners = Corners;
-			A.m_Rounding = Rounding;
-			A.m_FontFactor = FontFactor;
-			A.m_ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f);
-			A.m_TextFade = true;
-			A.m_SpriteImageID = -1;
-			A.m_SpriteID = 0;
-			A.m_SpriteFade = true;
-			A.m_HotKey = HotKey;
-			A.m_HotKeyRequireCtrl = 0;
-			A.m_UiHotkey = UiHotkey;
-			A.m_pConfirmTitle = 0;
-			A.m_pConfirmMsg = 0;
-			A.m_pfnConfirmPrepare = 0;
-			A.m_NavigateToPage = -1;
-			A.m_pfnNavPrepare = 0;
-			A.m_pfnAction = pfnAction;
-			return A;
-		}
-
-		static CMenuAction Confirm(const char *pLabel,
-			const char *pConfirmTitle, const char *pConfirmMsg,
-			FConfirmPrepareCallback pfnConfirmPrepare, FActionCallback pfnAction,
-			int HotKey = 0, const char *pImageName = 0,
-			int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f)
-		{
-			CMenuAction A = {0};
-			A.m_pLabel = pLabel;
-			A.m_Checked = -1;
-			A.m_pImageName = pImageName;
-			A.m_Corners = Corners;
-			A.m_Rounding = Rounding;
-			A.m_FontFactor = FontFactor;
-			A.m_ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f);
-			A.m_TextFade = true;
-			A.m_SpriteImageID = -1;
-			A.m_SpriteID = 0;
-			A.m_SpriteFade = true;
-			A.m_HotKey = HotKey;
-			A.m_HotKeyRequireCtrl = 0;
-			A.m_UiHotkey = 0;
-			A.m_pConfirmTitle = pConfirmTitle;
-			A.m_pConfirmMsg = pConfirmMsg;
-			A.m_pfnConfirmPrepare = pfnConfirmPrepare;
-			A.m_NavigateToPage = -1;
-			A.m_pfnNavPrepare = 0;
-			A.m_pfnAction = pfnAction;
-			return A;
-		}
-
-		static CMenuAction Sprite(int ImageID, int SpriteID, FActionCallback pfnAction,
-			int HotKey = 0, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, bool Fade = true)
-		{
-			CMenuAction A = {0};
-			A.m_pLabel = 0;
-			A.m_Checked = -1;
-			A.m_pImageName = 0;
-			A.m_Corners = Corners;
-			A.m_Rounding = Rounding;
-			A.m_FontFactor = 0.0f;
-			A.m_ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f);
-			A.m_TextFade = true;
-			A.m_SpriteImageID = ImageID;
-			A.m_SpriteID = SpriteID;
-			A.m_SpriteFade = Fade;
-			A.m_HotKey = HotKey;
-			A.m_HotKeyRequireCtrl = 0;
-			A.m_UiHotkey = 0;
-			A.m_pConfirmTitle = 0;
-			A.m_pConfirmMsg = 0;
-			A.m_pfnConfirmPrepare = 0;
-			A.m_NavigateToPage = -1;
-			A.m_pfnNavPrepare = 0;
-			A.m_pfnAction = pfnAction;
-			return A;
-		}
-	};
-
-	void ExecuteMenuAction(const CMenuAction *pAction);
-	bool DoMenuActionButton(CButtonContainer *pButton, const CMenuAction *pAction, const CUIRect *pRect,
-		const char *pOverrideLabel = 0, int OverrideChecked = -1, bool bExecute = true);
-
-	bool NavigateToPage(int PageID, FNavigationPrepareCallback pfnPrepare = 0);
-	bool DoButton_PageNavigate(CButtonContainer *pButtonContainer, const char *pText, int PageID, const CUIRect *pRect, int HotKey = 0, FNavigationPrepareCallback pfnPrepare = 0, const char *pImageName = 0, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f, vec4 ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f), bool TextFade = true);
-	int NavigateCurrentPage(CUIRect MainView, bool IsOnline);
-
-	bool DoButton_ConfirmAction(CButtonContainer *pButtonContainer, const char *pBtnText, const char *pConfirmTitle, const char *pConfirmMsg, const char *pConfirmBtn, const char *pCancelBtn, FActionCallback pfnAction, const CUIRect *pRect, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f, vec4 ColorHot = vec4(1.0f, 1.0f, 1.0f, 0.75f), bool TextFade = true);
-	bool DoButton_DeleteConfirm(CButtonContainer *pButtonContainer, const char *pBtnText, const char *pConfirmTitle, const char *pConfirmMsg, FActionCallback pfnAction, const CUIRect *pRect, int Corners = CUIRect::CORNER_ALL, float Rounding = 5.0f);
-	bool DoConfirm(const char *pConfirmTitle, const char *pConfirmMsgFallback, const char *pConfirmBtn, const char *pCancelBtn, FActionCallback pfnAction, FConfirmPrepareCallback pfnPrepare = 0);
-
-	bool DoButton_CheckBox_ConfigEx(int *pConfig, const char *pText, const CUIRect *pRect, FConfigChangedCallback pfnOnChanged = 0, bool Locked = false);
-	bool DoConfig_CheckBox_Bitfield(void *pID, int *pConfig, int Mask, const char *pText, const CUIRect *pRect, FConfigChangedCallback pfnOnChanged = 0, bool Locked = false);
-	void DoConfig_SliderInt(int *pConfig, int *pConfigTmp, const CUIRect *pRect, const char *pLabel, int Min, int Max);
-	void DoConfig_SliderIntEx(int *pConfig, int *pConfigTmp, const CUIRect *pRect, const char *pLabel, int Min, int Max, const IScrollbarScale *pScale, unsigned char Options = 0);
-	void DoConfig_SliderLabeled(int *pConfig, int *pConfigTmp, const CUIRect *pRect, const char *pLabel, const char **ppLabels, int NumLabels);
-	void DoConfig_EditBox(CLineInput *pInput, const CUIRect *pRect, const char *pLabel, float LabelWidth = 100.0f);
-
-	void DoPageFrame_Settings(CUIRect *pMainView, CUIRect *pContent, CUIRect *pBottomView, const char *pTitle, float BottomHeight = 80.0f);
-	void DoPageFrame_Info(CUIRect *pMainView, CUIRect *pContent, const char *pTitle, float BottomMargin = 80.0f);
-	bool DoSubPage_Tabs(int *pActivePage, const CSubPageDescriptor *pPages, CButtonContainer *pButtons, int NumPages, CUIRect *pTabBar, float NotActiveAlpha = 0.5f);
 
 	float DoIndependentDropdownMenu(void *pID, const CUIRect *pRect, const char *pStr, float HeaderHeight, FDropdownCallback pfnCallback, bool *pActive);
 	void DoInfoBox(const CUIRect *pRect, const char *pLable, const char *pValue);
@@ -308,11 +99,6 @@ private:
 		ACTLB_THEME,
 	};
 
-	static const CPageDescriptor s_aOfflinePages[];
-	static const CPageDescriptor s_aOnlinePages[];
-	static const CPageDescriptor *LookupPageDescriptor(int PageID, bool IsOnline);
-	static int LookupCameraPos(int PageID);
-
 	int m_GamePage;
 	int m_Popup;
 	int m_ActivePage;
@@ -328,6 +114,7 @@ private:
 	bool m_KeyReaderIsActive;
 
 	// generic popups
+	typedef void (CMenus::*FPopupButtonCallback)();
 	void DefaultButtonCallback() { /* do nothing */ };
 	enum
 	{
@@ -526,48 +313,6 @@ private:
 
 	void DemolistOnUpdate(bool Reset);
 	void DemolistPopulate();
-	void DemolistPrepare() { DemolistPopulate(); DemolistOnUpdate(false); }
-	void OnSndEnableChanged() { if(Config()->m_SndEnable) Config()->m_SndInit = 1; UpdateMusicState(); }
-	void OnSmoothCameraChanged()
-	{
-		if(Config()->m_ClCameraSmoothness)
-		{
-			Config()->m_ClCameraSmoothness = 50;
-			Config()->m_ClCameraStabilizing = 50;
-		}
-	}
-	void OnDynamicCameraChanged()
-	{
-		if(Config()->m_ClDynamicCamera)
-		{
-			Config()->m_ClDynamicCamera = 1;
-			Config()->m_ClMouseMaxDistanceDynamic = 1000;
-			Config()->m_ClMouseFollowfactor = 60;
-			Config()->m_ClMouseDeadzone = 300;
-		}
-		else
-		{
-			Config()->m_ClDynamicCamera = 0;
-			Config()->m_ClMouseMaxDistanceStatic = 400;
-		}
-	}
-
-	void ActionNavigateBrowserPage() { SetMenuPage(Config()->m_UiBrowserPage); }
-	void ActionShowQuitPopup() { m_Popup = POPUP_QUIT; }
-	void ActionToggleSidebar() { m_SidebarActive ^= 1; }
-	void ActionEnterEditor() { Config()->m_ClEditor = 1; Input()->MouseModeRelative(); }
-	void ActionDisconnect();
-	void ActionRefreshBrowser();
-	void ActionConnectSelected();
-	void ActionToggleRecord();
-	void ActionJoinSpectators();
-	void ActionJoinRed();
-	void ActionJoinBlue();
-	void ActionJoin() { ActionJoinRed(); }
-
-	bool PrepareDeleteDemo(char *pMsgBuf, int MsgBufSize);
-	bool PrepareRemoveFilter(char *pMsgBuf, int MsgBufSize);
-	bool PrepareRemoveFriend(char *pMsgBuf, int MsgBufSize);
 	static int DemolistFetchCallback(const CFsFileInfo* pFileInfo, int IsDir, int StorageType, void *pUser);
 
 	// friends
@@ -652,6 +397,9 @@ private:
 		int NumPlayers() const;
 		const CServerInfo* SortedGet(int Index) const;
 		const void* ID(int Index) const;
+
+		void GetDisplayCounts(int Index, int *pNum, int *pMax) const;
+		bool IsClientHidden(int Index, int ClientIndex) const;
 
 		void Reset();
 		void GetFilter(CServerFilterInfo *pFilterInfo) const;
@@ -796,13 +544,13 @@ private:
 	void RenderServerbrowserInfoTab(CUIRect View);
 	void RenderServerbrowserFriendList(CUIRect View);
 	void RenderDetailInfo(CUIRect View, const CServerInfo *pInfo, const vec4 &TextColor, const vec4 &TextOutlineColor);
-	void RenderDetailScoreboard(CUIRect View, const CServerInfo *pInfo, int RowCount, const vec4 &TextColor, const vec4 &TextOutlineColor);
-	void RenderServerbrowserServerDetail(CUIRect View, const CServerInfo *pInfo);
+	void RenderDetailScoreboard(CUIRect View, const CServerInfo *pInfo, const CBrowserFilter *pFilter, int ServerIndex, int RowCount, const vec4 &TextColor, const vec4 &TextOutlineColor);
+	void RenderServerbrowserServerDetail(CUIRect View, const CServerInfo *pInfo, const CBrowserFilter *pFilter, int ServerIndex);
 	void RenderServerbrowserBottomBox(CUIRect View);
 	void RenderFilterHeader(CUIRect View, int FilterIndex);
 	void PopupConfirmRemoveFilter();
 	void PopupConfirmCountryFilter();
-	int DoBrowserEntry(const void *pID, CUIRect View, const CServerInfo *pEntry, const CBrowserFilter *pFilter, bool Selected, bool ShowServerInfo, CScrollRegion *pScroll = 0);
+	int DoBrowserEntry(const void *pID, CUIRect View, const CServerInfo *pEntry, const CBrowserFilter *pFilter, int ServerIndex, bool Selected, bool ShowServerInfo, CScrollRegion *pScroll = 0);
 	void RenderServerbrowser(CUIRect MainView);
 	static void ConchainConnect(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
 	static void ConchainFriendlistUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
