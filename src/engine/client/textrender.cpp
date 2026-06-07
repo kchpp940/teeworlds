@@ -751,7 +751,7 @@ void CTextRender::LoadFonts(IStorage *pStorage, IConsole *pConsole)
 	const json_value *pJsonData = JsonParser.ParseFile("fonts/index.json", pStorage);
 	if(pJsonData == 0)
 	{
-		pConsole->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "textrender", JsonParser.Error());
+		dbg_msg("textrender", "FATAL ERROR: failed to load 'fonts/index.json': %s. Font rendering will be unavailable. Ensure the data/ directory is complete and the build copy_data target ran successfully.", JsonParser.Error());
 		return;
 	}
 
@@ -769,9 +769,14 @@ void CTextRender::LoadFonts(IStorage *pStorage, IConsole *pConsole)
 				if(LoadFontCollection(aFontName, m_apFontData[i], FileSize))
 				{
 					char aBuf[256];
-					str_format(aBuf, sizeof(aBuf), "failed to load font. filename='%s'", aFontName);
+					str_format(aBuf, sizeof(aBuf), "ERROR: failed to load font. filename='%s'", aFontName);
 					pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "textrender", aBuf);
+					dbg_msg("textrender", "ERROR: failed to load font '%s'", aFontName);
 				}
+			}
+			else
+			{
+				dbg_msg("textrender", "ERROR: failed to read font file '%s' — check that the data/ directory is complete.", aFontName);
 			}
 		}
 	}

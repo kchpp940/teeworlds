@@ -20,16 +20,37 @@ static int LoadSoundsThread(void *pUser)
 {
 	CUserData *pData = static_cast<CUserData *>(pUser);
 
+	int TotalSounds = 0;
+	int FailedSounds = 0;
+
 	for(int s = 0; s < g_pData->m_NumSounds; s++)
 	{
 		for(int i = 0; i < g_pData->m_aSounds[s].m_NumSounds; i++)
 		{
+			TotalSounds++;
 			ISound::CSampleHandle Id = pData->m_pGameClient->Sound()->LoadWV(g_pData->m_aSounds[s].m_aSounds[i].m_pFilename);
 			g_pData->m_aSounds[s].m_aSounds[i].m_Id = Id;
+			if(!Id.IsValid())
+			{
+				FailedSounds++;
+				if(FailedSounds <= 10)
+				{
+					dbg_msg("sounds", "ERROR: failed to load sound '%s'", g_pData->m_aSounds[s].m_aSounds[i].m_pFilename);
+				}
+			}
 		}
 
 		if(pData->m_Render)
 			pData->m_pGameClient->m_pMenus->RenderLoading(1);
+	}
+
+	if(FailedSounds > 0)
+	{
+		dbg_msg("sounds", "WARNING: %d/%d sounds failed to load. Audio will be incomplete. Check that the data/audio/ directory is complete.", FailedSounds, TotalSounds);
+	}
+	else if(TotalSounds > 0)
+	{
+		dbg_msg("sounds", "resource check: all %d sounds loaded successfully", TotalSounds);
 	}
 
 	return 0;

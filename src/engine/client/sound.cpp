@@ -389,7 +389,7 @@ ISound::CSampleHandle CSound::LoadWV(const char *pFilename)
 	s_File = m_pStorage->OpenFile(pFilename, IOFLAG_READ, IStorage::TYPE_ALL);
 	if(!s_File)
 	{
-		dbg_msg("sound/wv", "failed to open file. filename='%s'", pFilename);
+		dbg_msg("sound/wv", "ERROR: failed to open file. filename='%s' — check that the data/ directory is complete and the build copy_data target ran successfully.", pFilename);
 		lock_unlock(m_SoundLock);
 		return CSampleHandle();
 	}
@@ -431,7 +431,7 @@ ISound::CSampleHandle CSound::LoadWV(const char *pFilename)
 
 		if(pSample->m_Channels > 2)
 		{
-			dbg_msg("sound/wv", "file is not mono or stereo. filename='%s'", pFilename);
+			dbg_msg("sound/wv", "ERROR: file is not mono or stereo. filename='%s'", pFilename);
 			io_close(s_File);
 			s_File = 0;
 			lock_unlock(m_SoundLock);
@@ -447,7 +447,7 @@ ISound::CSampleHandle CSound::LoadWV(const char *pFilename)
 
 		if(BitsPerSample != 16)
 		{
-			dbg_msg("sound/wv", "bps is %d, not 16, filname='%s'", BitsPerSample, pFilename);
+			dbg_msg("sound/wv", "ERROR: bps is %d, not 16, filename='%s'", BitsPerSample, pFilename);
 			io_close(s_File);
 			s_File = 0;
 			lock_unlock(m_SoundLock);
@@ -473,7 +473,11 @@ ISound::CSampleHandle CSound::LoadWV(const char *pFilename)
 	}
 	else
 	{
-		dbg_msg("sound/wv", "failed to open %s: %s", pFilename, aError);
+		dbg_msg("sound/wv", "ERROR: failed to decode %s: %s", pFilename, aError);
+		io_close(s_File);
+		s_File = NULL;
+		lock_unlock(m_SoundLock);
+		return CSampleHandle();
 	}
 
 	io_close(s_File);

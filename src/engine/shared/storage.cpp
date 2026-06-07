@@ -43,7 +43,11 @@ public:
 		FindAppDir(ppArguments[0]);
 
 		// get datadir
-		FindDataDir();
+		if(!FindDataDir())
+		{
+			dbg_msg("storage", "FATAL ERROR: no data directory found. The 'data/' directory must be located next to the executable, in the current working directory, or in a system installation path (e.g. /usr/share/teeworlds/data). If you are building from source, ensure the CMake build succeeded and the copy_data target ran properly.");
+			return 1;
+		}
 
 		// get currentdir
 		fs_getcwd(m_aCurrentDir, sizeof(m_aCurrentDir));
@@ -228,20 +232,20 @@ public:
 		}
 	}
 
-	void FindDataDir()
+	bool FindDataDir()
 	{
 		// 1) use data-dir in PWD if present
 		if(fs_is_dir("data/mapres"))
 		{
 			str_copy(m_aDataDir, "data", sizeof(m_aDataDir));
-			return;
+			return true;
 		}
 
 		// 2) use compiled-in data-dir if present
 		if(fs_is_dir(DATA_DIR "/mapres"))
 		{
 			str_copy(m_aDataDir, DATA_DIR, sizeof(m_aDataDir));
-			return;
+			return true;
 		}
 
 		// 3) check for usable path in argv[0]
@@ -252,7 +256,7 @@ public:
 			str_append(aBaseDir, "/data/mapres", sizeof(aBaseDir));
 
 			if(fs_is_dir(aBaseDir))
-				return;
+				return true;
 			else
 				m_aDataDir[0] = 0;
 		}
@@ -279,14 +283,14 @@ public:
 				if(fs_is_dir(aBuf))
 				{
 					str_copy(m_aDataDir, aDirs[i], sizeof(m_aDataDir));
-					return;
+					return true;
 				}
 			}
 		}
 	#endif
 
 		// no data-dir found
-		dbg_msg("storage", "warning no data directory found");
+		return false;
 	}
 
 	virtual void ListDirectory(int Type, const char *pPath, FS_LISTDIR_CALLBACK pfnCallback, void *pUser)
