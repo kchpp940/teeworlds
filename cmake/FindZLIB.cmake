@@ -35,15 +35,13 @@ if(NOT ZLIB_FOUND)
     zutil.c
     zutil.h
   )
-  add_library(zlib EXCLUDE_FROM_ALL OBJECT ${ZLIB_SRC})
+  tw_add_library(zlib EXCLUDE_FROM_ALL PROFILE DEP TYPE OBJECT ${ZLIB_SRC})
   set(ZLIB_INCLUDEDIR ${ZLIB_SRC_DIR})
   target_include_directories(zlib PRIVATE ${ZLIB_INCLUDEDIR})
 
   set(ZLIB_DEP $<TARGET_OBJECTS:zlib>)
   set(ZLIB_INCLUDE_DIRS ${ZLIB_INCLUDEDIR})
   set(ZLIB_LIBRARIES)
-
-  list(APPEND TARGETS_DEP zlib)
 
   include(FindPackageHandleStandardArgs)
   find_package_handle_standard_args(ZLIB DEFAULT_MSG ZLIB_INCLUDEDIR)

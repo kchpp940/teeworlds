@@ -611,6 +611,118 @@ function(tw_apply_install_rules)
 endfunction()
 
 ########################################################################
+# PROFILE REGISTRY MUTATION HELPERS
+########################################################################
+
+function(tw_profile_append_field PROFILE_NAME FIELD)
+  string(TOUPPER ${PROFILE_NAME} NAME_UPPER)
+  if(NOT TW_PROFILE_${NAME_UPPER}_DEFINED)
+    message(FATAL_ERROR "tw_profile_append_field: Unknown profile '${PROFILE_NAME}'. Registered: ${TW_PROFILES}")
+  endif()
+  tw_get_profile_field(EXISTING ${NAME_UPPER} ${FIELD})
+  list(APPEND EXISTING ${ARGN})
+  set(TW_PROFILE_${NAME_UPPER}_${FIELD} ${EXISTING} CACHE INTERNAL "" FORCE)
+endfunction()
+
+function(tw_profile_append_link_libraries PROFILE_NAME)
+  tw_profile_append_field(${PROFILE_NAME} LINK_LIBRARIES ${ARGN})
+endfunction()
+
+function(tw_profile_append_include_directories PROFILE_NAME)
+  tw_profile_append_field(${PROFILE_NAME} INCLUDE_DIRECTORIES ${ARGN})
+endfunction()
+
+function(tw_profile_append_compile_definitions PROFILE_NAME)
+  tw_profile_append_field(${PROFILE_NAME} COMPILE_DEFINITIONS ${ARGN})
+endfunction()
+
+########################################################################
+# AGGREGATE TARGETS (auto-generated from profile registry)
+########################################################################
+
+function(tw_setup_aggregate_targets)
+  if(NOT TARGET everything)
+    add_custom_target(everything DEPENDS ${TARGETS_OWN})
+  endif()
+  if(TOOLS AND NOT TARGET tools)
+    set(_TOOL_TARGETS)
+    foreach(_T ${TARGETS_OWN})
+      if(TARGET ${_T})
+        get_target_property(_PROF ${_T} TW_PROFILE)
+        if(_PROF AND _PROF STREQUAL "TOOL")
+          get_target_property(_TYPE ${_T} TYPE)
+          if(_TYPE STREQUAL "EXECUTABLE")
+            list(APPEND _TOOL_TARGETS ${_T})
+          endif()
+        endif()
+      endif()
+    endforeach()
+    if(_TOOL_TARGETS)
+      add_custom_target(tools DEPENDS ${_TOOL_TARGETS})
+    endif()
+  endif()
+endfunction()
+
+########################################################################
+# CONFIGURE-TIME VALIDATION (fail fast if profile contract is broken)
+########################################################################
+
+function(tw_validate_build)
+  set(_ERRORS "")
+
+  get_property(_BUILTIN_TARGETS GLOBAL PROPERTY TW_TARGETS)
+  get_property(_ALL_TARGETS DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY BUILDSYSTEM_TARGETS)
+
+  foreach(_T ${_ALL_TARGETS})
+    get_target_property(_TYPE ${_T} TYPE)
+    if(_TYPE STREQUAL "EXECUTABLE" OR _TYPE STREQUAL "STATIC_LIBRARY" OR _TYPE STREQUAL "SHARED_LIBRARY" OR _TYPE STREQUAL "MODULE_LIBRARY" OR _TYPE STREQUAL "OBJECT_LIBRARY")
+      list(FIND _BUILTIN_TARGETS ${_T} _IDX)
+      if(_IDX LESS 0)
+        get_target_property(_PROF ${_T} TW_PROFILE)
+        if(NOT _PROF)
+          list(APPEND _ERRORS "Target '${_T}' (${_TYPE}) was not created via tw_add_* and has no TW_PROFILE set. Use tw_add_library/tw_add_executable or call tw_apply_profile() explicitly.")
+        endif()
+      endif()
+    endif()
+  endforeach()
+
+  foreach(_T ${TW_INSTALL_TARGETS})
+    if(TARGET ${_T})
+      get_target_property(_PROF ${_T} TW_PROFILE)
+      if(_PROF)
+        tw_get_profile_field(_COMP ${_PROF} INSTALL_COMPONENT)
+        tw_get_profile_field(_DEST ${_PROF} INSTALL_DESTINATION)
+        if(NOT _COMP)
+          list(APPEND _ERRORS "Install target '${_T}' (profile ${_PROF}) has INSTALL_DESTINATION='${_DEST}' but no INSTALL_COMPONENT set.")
+        endif()
+        if(NOT _DEST)
+          list(APPEND _ERRORS "Install target '${_T}' (profile ${_PROF}) has INSTALL_COMPONENT='${_COMP}' but no INSTALL_DESTINATION set.")
+        endif()
+      endif()
+    endif()
+  endforeach()
+
+  foreach(_PROF ${TW_PROFILES})
+    tw_get_profile_field(_INCS ${_PROF} INCLUDE_DIRECTORIES)
+    tw_get_profile_field(_LIBS ${_PROF} LINK_LIBRARIES)
+    tw_get_profile_field(_DEFS ${_PROF} COMPILE_DEFINITIONS)
+    if(NOT _INCS AND NOT _LIBS AND NOT _DEFS)
+      get_property(_HAS_PARENT GLOBAL PROPERTY TW_PROFILE_${_PROF}_INHERITS)
+      if(NOT _HAS_PARENT AND NOT _PROF STREQUAL "DEP")
+        message(STATUS "tw_validate_build: profile '${_PROF}' has no fields (ok if purely structural).")
+      endif()
+    endif()
+  endforeach()
+
+  if(_ERRORS)
+    list(LENGTH _ERRORS _N)
+    message(FATAL_ERROR "tw_validate_build: found ${_N} validation error(s):\n  - ${_ERRORS}")
+  endif()
+
+  message(STATUS "tw_validate_build: OK — ${TW_PROFILES} profiles registered, ${TARGETS_OWN} own targets, ${TARGETS_DEP} dep targets, ${TW_INSTALL_TARGETS} install targets.")
+endfunction()
+
+########################################################################
 # CLIENT-SPECIFIC DYNAMIC CHECKS (Wavpack API detection)
 ########################################################################
 

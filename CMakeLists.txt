@@ -1506,10 +1506,10 @@ if(SERVER)
   )
 
   if(TARGET_OS AND TARGET_OS STREQUAL "mac")
+    tw_define_profile(SERVER_LAUNCHER INHERITS SERVER LINK_LIBRARIES ${COCOA})
     set(SERVER_LAUNCHER_SRC src/macoslaunch/server.mm)
     set(TARGET_SERVER_LAUNCHER ${TARGET_SERVER}-Launcher)
-    tw_add_executable(${TARGET_SERVER_LAUNCHER} PROFILE SERVER ${SERVER_LAUNCHER_SRC})
-    target_link_libraries(${TARGET_SERVER_LAUNCHER} PRIVATE ${COCOA})
+    tw_add_executable(${TARGET_SERVER_LAUNCHER} PROFILE SERVER_LAUNCHER ${SERVER_LAUNCHER_SRC})
   endif()
 endif()
 
@@ -1531,7 +1531,6 @@ tw_add_executable(${TARGET_MASTERSRV} EXCLUDE_FROM_ALL PROFILE TOOL
 tw_add_executable(${TARGET_VERSIONSRV} EXCLUDE_FROM_ALL PROFILE TOOL
   ${VERSIONSRV_SRC} $<TARGET_OBJECTS:engine-shared> ${DEPS})
 
-set(TARGETS_TOOLS)
 set_src(TOOLS GLOB src/tools
   crapnet.cpp
   fake_server.cpp
@@ -1549,14 +1548,12 @@ foreach(ABS_T ${TOOLS})
       ${EXTRA_TOOL_SRC}
       $<TARGET_OBJECTS:engine-shared>
     )
-    list(APPEND TARGETS_TOOLS ${TOOL})
   endif()
 endforeach()
 
-add_custom_target(tools DEPENDS ${TARGETS_TOOLS})
-add_custom_target(everything DEPENDS ${TARGETS_OWN})
-
 endif()
+
+tw_setup_aggregate_targets()
 
 ########################################################################
 # TESTS
@@ -1873,3 +1870,5 @@ macro(source_group_tree dir)
   endforeach()
 endmacro()
 source_group_tree(src)
+
+tw_validate_build()
