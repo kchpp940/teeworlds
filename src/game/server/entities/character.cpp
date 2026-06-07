@@ -69,6 +69,12 @@ bool CCharacter::Spawn(CPlayer *pPlayer, vec2 Pos)
 	m_Core.Reset();
 	m_Core.Init(&GameWorld()->m_Core, GameServer()->Collision());
 	m_Core.m_Pos = m_Pos;
+	m_Core.m_ActiveWeapon = WEAPON_GUN;
+	m_Core.m_QueuedWeapon = -1;
+	for(int i = 0; i < NUM_WEAPONS; i++)
+		m_Core.m_aWeaponsGot[i] = false;
+	m_Core.m_aWeaponsGot[WEAPON_HAMMER] = true;
+	m_Core.m_aWeaponsGot[WEAPON_GUN] = true;
 	GameWorld()->m_Core.m_apCharacters[m_pPlayer->GetCID()] = &m_Core;
 
 	m_ReckoningTick = 0;
@@ -97,6 +103,8 @@ void CCharacter::SetWeapon(int W)
 	m_LastWeapon = m_ActiveWeapon;
 	m_QueuedWeapon = -1;
 	m_ActiveWeapon = W;
+	m_Core.m_ActiveWeapon = W;
+	m_Core.m_QueuedWeapon = -1;
 	GameServer()->CreateSound(m_Pos, SOUND_WEAPON_SWITCH);
 
 	if(m_ActiveWeapon < 0 || m_ActiveWeapon >= NUM_WEAPONS)
@@ -206,43 +214,13 @@ void CCharacter::DoWeaponSwitch()
 
 void CCharacter::HandleWeaponSwitch()
 {
-	int WantedWeapon = m_ActiveWeapon;
-	if(m_QueuedWeapon != -1)
-		WantedWeapon = m_QueuedWeapon;
-
-	// select Weapon
-	int Next = CountInput(m_LatestPrevInput.m_NextWeapon, m_LatestInput.m_NextWeapon).m_Presses;
-	int Prev = CountInput(m_LatestPrevInput.m_PrevWeapon, m_LatestInput.m_PrevWeapon).m_Presses;
-
-	if(Next < 128) // make sure we only try sane stuff
+	m_Core.m_InputState.FromPlayerInput(&m_LatestInput);
+	m_Core.ApplyWeaponSwitchRequests();
+	if(m_Core.m_QueuedWeapon != -1)
 	{
-		while(Next) // Next Weapon selection
-		{
-			WantedWeapon = (WantedWeapon+1)%NUM_WEAPONS;
-			if(m_aWeapons[WantedWeapon].m_Got)
-				Next--;
-		}
+		m_QueuedWeapon = m_Core.m_QueuedWeapon;
+		DoWeaponSwitch();
 	}
-
-	if(Prev < 128) // make sure we only try sane stuff
-	{
-		while(Prev) // Prev Weapon selection
-		{
-			WantedWeapon = (WantedWeapon-1)<0?NUM_WEAPONS-1:WantedWeapon-1;
-			if(m_aWeapons[WantedWeapon].m_Got)
-				Prev--;
-		}
-	}
-
-	// Direct Weapon selection
-	if(m_LatestInput.m_WantedWeapon)
-		WantedWeapon = m_Input.m_WantedWeapon-1;
-
-	// check for insane values
-	if(WantedWeapon >= 0 && WantedWeapon < NUM_WEAPONS && WantedWeapon != m_ActiveWeapon && m_aWeapons[WantedWeapon].m_Got)
-		m_QueuedWeapon = WantedWeapon;
-
-	DoWeaponSwitch();
 }
 
 void CCharacter::FireWeapon()
@@ -454,6 +432,7 @@ bool CCharacter::GiveWeapon(int Weapon, int Ammo)
 	{
 		m_aWeapons[Weapon].m_Got = true;
 		m_aWeapons[Weapon].m_Ammo = minimum(g_pData->m_Weapons.m_aId[Weapon].m_Maxammo, Ammo);
+		m_Core.m_aWeaponsGot[Weapon] = true;
 		return true;
 	}
 	return false;
@@ -463,10 +442,12 @@ void CCharacter::GiveNinja()
 {
 	m_Ninja.m_ActivationTick = Server()->Tick();
 	m_aWeapons[WEAPON_NINJA].m_Got = true;
+	m_Core.m_aWeaponsGot[WEAPON_NINJA] = true;
 	m_aWeapons[WEAPON_NINJA].m_Ammo = -1;
 	if(m_ActiveWeapon != WEAPON_NINJA)
 		m_LastWeapon = m_ActiveWeapon;
 	m_ActiveWeapon = WEAPON_NINJA;
+	m_Core.m_ActiveWeapon = WEAPON_NINJA;
 
 	GameServer()->CreateSound(m_Pos, SOUND_PICKUP_NINJA);
 }
@@ -540,7 +521,6 @@ void CCharacter::Tick()
 void CCharacter::TickDefered()
 {
 	static const vec2 ColBox(CCharacterCore::PHYS_SIZE, CCharacterCore::PHYS_SIZE);
-	// advance the dummy
 	{
 		CWorldCore TempWorld;
 		m_ReckoningCore.Init(&TempWorld, GameServer()->Collision());
@@ -549,13 +529,10 @@ void CCharacter::TickDefered()
 		m_ReckoningCore.Quantize();
 	}
 
-	// apply drag velocity when the player is not firing ninja
-	// and set it back to 0 for the next tick
 	if(m_ActiveWeapon != WEAPON_NINJA || m_Ninja.m_CurrentMoveTime < 0)
 		m_Core.AddDragVelocity();
 	m_Core.ResetDragVelocity();
 
-	//lastsentcore
 	vec2 StartPos = m_Core.m_Pos;
 	vec2 StartVel = m_Core.m_Vel;
 	bool StuckBefore = GameServer()->Collision()->TestBox(m_Core.m_Pos, ColBox);
@@ -569,7 +546,6 @@ void CCharacter::TickDefered()
 
 	if(!StuckBefore && (StuckAfterMove || StuckAfterQuant))
 	{
-		// Hackish solution to get rid of strict-aliasing warning
 		union
 		{
 			float f;
@@ -602,20 +578,17 @@ void CCharacter::TickDefered()
 	}
 	else if(m_Core.m_Death)
 	{
-		// handle death-tiles
 		Die(m_pPlayer->GetCID(), WEAPON_WORLD);
 	}
 
-	// update the m_SendCore if needed
 	{
 		CNetObj_Character Predicted;
 		CNetObj_Character Current;
 		mem_zero(&Predicted, sizeof(Predicted));
 		mem_zero(&Current, sizeof(Current));
-		m_ReckoningCore.Write(&Predicted);
-		m_Core.Write(&Current);
+		m_ReckoningCore.WriteSnapshot(&Predicted);
+		m_Core.WriteSnapshot(&Current);
 
-		// only allow dead reckoning for a top of 3 seconds
 		if(m_ReckoningTick+Server()->TickSpeed()*3 < Server()->Tick() || mem_comp(&Predicted, &Current, sizeof(CNetObj_Character)) != 0)
 		{
 			m_ReckoningTick = Server()->Tick();
@@ -656,7 +629,7 @@ bool CCharacter::IncreaseArmor(int Amount)
 
 void CCharacter::Die(int Killer, int Weapon)
 {
-	// we got to wait 0.5 secs before respawning
+	m_Core.Kill();
 	m_Alive = false;
 	m_pPlayer->m_RespawnTick = Server()->Tick()+Server()->TickSpeed()/2;
 	int ModeSpecial = GameServer()->m_pController->OnCharacterDeath(this, (Killer < 0) ? 0 : GameServer()->m_apPlayers[Killer], Weapon);
@@ -812,21 +785,17 @@ void CCharacter::Snap(int SnappingClient)
 	if(!pCharacter)
 		return;
 
-	// write down the m_Core
 	if(!m_ReckoningTick || GameWorld()->m_Paused)
 	{
-		// no dead reckoning when paused because the client doesn't know
-		// how far to perform the reckoning
 		pCharacter->m_Tick = 0;
-		m_Core.Write(pCharacter);
+		m_Core.WriteSnapshot(pCharacter);
 	}
 	else
 	{
 		pCharacter->m_Tick = m_ReckoningTick;
-		m_SendCore.Write(pCharacter);
+		m_SendCore.WriteSnapshot(pCharacter);
 	}
 
-	// set emote
 	if(m_EmoteStop < Server()->Tick())
 	{
 		SetEmote(EMOTE_NORMAL, -1);

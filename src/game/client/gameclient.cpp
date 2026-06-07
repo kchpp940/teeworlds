@@ -1520,13 +1520,6 @@ void CGameClient::OnDemoRecSnap()
 
 void CGameClient::OnPredict()
 {
-	// Here we predict player movements. For the local player, we also predict
-	// the result of the local input to make the game appear responsive even at
-	// high latencies. For non-local players, we predict what will happen if
-	// they don't apply any inputs. In both cases we are extrapolating
-	// (predicting) what will happen between `GameTick` and `PredGameTick`.
-
-	// don't predict anything if we are paused or round/game is over
 	if(IsWorldPaused())
 	{
 		for(int i = 0; i < MAX_CLIENTS; i++)
@@ -1534,20 +1527,16 @@ void CGameClient::OnPredict()
 			if(!m_Snap.m_aCharacters[i].m_Active)
 				continue;
 
-			// instead of predicting into the future, just use the current and
-			// previous snapshots that we already have
-			m_aClients[i].m_PrevPredicted.Read(&m_Snap.m_aCharacters[i].m_Prev);
-			m_aClients[i].m_Predicted.Read(&m_Snap.m_aCharacters[i].m_Cur);
+			m_aClients[i].m_PrevPredicted.ApplySnapshot(&m_Snap.m_aCharacters[i].m_Prev);
+			m_aClients[i].m_Predicted.ApplySnapshot(&m_Snap.m_aCharacters[i].m_Cur);
 		}
 
 		return;
 	}
 
-	// repredict character
 	CWorldCore World;
 	World.m_Tuning = m_Tuning;
 
-	// search for players
 	for(int i = 0; i < MAX_CLIENTS; i++)
 	{
 		if(!m_Snap.m_aCharacters[i].m_Active)
@@ -1555,23 +1544,18 @@ void CGameClient::OnPredict()
 
 		m_aClients[i].m_Predicted.Init(&World, Collision());
 		World.m_apCharacters[i] = &m_aClients[i].m_Predicted;
-		m_aClients[i].m_Predicted.Read(&m_Snap.m_aCharacters[i].m_Cur);
+		m_aClients[i].m_Predicted.ApplySnapshot(&m_Snap.m_aCharacters[i].m_Cur);
 	}
 
-	// predict
 	for(int Tick = Client()->GameTick() + 1;
 		Tick <= Client()->PredGameTick();
 		Tick++)
 	{
-		// first calculate where everyone should move
 		for(int c = 0; c < MAX_CLIENTS; c++)
 		{
 			if(!World.m_apCharacters[c])
 				continue;
 
-			// Before running the last iteration, store our predictions. We use
-			// `Prev` because we haven't run the last iteration yet, so our
-			// data is from the previous tick.
 			if(Tick == Client()->PredGameTick())
 				m_aClients[c].m_PrevPredicted = *World.m_apCharacters[c];
 
@@ -1579,7 +1563,6 @@ void CGameClient::OnPredict()
 
 			if(m_LocalClientID == c)
 			{
-				// apply player input
 				const int *pInput = Client()->GetInput(Tick);
 				if(pInput)
 					World.m_apCharacters[c]->m_Input = *((const CNetObj_PlayerInput*)pInput);
@@ -1588,12 +1571,10 @@ void CGameClient::OnPredict()
 			}
 			else
 			{
-				// don't apply inputs for non-local players
 				World.m_apCharacters[c]->Tick(false);
 			}
 		}
 
-		// move all players and quantize their data
 		for(int c = 0; c < MAX_CLIENTS; c++)
 		{
 			if (!World.m_apCharacters[c])
@@ -1605,17 +1586,10 @@ void CGameClient::OnPredict()
 			World.m_apCharacters[c]->Quantize();
 		}
 
-		// check if we want to trigger effects
 		if(Tick > m_LastNewPredictedTick)
 		{
 			m_LastNewPredictedTick = Tick;
 
-			// Only trigger effects for the local character here. Effects for
-			// non-local characters are triggered in `OnNewSnapshot`. Since we
-			// don't apply any inputs to non-local characters, it's not
-			// necessary to trigger events for them here. Also, our predictions
-			// for other players will often be wrong, so it's safer not to
-			// trigger events here.
 			if(m_LocalClientID != -1 && World.m_apCharacters[m_LocalClientID])
 			{
 				ProcessTriggeredEvents(
@@ -1656,8 +1630,8 @@ void CGameClient::UsePredictedChar(
 	int ClientID
 	) const
 {
-	m_aClients[ClientID].m_PrevPredicted.Write(pPrevChar);
-	m_aClients[ClientID].m_Predicted.Write(pPlayerChar);
+	m_aClients[ClientID].m_PrevPredicted.WriteSnapshot(pPrevChar);
+	m_aClients[ClientID].m_Predicted.WriteSnapshot(pPlayerChar);
 	*IntraTick = Client()->PredIntraGameTick();
 }
 

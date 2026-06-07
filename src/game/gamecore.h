@@ -214,7 +214,11 @@ public:
 	int m_ActiveWeapon;
 	int m_QueuedWeapon;
 	bool m_Alive;
+	bool m_Frozen;
 	int m_TriggeredEvents;
+	bool m_aWeaponsGot[NUM_WEAPONS];
+	int m_PrevInputNextWeapon;
+	int m_PrevInputPrevWeapon;
 
 	void Reset()
 	{
@@ -230,10 +234,14 @@ public:
 		m_Direction = 0;
 		m_Angle = 0;
 		m_Death = false;
-		m_ActiveWeapon = 0;
+		m_ActiveWeapon = WEAPON_GUN;
 		m_QueuedWeapon = -1;
 		m_Alive = true;
+		m_Frozen = false;
 		m_TriggeredEvents = 0;
+		mem_zero(m_aWeaponsGot, sizeof(m_aWeaponsGot));
+		m_PrevInputNextWeapon = 0;
+		m_PrevInputPrevWeapon = 0;
 	}
 };
 
@@ -268,7 +276,21 @@ public:
 
 	void AdvanceSnapshot(CNetObj_Character *pCharacter, int TargetTick) const;
 
+	void ApplyWeaponSwitchRequests(CMovementState *pState, const CMovementInput *pInput) const;
+	void SetFrozen(CMovementState *pState, bool Frozen) const;
+	void Kill(CMovementState *pState) const;
+
+	void AdvanceTick(CMovementState *pState, const CMovementInput *pInput, bool UseInput) const;
+	void ApplySnapshot(CMovementState *pState, const CNetObj_CharacterCore *pObjCore) const;
+	void WriteSnapshot(const CMovementState *pState, CNetObj_CharacterCore *pObjCore) const;
+
 private:
+	struct CInputCount
+	{
+		int m_Presses;
+		int m_Releases;
+	};
+	CInputCount CountInputState(int Prev, int Cur) const;
 	void TickHook(CMovementState *pState, const CMovementInput *pInput, bool UseInput, vec2 TargetDirection) const;
 	void TickJump(CMovementState *pState, const CMovementInput *pInput, bool UseInput, bool Grounded) const;
 	void TickVelocity(CMovementState *pState, bool Grounded) const;
@@ -310,8 +332,13 @@ public:
 	int &m_Direction;
 	int &m_Angle;
 	bool &m_Death;
+	int &m_ActiveWeapon;
+	int &m_QueuedWeapon;
+	bool &m_Alive;
+	bool &m_Frozen;
 	CNetObj_PlayerInput m_Input;
 	int &m_TriggeredEvents;
+	bool (&m_aWeaponsGot)[NUM_WEAPONS];
 
 	CCharacterCore()
 		: m_pWorld(0), m_pCollision(0),
@@ -321,7 +348,10 @@ public:
 		m_HookTick(m_State.m_HookTick), m_HookState(m_State.m_HookState),
 		m_HookedPlayer(m_State.m_HookedPlayer), m_Jumped(m_State.m_Jumped),
 		m_Direction(m_State.m_Direction), m_Angle(m_State.m_Angle),
-		m_Death(m_State.m_Death), m_TriggeredEvents(m_State.m_TriggeredEvents)
+		m_Death(m_State.m_Death), m_ActiveWeapon(m_State.m_ActiveWeapon),
+		m_QueuedWeapon(m_State.m_QueuedWeapon), m_Alive(m_State.m_Alive),
+		m_Frozen(m_State.m_Frozen), m_TriggeredEvents(m_State.m_TriggeredEvents),
+		m_aWeaponsGot(m_State.m_aWeaponsGot)
 	{
 		mem_zero(&m_Input, sizeof(m_Input));
 	}
@@ -335,7 +365,10 @@ public:
 		m_HookTick(m_State.m_HookTick), m_HookState(m_State.m_HookState),
 		m_HookedPlayer(m_State.m_HookedPlayer), m_Jumped(m_State.m_Jumped),
 		m_Direction(m_State.m_Direction), m_Angle(m_State.m_Angle),
-		m_Death(m_State.m_Death), m_TriggeredEvents(m_State.m_TriggeredEvents)
+		m_Death(m_State.m_Death), m_ActiveWeapon(m_State.m_ActiveWeapon),
+		m_QueuedWeapon(m_State.m_QueuedWeapon), m_Alive(m_State.m_Alive),
+		m_Frozen(m_State.m_Frozen), m_TriggeredEvents(m_State.m_TriggeredEvents),
+		m_aWeaponsGot(m_State.m_aWeaponsGot)
 	{
 		m_Update.Init(m_pWorld, m_pCollision, m_pWorld ? &m_pWorld->m_Tuning : 0);
 		mem_copy(&m_Input, &Other.m_Input, sizeof(m_Input));
@@ -366,6 +399,13 @@ public:
 	void Read(const CNetObj_CharacterCore *pObjCore);
 	void Write(CNetObj_CharacterCore *pObjCore) const;
 	void Quantize();
+
+	void ApplyWeaponSwitchRequests();
+	void AdvanceTick(bool UseInput);
+	void ApplySnapshot(const CNetObj_CharacterCore *pObjCore);
+	void WriteSnapshot(CNetObj_CharacterCore *pObjCore) const;
+	void SetFrozen(bool Frozen);
+	void Kill();
 };
 
 #endif
