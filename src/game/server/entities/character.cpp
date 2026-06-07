@@ -67,12 +67,13 @@ bool CCharacter::Spawn(CPlayer *pPlayer, vec2 Pos)
 	m_Core.Reset();
 	m_Core.Init(&GameWorld()->m_Core, GameServer()->Collision());
 	m_Core.m_Pos = m_Pos;
-	m_Core.m_ActiveWeapon = WEAPON_GUN;
-	m_Core.m_QueuedWeapon = -1;
+	m_Alive = true;
+	m_ActiveWeapon = WEAPON_GUN;
+	m_QueuedWeapon = -1;
 	for(int i = 0; i < NUM_WEAPONS; i++)
-		m_Core.m_aWeaponsGot[i] = false;
-	m_Core.m_aWeaponsGot[WEAPON_HAMMER] = true;
-	m_Core.m_aWeaponsGot[WEAPON_GUN] = true;
+		m_aWeapons[i].m_Got = false;
+	m_aWeapons[WEAPON_HAMMER].m_Got = true;
+	m_aWeapons[WEAPON_GUN].m_Got = true;
 	GameWorld()->m_Core.m_apCharacters[m_pPlayer->GetCID()] = &m_Core;
 
 	m_ReckoningTick = 0;
@@ -80,7 +81,6 @@ bool CCharacter::Spawn(CPlayer *pPlayer, vec2 Pos)
 	mem_zero(&m_ReckoningCore, sizeof(m_ReckoningCore));
 
 	GameWorld()->InsertEntity(this);
-	m_Core.m_Alive = true;
 
 	GameServer()->m_pController->OnCharacterSpawn(this);
 
@@ -90,22 +90,22 @@ bool CCharacter::Spawn(CPlayer *pPlayer, vec2 Pos)
 void CCharacter::Destroy()
 {
 	GameWorld()->m_Core.m_apCharacters[m_pPlayer->GetCID()] = 0;
-	m_Core.m_Alive = false;
+	m_Alive = false;
 }
 
 void CCharacter::SetWeapon(int W)
 {
-	if(W == m_Core.m_ActiveWeapon)
+	if(W == m_ActiveWeapon)
 		return;
 
-	m_LastWeapon = m_Core.m_ActiveWeapon;
-	m_Core.m_ActiveWeapon = W;
-	m_Core.m_QueuedWeapon = -1;
+	m_LastWeapon = m_ActiveWeapon;
+	m_ActiveWeapon = W;
+	m_QueuedWeapon = -1;
 	GameServer()->CreateSound(m_Pos, SOUND_WEAPON_SWITCH);
 
-	if(m_Core.m_ActiveWeapon < 0 || m_Core.m_ActiveWeapon >= NUM_WEAPONS)
-		m_Core.m_ActiveWeapon = 0;
-	m_aWeapons[m_Core.m_ActiveWeapon].m_AmmoRegenStart = -1;
+	if(m_ActiveWeapon < 0 || m_ActiveWeapon >= NUM_WEAPONS)
+		m_ActiveWeapon = 0;
+	m_aWeapons[m_ActiveWeapon].m_AmmoRegenStart = -1;
 }
 
 bool CCharacter::IsGrounded()
@@ -120,21 +120,21 @@ bool CCharacter::IsGrounded()
 
 void CCharacter::HandleNinja()
 {
-	if(m_Core.m_ActiveWeapon != WEAPON_NINJA)
+	if(m_ActiveWeapon != WEAPON_NINJA)
 		return;
 
 	if((Server()->Tick() - m_Ninja.m_ActivationTick) > (g_pData->m_Weapons.m_Ninja.m_Duration * Server()->TickSpeed() / 1000))
 	{
 		// time's up, return
 		m_aWeapons[WEAPON_NINJA].m_Got = false;
-		m_Core.m_ActiveWeapon = m_LastWeapon;
+		m_ActiveWeapon = m_LastWeapon;
 
 		// reset velocity and current move
 		if(m_Ninja.m_CurrentMoveTime > 0)
 			m_Core.m_Vel = m_Ninja.m_ActivationDir*m_Ninja.m_OldVelAmount;
 		m_Ninja.m_CurrentMoveTime = -1;
 
-		SetWeapon(m_Core.m_ActiveWeapon);
+		SetWeapon(m_ActiveWeapon);
 		return;
 	}
 
@@ -201,19 +201,25 @@ void CCharacter::HandleNinja()
 void CCharacter::DoWeaponSwitch()
 {
 	// make sure we can switch
-	if(m_ReloadTimer != 0 || m_Core.m_QueuedWeapon == -1 || m_aWeapons[WEAPON_NINJA].m_Got)
+	if(m_ReloadTimer != 0 || m_QueuedWeapon == -1 || m_aWeapons[WEAPON_NINJA].m_Got)
 		return;
 
 	// switch Weapon
-	SetWeapon(m_Core.m_QueuedWeapon);
+	SetWeapon(m_QueuedWeapon);
 }
 
 void CCharacter::HandleWeaponSwitch()
 {
-	m_Core.m_InputState.FromPlayerInput(&m_LatestInput);
-	m_Core.ApplyWeaponSwitchRequests();
-	if(m_Core.m_QueuedWeapon != -1)
+	CMovementInput Input;
+	Input.FromPlayerInput(&m_LatestInput);
+	bool aWeaponsGot[NUM_WEAPONS];
+	for(int i = 0; i < NUM_WEAPONS; i++)
+		aWeaponsGot[i] = m_aWeapons[i].m_Got;
+	CMovementUpdate Update;
+	int Requested = Update.ComputeRequestedWeapon(&Input, m_ActiveWeapon, aWeaponsGot);
+	if(Requested != -1)
 	{
+		m_QueuedWeapon = Requested;
 		DoWeaponSwitch();
 	}
 }
@@ -227,7 +233,7 @@ void CCharacter::FireWeapon()
 	vec2 Direction = normalize(vec2(m_LatestInput.m_TargetX, m_LatestInput.m_TargetY));
 
 	bool FullAuto = false;
-	if(m_Core.m_ActiveWeapon == WEAPON_GRENADE || m_Core.m_ActiveWeapon == WEAPON_SHOTGUN || m_Core.m_ActiveWeapon == WEAPON_LASER)
+	if(m_ActiveWeapon == WEAPON_GRENADE || m_ActiveWeapon == WEAPON_SHOTGUN || m_ActiveWeapon == WEAPON_LASER)
 		FullAuto = true;
 
 
@@ -236,14 +242,14 @@ void CCharacter::FireWeapon()
 	if(CountInput(m_LatestPrevInput.m_Fire, m_LatestInput.m_Fire).m_Presses)
 		WillFire = true;
 
-	if(FullAuto && (m_LatestInput.m_Fire&1) && m_aWeapons[m_Core.m_ActiveWeapon].m_Ammo)
+	if(FullAuto && (m_LatestInput.m_Fire&1) && m_aWeapons[m_ActiveWeapon].m_Ammo)
 		WillFire = true;
 
 	if(!WillFire)
 		return;
 
 	// check for ammo
-	if(!m_aWeapons[m_Core.m_ActiveWeapon].m_Ammo)
+	if(!m_aWeapons[m_ActiveWeapon].m_Ammo)
 	{
 		// 125ms is a magical limit of how fast a human can click
 		m_ReloadTimer = 125 * Server()->TickSpeed() / 1000;
@@ -260,11 +266,11 @@ void CCharacter::FireWeapon()
 	if(Config()->m_Debug)
 	{
 		char aBuf[256];
-		str_format(aBuf, sizeof(aBuf), "shot player='%d:%s' team=%d weapon=%d", m_pPlayer->GetCID(), Server()->ClientName(m_pPlayer->GetCID()), m_pPlayer->GetTeam(), m_Core.m_ActiveWeapon);
+		str_format(aBuf, sizeof(aBuf), "shot player='%d:%s' team=%d weapon=%d", m_pPlayer->GetCID(), Server()->ClientName(m_pPlayer->GetCID()), m_pPlayer->GetTeam(), m_ActiveWeapon);
 		GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
 	}
 
-	switch(m_Core.m_ActiveWeapon)
+	switch(m_ActiveWeapon)
 	{
 		case WEAPON_HAMMER:
 		{
@@ -295,7 +301,7 @@ void CCharacter::FireWeapon()
 					Dir = vec2(0.f, -1.f);
 
 				pTarget->TakeDamage(vec2(0.f, -1.f) + normalize(Dir + vec2(0.f, -1.1f)) * 10.0f, Dir*-1, g_pData->m_Weapons.m_Hammer.m_pBase->m_Damage,
-					m_pPlayer->GetCID(), m_Core.m_ActiveWeapon);
+					m_pPlayer->GetCID(), m_ActiveWeapon);
 				Hits++;
 			}
 
@@ -372,11 +378,11 @@ void CCharacter::FireWeapon()
 
 	m_AttackTick = Server()->Tick();
 
-	if(m_aWeapons[m_Core.m_ActiveWeapon].m_Ammo > 0) // -1 == unlimited
-		m_aWeapons[m_Core.m_ActiveWeapon].m_Ammo--;
+	if(m_aWeapons[m_ActiveWeapon].m_Ammo > 0) // -1 == unlimited
+		m_aWeapons[m_ActiveWeapon].m_Ammo--;
 
 	if(!m_ReloadTimer)
-		m_ReloadTimer = g_pData->m_Weapons.m_aId[m_Core.m_ActiveWeapon].m_Firedelay * Server()->TickSpeed() / 1000;
+		m_ReloadTimer = g_pData->m_Weapons.m_aId[m_ActiveWeapon].m_Firedelay * Server()->TickSpeed() / 1000;
 }
 
 void CCharacter::HandleWeapons()
@@ -395,26 +401,26 @@ void CCharacter::HandleWeapons()
 	FireWeapon();
 
 	// ammo regen
-	int AmmoRegenTime = g_pData->m_Weapons.m_aId[m_Core.m_ActiveWeapon].m_Ammoregentime;
-	if(AmmoRegenTime && m_aWeapons[m_Core.m_ActiveWeapon].m_Ammo >= 0)
+	int AmmoRegenTime = g_pData->m_Weapons.m_aId[m_ActiveWeapon].m_Ammoregentime;
+	if(AmmoRegenTime && m_aWeapons[m_ActiveWeapon].m_Ammo >= 0)
 	{
 		// If equipped and not active, regen ammo?
 		if(m_ReloadTimer <= 0)
 		{
-			if(m_aWeapons[m_Core.m_ActiveWeapon].m_AmmoRegenStart < 0)
-				m_aWeapons[m_Core.m_ActiveWeapon].m_AmmoRegenStart = Server()->Tick();
+			if(m_aWeapons[m_ActiveWeapon].m_AmmoRegenStart < 0)
+				m_aWeapons[m_ActiveWeapon].m_AmmoRegenStart = Server()->Tick();
 
-			if((Server()->Tick() - m_aWeapons[m_Core.m_ActiveWeapon].m_AmmoRegenStart) >= AmmoRegenTime * Server()->TickSpeed() / 1000)
+			if((Server()->Tick() - m_aWeapons[m_ActiveWeapon].m_AmmoRegenStart) >= AmmoRegenTime * Server()->TickSpeed() / 1000)
 			{
 				// Add some ammo
-				m_aWeapons[m_Core.m_ActiveWeapon].m_Ammo = minimum(m_aWeapons[m_Core.m_ActiveWeapon].m_Ammo + 1,
-					g_pData->m_Weapons.m_aId[m_Core.m_ActiveWeapon].m_Maxammo);
-				m_aWeapons[m_Core.m_ActiveWeapon].m_AmmoRegenStart = -1;
+				m_aWeapons[m_ActiveWeapon].m_Ammo = minimum(m_aWeapons[m_ActiveWeapon].m_Ammo + 1,
+					g_pData->m_Weapons.m_aId[m_ActiveWeapon].m_Maxammo);
+				m_aWeapons[m_ActiveWeapon].m_AmmoRegenStart = -1;
 			}
 		}
 		else
 		{
-			m_aWeapons[m_Core.m_ActiveWeapon].m_AmmoRegenStart = -1;
+			m_aWeapons[m_ActiveWeapon].m_AmmoRegenStart = -1;
 		}
 	}
 
@@ -427,7 +433,6 @@ bool CCharacter::GiveWeapon(int Weapon, int Ammo)
 	{
 		m_aWeapons[Weapon].m_Got = true;
 		m_aWeapons[Weapon].m_Ammo = minimum(g_pData->m_Weapons.m_aId[Weapon].m_Maxammo, Ammo);
-		m_Core.m_aWeaponsGot[Weapon] = true;
 		return true;
 	}
 	return false;
@@ -437,11 +442,10 @@ void CCharacter::GiveNinja()
 {
 	m_Ninja.m_ActivationTick = Server()->Tick();
 	m_aWeapons[WEAPON_NINJA].m_Got = true;
-	m_Core.m_aWeaponsGot[WEAPON_NINJA] = true;
 	m_aWeapons[WEAPON_NINJA].m_Ammo = -1;
-	if(m_Core.m_ActiveWeapon != WEAPON_NINJA)
-		m_LastWeapon = m_Core.m_ActiveWeapon;
-	m_Core.m_ActiveWeapon = WEAPON_NINJA;
+	if(m_ActiveWeapon != WEAPON_NINJA)
+		m_LastWeapon = m_ActiveWeapon;
+	m_ActiveWeapon = WEAPON_NINJA;
 
 	GameServer()->CreateSound(m_Pos, SOUND_PICKUP_NINJA);
 }
@@ -523,7 +527,7 @@ void CCharacter::TickDefered()
 		m_ReckoningCore.Quantize();
 	}
 
-	if(m_Core.m_ActiveWeapon != WEAPON_NINJA || m_Ninja.m_CurrentMoveTime < 0)
+	if(m_ActiveWeapon != WEAPON_NINJA || m_Ninja.m_CurrentMoveTime < 0)
 		m_Core.AddDragVelocity();
 	m_Core.ResetDragVelocity();
 
@@ -599,8 +603,8 @@ void CCharacter::TickPaused()
 	++m_ReckoningTick;
 	if(m_LastAction != -1)
 		++m_LastAction;
-	if(m_aWeapons[m_Core.m_ActiveWeapon].m_AmmoRegenStart > -1)
-		++m_aWeapons[m_Core.m_ActiveWeapon].m_AmmoRegenStart;
+	if(m_aWeapons[m_ActiveWeapon].m_AmmoRegenStart > -1)
+		++m_aWeapons[m_ActiveWeapon].m_AmmoRegenStart;
 	if(m_EmoteStop > -1)
 		++m_EmoteStop;
 }
@@ -623,8 +627,7 @@ bool CCharacter::IncreaseArmor(int Amount)
 
 void CCharacter::Die(int Killer, int Weapon)
 {
-	m_Core.Kill();
-	m_Core.m_Alive = false;
+	m_Alive = false;
 	m_pPlayer->m_RespawnTick = Server()->Tick()+Server()->TickSpeed()/2;
 	int ModeSpecial = GameServer()->m_pController->OnCharacterDeath(this, (Killer < 0) ? 0 : GameServer()->m_apPlayers[Killer], Weapon);
 
@@ -802,7 +805,7 @@ void CCharacter::Snap(int SnappingClient)
 	pCharacter->m_Armor = 0;
 	pCharacter->m_TriggeredEvents = m_TriggeredEvents;
 
-	pCharacter->m_Weapon = m_Core.m_ActiveWeapon;
+	pCharacter->m_Weapon = m_ActiveWeapon;
 	pCharacter->m_AttackTick = m_AttackTick;
 
 	pCharacter->m_Direction = m_Input.m_Direction;
@@ -812,10 +815,10 @@ void CCharacter::Snap(int SnappingClient)
 	{
 		pCharacter->m_Health = m_Health;
 		pCharacter->m_Armor = m_Armor;
-		if(m_Core.m_ActiveWeapon == WEAPON_NINJA)
+		if(m_ActiveWeapon == WEAPON_NINJA)
 			pCharacter->m_AmmoCount = m_Ninja.m_ActivationTick + g_pData->m_Weapons.m_Ninja.m_Duration * Server()->TickSpeed() / 1000;
-		else if(m_aWeapons[m_Core.m_ActiveWeapon].m_Ammo > 0)
-			pCharacter->m_AmmoCount = m_aWeapons[m_Core.m_ActiveWeapon].m_Ammo;
+		else if(m_aWeapons[m_ActiveWeapon].m_Ammo > 0)
+			pCharacter->m_AmmoCount = m_aWeapons[m_ActiveWeapon].m_Ammo;
 	}
 
 	if(pCharacter->m_Emote == EMOTE_NORMAL)

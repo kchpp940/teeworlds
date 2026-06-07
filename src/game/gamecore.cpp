@@ -519,21 +519,19 @@ CMovementUpdate::CInputCount CMovementUpdate::CountInputState(int Prev, int Cur)
 	return c;
 }
 
-void CMovementUpdate::ApplyWeaponSwitchRequests(CMovementState *pState, const CMovementInput *pInput) const
+int CMovementUpdate::ComputeRequestedWeapon(CMovementInput *pInput, int CurrentWeapon, const bool *pWeaponsGot) const
 {
-	int WantedWeapon = pState->m_ActiveWeapon;
-	if(pState->m_QueuedWeapon != -1)
-		WantedWeapon = pState->m_QueuedWeapon;
+	int WantedWeapon = CurrentWeapon;
 
-	int Next = CountInputState(pState->m_PrevInputNextWeapon, pInput->m_NextWeapon).m_Presses;
-	int Prev = CountInputState(pState->m_PrevInputPrevWeapon, pInput->m_PrevWeapon).m_Presses;
+	int Next = CountInputState(pInput->m_PrevInputNextWeapon, pInput->m_NextWeapon).m_Presses;
+	int Prev = CountInputState(pInput->m_PrevInputPrevWeapon, pInput->m_PrevWeapon).m_Presses;
 
 	if(Next < 128)
 	{
 		while(Next)
 		{
 			WantedWeapon = (WantedWeapon+1)%NUM_WEAPONS;
-			if(pState->m_aWeaponsGot[WantedWeapon])
+			if(pWeaponsGot[WantedWeapon])
 				Next--;
 		}
 	}
@@ -543,7 +541,7 @@ void CMovementUpdate::ApplyWeaponSwitchRequests(CMovementState *pState, const CM
 		while(Prev)
 		{
 			WantedWeapon = (WantedWeapon-1)<0?NUM_WEAPONS-1:WantedWeapon-1;
-			if(pState->m_aWeaponsGot[WantedWeapon])
+			if(pWeaponsGot[WantedWeapon])
 				Prev--;
 		}
 	}
@@ -551,35 +549,16 @@ void CMovementUpdate::ApplyWeaponSwitchRequests(CMovementState *pState, const CM
 	if(pInput->m_WantedWeapon)
 		WantedWeapon = pInput->m_WantedWeapon-1;
 
-	if(WantedWeapon >= 0 && WantedWeapon < NUM_WEAPONS && WantedWeapon != pState->m_ActiveWeapon && pState->m_aWeaponsGot[WantedWeapon])
-		pState->m_QueuedWeapon = WantedWeapon;
+	pInput->m_PrevInputNextWeapon = pInput->m_NextWeapon;
+	pInput->m_PrevInputPrevWeapon = pInput->m_PrevWeapon;
 
-	pState->m_PrevInputNextWeapon = pInput->m_NextWeapon;
-	pState->m_PrevInputPrevWeapon = pInput->m_PrevWeapon;
-}
-
-void CMovementUpdate::SetFrozen(CMovementState *pState, bool Frozen) const
-{
-	pState->m_Frozen = Frozen;
-	if(Frozen)
-	{
-		pState->m_Vel = vec2(0, 0);
-		pState->m_HookState = HOOK_IDLE;
-		pState->m_HookedPlayer = -1;
-	}
-}
-
-void CMovementUpdate::Kill(CMovementState *pState) const
-{
-	pState->m_Alive = false;
-	pState->m_Death = true;
+	if(WantedWeapon >= 0 && WantedWeapon < NUM_WEAPONS && WantedWeapon != CurrentWeapon && pWeaponsGot[WantedWeapon])
+		return WantedWeapon;
+	return -1;
 }
 
 void CMovementUpdate::AdvanceTick(CMovementState *pState, const CMovementInput *pInput, bool UseInput) const
 {
-	if(!pState->m_Alive || pState->m_Frozen)
-		return;
-
 	Tick(pState, pInput, UseInput);
 	AddDragVelocity(pState);
 	ResetDragVelocity(pState);
@@ -597,9 +576,10 @@ void CMovementUpdate::WriteSnapshot(const CMovementState *pState, CNetObj_Charac
 	WriteState(pState, pObjCore);
 }
 
-void CCharacterCore::ApplyWeaponSwitchRequests()
+int CCharacterCore::ComputeRequestedWeapon(int CurrentWeapon, const bool *pWeaponsGot)
 {
-	m_Update.ApplyWeaponSwitchRequests(&m_State, &m_InputState);
+	m_InputState.FromPlayerInput(&m_Input);
+	return m_Update.ComputeRequestedWeapon(&m_InputState, CurrentWeapon, pWeaponsGot);
 }
 
 void CCharacterCore::AdvanceTick(bool UseInput)
@@ -617,14 +597,4 @@ void CCharacterCore::ApplySnapshot(const CNetObj_CharacterCore *pObjCore)
 void CCharacterCore::WriteSnapshot(CNetObj_CharacterCore *pObjCore) const
 {
 	m_Update.WriteSnapshot(&m_State, pObjCore);
-}
-
-void CCharacterCore::SetFrozen(bool Frozen)
-{
-	m_Update.SetFrozen(&m_State, Frozen);
-}
-
-void CCharacterCore::Kill()
-{
-	m_Update.Kill(&m_State);
 }
