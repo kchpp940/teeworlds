@@ -39,8 +39,7 @@ if(NOT WAVPACK_FOUND)
     words.c
     wputils.c
   )
-  add_library(wavpack EXCLUDE_FROM_ALL OBJECT ${WAVPACK_SRC})
-  tw_apply_profile(wavpack PROFILE DEP)
+  tw_add_library(wavpack EXCLUDE_FROM_ALL PROFILE DEP TYPE OBJECT ${WAVPACK_SRC})
 
   list(APPEND TARGETS_DEP wavpack)
 

@@ -1,26 +1,51 @@
 cmake_minimum_required(VERSION 3.12)
 
 ########################################################################
-# BUILD PROFILES - Unified build configuration system
+# BUILD PROFILES - Table-driven, declarative build configuration system
 #
-# This module centralizes all build configuration:
-#   - Build options (client/server/tools/headless)
-#   - Build types (debug/release/relwithdebinfo)
-#   - Compile definitions (assert/log/debug macros)
-#   - Compile options (warnings, optimizations, security flags)
-#   - Output directories
-#   - Target profiles (dep/own/client/server/tool/test)
+# Design:
+#   1. Profiles are DECLARED once with tw_define_profile()
+#   2. Targets are CREATED with tw_add_executable() / tw_add_library()
+#      specifying a single PROFILE name
+#   3. All compile flags, includes, defines, link options, install rules,
+#      output directories are applied AUTOMATICALLY from the profile table
+#
+# Profile hierarchy:
+#   DEP      (3rd-party bundled libraries)
+#   OWN      (our own code, inherits base)
+#     ├─ CLIENT
+#     ├─ SERVER
+#     ├─ TOOL
+#     └─ TEST
 #
 # Usage:
-#   tw_apply_profile(target PROFILE <DEP|OWN|CLIENT|SERVER|TOOL|TEST>)
+#   # Declare a new profile (only once)
+#   tw_define_profile(MYTOOL
+#     INHERITS OWN
+#     COMPILE_DEFINITIONS MY_TOOL=1
+#     INCLUDE_DIRECTORIES src/mytool
+#     INSTALL_DESTINATION bin
+#     INSTALL_COMPONENT mytool
+#   )
 #
-# Note: find_package calls must complete BEFORE tw_apply_profile() is
-# called on any target, since the function reads *_FOUND, *_LIBRARIES,
-# *_INCLUDE_DIRS variables directly.
+#   # Create a target with that profile (one call does everything)
+#   tw_add_executable(mytool PROFILE MYTOOL src/mytool/main.cpp)
 ########################################################################
 
+include(CheckCCompilerFlag)
+include(CheckCXXCompilerFlag)
+include(CheckSymbolExists)
+
 ########################################################################
-# DECLARE BUILD OPTIONS
+# GLOBAL STATE
+########################################################################
+
+set(TW_PROFILES "" CACHE INTERNAL "List of all registered profiles")
+set(TW_TARGETS "" CACHE INTERNAL "List of all targets created via tw_add_*")
+set(TW_TARGET_PROFILE "" CACHE INTERNAL "Map: target -> profile name")
+
+########################################################################
+# BUILD OPTIONS (centralized)
 ########################################################################
 
 set(AUTO_DEPENDENCIES_DEFAULT OFF)
@@ -38,7 +63,7 @@ option(PREFER_BUNDLED_LIBS "Prefer bundled libraries over system libraries" ${AU
 option(DEV "Don't generate stuff necessary for packaging" OFF)
 
 ########################################################################
-# BUILD TYPE SETUP
+# BUILD TYPE
 ########################################################################
 
 set(OpenGL_GL_PREFERENCE GLVND)
@@ -54,11 +79,8 @@ endif()
 set(DBG $<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>)
 
 ########################################################################
-# COMPILER FLAG DETECTION
+# COMPILER FLAG DETECTION (done once at module load)
 ########################################################################
-
-include(CheckCCompilerFlag)
-include(CheckCXXCompilerFlag)
 
 function(add_c_compiler_flag_if_supported VARIABLE FLAG)
   if(ARGC GREATER 2)
@@ -84,23 +106,19 @@ set(TW_FLAGS_DEP)
 if(NOT MSVC)
   add_c_compiler_flag_if_supported(TW_FLAGS_ALL -fstack-protector-all)
   add_c_compiler_flag_if_supported(TW_FLAGS_ALL -fcf-protection)
-
   if(TARGET_ARCH STREQUAL "x86")
     add_c_compiler_flag_if_supported(TW_FLAGS_ALL -ffloat-store)
   endif()
-
   if(TARGET_ARCH STREQUAL "x86")
     check_c_source_compiles("#include <immintrin.h>\nint main() { _mm_pause(); return 0; }" MM_PAUSE_WORKS_WITHOUT_MSSE2)
     if(NOT MM_PAUSE_WORKS_WITHOUT_MSSE2)
       add_c_compiler_flag_if_supported(TW_FLAGS_ALL -msse2)
     endif()
   endif()
-
   if(TARGET_OS STREQUAL "mac")
     add_c_compiler_flag_if_supported(TW_FLAGS_ALL -stdlib=libc++)
     add_c_compiler_flag_if_supported(TW_FLAGS_ALL -mmacosx-version-min=10.7)
   endif()
-
   add_c_compiler_flag_if_supported(TW_FLAGS_OWN -Wall)
   if(CMAKE_VERSION VERSION_GREATER 3.3 OR CMAKE_VERSION VERSION_EQUAL 3.3)
     add_c_compiler_flag_if_supported(TW_FLAGS_OWN
@@ -120,7 +138,7 @@ if(NOT MSVC)
 endif()
 
 ########################################################################
-# OUTPUT DIRECTORY CONFIGURATION
+# OUTPUT DIRECTORIES (applied globally, once)
 ########################################################################
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR})
@@ -135,78 +153,208 @@ foreach(CONFIG ${CMAKE_CONFIGURATION_TYPES})
 endforeach()
 
 ########################################################################
-# VALID PROFILES
+# PROFILE REGISTRY: tw_define_profile + tw_get_profile_field
 ########################################################################
 
-set(TW_PROFILES DEP OWN CLIENT SERVER TOOL TEST)
+function(tw_define_profile NAME)
+  cmake_parse_arguments(PROF "" "INHERITS;INSTALL_DESTINATION;INSTALL_COMPONENT;MSVC_RUNTIME"
+    "COMPILE_DEFINITIONS;INCLUDE_DIRECTORIES;COMPILE_OPTIONS;LINK_OPTIONS;LINK_LIBRARIES;MSVC_OPTIONS" ${ARGN})
 
-########################################################################
-# DYNAMIC DEFINES (resolved after find_package, via tw_apply_dynamic_defines)
-########################################################################
+  string(TOUPPER ${NAME} NAME_UPPER)
+  list(APPEND TW_PROFILES ${NAME_UPPER})
+  set(TW_PROFILES ${TW_PROFILES} CACHE INTERNAL "List of all registered profiles")
 
-set(TW_EXTRA_OWN_INCLUDES)
-set(TW_EXTRA_OWN_DEFINES)
+  foreach(FIELD INHERITS COMPILE_DEFINITIONS INCLUDE_DIRECTORIES COMPILE_OPTIONS LINK_OPTIONS LINK_LIBRARIES MSVC_OPTIONS INSTALL_DESTINATION INSTALL_COMPONENT MSVC_RUNTIME)
+    if(PROF_${FIELD})
+      set(TW_PROFILE_${NAME_UPPER}_${FIELD} ${PROF_${FIELD}} CACHE INTERNAL "Profile ${NAME_UPPER} field ${FIELD}")
+    endif()
+  endforeach()
 
-function(tw_apply_dynamic_defines)
-  if(CRYPTO_FOUND)
-    set(TW_EXTRA_OWN_DEFINES CONF_OPENSSL PARENT_SCOPE)
-    set(TW_EXTRA_OWN_INCLUDES ${CRYPTO_INCLUDE_DIRS} PARENT_SCOPE)
+  set(TW_PROFILE_${NAME_UPPER}_DEFINED TRUE CACHE INTERNAL "Profile ${NAME_UPPER} is registered")
+endfunction()
+
+function(tw_get_profile_field OUTPUT_VAR PROFILE_NAME FIELD)
+  string(TOUPPER ${PROFILE_NAME} NAME_UPPER)
+  if(NOT TW_PROFILE_${NAME_UPPER}_DEFINED)
+    message(FATAL_ERROR "tw_get_profile_field: Unknown profile '${PROFILE_NAME}'. Registered: ${TW_PROFILES}")
   endif()
+
+  set(RESULT "")
+  set(INHERITS ${TW_PROFILE_${NAME_UPPER}_INHERITS})
+  if(INHERITS)
+    tw_get_profile_field(PARENT_RESULT ${INHERITS} ${FIELD})
+    list(APPEND RESULT ${PARENT_RESULT})
+  endif()
+
+  if(TW_PROFILE_${NAME_UPPER}_${FIELD})
+    list(APPEND RESULT ${TW_PROFILE_${NAME_UPPER}_${FIELD}})
+  endif()
+
+  set(${OUTPUT_VAR} ${RESULT} PARENT_SCOPE)
 endfunction()
 
 ########################################################################
-# MAIN PROFILE APPLICATION FUNCTION
+# PROFILE DEFINITIONS (the single source of truth)
 ########################################################################
 
-function(tw_apply_profile TARGET)
-  cmake_parse_arguments(PROFILE "" "PROFILE" "" ${ARGN})
+# ---- Base profile: DEP (3rd-party bundled libraries) ----
+tw_define_profile(DEP
+  COMPILE_OPTIONS ${TW_FLAGS_ALL} ${TW_FLAGS_DEP}
+  MSVC_RUNTIME "MultiThreaded$<${DBG}:Debug>"
+  MSVC_OPTIONS /MP /EHsc /GS /utf-8 /w /W0
+)
 
-  if(NOT PROFILE_PROFILE)
-    message(FATAL_ERROR "tw_apply_profile: PROFILE argument is required (one of ${TW_PROFILES})")
-  endif()
-
-  string(TOUPPER ${PROFILE_PROFILE} PROFILE_UPPER)
-  if(NOT PROFILE_UPPER IN_LIST TW_PROFILES)
-    message(FATAL_ERROR "tw_apply_profile: Unknown profile '${PROFILE_PROFILE}'. Valid profiles: ${TW_PROFILES}")
-  endif()
-
-  set(IS_DEP FALSE)
-  if(PROFILE_UPPER STREQUAL "DEP")
-    set(IS_DEP TRUE)
-  endif()
-
-  set(OWN_BASE_INCLUDES
-    ${PROJECT_BINARY_DIR}/src
-    src
-    ${ZLIB_INCLUDE_DIRS}
-    ${CURL_INCLUDE_DIRS}
-    ${TW_EXTRA_OWN_INCLUDES}
-  )
-
-  set(OWN_BASE_DEFINES
+# ---- Base profile: OWN (our own code) ----
+tw_define_profile(OWN
+  INHERITS DEP
+  COMPILE_DEFINITIONS
     $<$<CONFIG:Debug>:CONF_DEBUG>
     _GLIBCXX_ASSERTIONS
-    ${TW_EXTRA_OWN_DEFINES}
-  )
+    $<$<NOT:$<CONFIG:Debug>>:_FORTIFY_SOURCE=2>
+  COMPILE_OPTIONS ${TW_FLAGS_OWN}
+  MSVC_OPTIONS /W3 /wd4244 /wd4267 /wd4800 /wd4996
+  INCLUDE_DIRECTORIES
+    ${PROJECT_BINARY_DIR}/src
+    src
+)
 
-  if(TW_DEFINE_FORTIFY_SOURCE)
-    list(APPEND OWN_BASE_DEFINES $<$<NOT:$<CONFIG:Debug>>:_FORTIFY_SOURCE=2>)
-  endif()
+# ---- CLIENT profile ----
+tw_define_profile(CLIENT
+  INHERITS OWN
+  INSTALL_DESTINATION bin
+  INSTALL_COMPONENT client
+)
 
-  if(TARGET_OS STREQUAL "windows")
-    list(APPEND OWN_BASE_DEFINES
-      _WIN32_WINNT=0x0501
-      UNICODE
-      _UNICODE
-    )
+# ---- SERVER profile ----
+tw_define_profile(SERVER
+  INHERITS OWN
+  INSTALL_DESTINATION bin
+  INSTALL_COMPONENT server
+)
+
+# ---- TOOL profile (mastersrv, versionsrv, map tools) ----
+tw_define_profile(TOOL
+  INHERITS OWN
+  INSTALL_DESTINATION bin
+  INSTALL_COMPONENT tools
+)
+
+# ---- TEST profile ----
+tw_define_profile(TEST
+  INHERITS OWN
+)
+
+########################################################################
+# DYNAMIC DEFINES (resolved after find_package)
+########################################################################
+
+function(tw_apply_dynamic_defines)
+  if(CRYPTO_FOUND)
+    # Append to OWN profile's compile definitions & includes
+    tw_get_profile_field(EXISTING_DEFS OWN COMPILE_DEFINITIONS)
+    list(APPEND EXISTING_DEFS CONF_OPENSSL)
+    set(TW_PROFILE_OWN_COMPILE_DEFINITIONS ${EXISTING_DEFS} CACHE INTERNAL "" FORCE)
+
+    tw_get_profile_field(EXISTING_INCS OWN INCLUDE_DIRECTORIES)
+    list(APPEND EXISTING_INCS ${CRYPTO_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS} ${CURL_INCLUDE_DIRS})
+    set(TW_PROFILE_OWN_INCLUDE_DIRECTORIES ${EXISTING_INCS} CACHE INTERNAL "" FORCE)
+  else()
+    tw_get_profile_field(EXISTING_INCS OWN INCLUDE_DIRECTORIES)
+    list(APPEND EXISTING_INCS ${ZLIB_INCLUDE_DIRS} ${CURL_INCLUDE_DIRS})
+    set(TW_PROFILE_OWN_INCLUDE_DIRECTORIES ${EXISTING_INCS} CACHE INTERNAL "" FORCE)
   endif()
 
   if(HEADLESS_CLIENT)
-    list(APPEND OWN_BASE_DEFINES CONF_HEADLESS_CLIENT)
+    tw_get_profile_field(EXISTING_DEFS OWN COMPILE_DEFINITIONS)
+    list(APPEND EXISTING_DEFS CONF_HEADLESS_CLIENT)
+    set(TW_PROFILE_OWN_COMPILE_DEFINITIONS ${EXISTING_DEFS} CACHE INTERNAL "" FORCE)
+  endif()
+
+  if(TARGET_OS STREQUAL "windows")
+    tw_get_profile_field(EXISTING_DEFS OWN COMPILE_DEFINITIONS)
+    list(APPEND EXISTING_DEFS _WIN32_WINNT=0x0501 UNICODE _UNICODE)
+    set(TW_PROFILE_OWN_COMPILE_DEFINITIONS ${EXISTING_DEFS} CACHE INTERNAL "" FORCE)
+  endif()
+
+  if(NOT TW_DEFINE_FORTIFY_SOURCE)
+    tw_get_profile_field(EXISTING_DEFS OWN COMPILE_DEFINITIONS)
+    list(REMOVE_ITEM EXISTING_DEFS "$<$<NOT:$<CONFIG:Debug>>:_FORTIFY_SOURCE=2>")
+    set(TW_PROFILE_OWN_COMPILE_DEFINITIONS ${EXISTING_DEFS} CACHE INTERNAL "" FORCE)
+  endif()
+endfunction()
+
+function(tw_apply_profile_client_libs)
+  tw_get_profile_field(EXISTING_INCS CLIENT INCLUDE_DIRECTORIES)
+  if(FREETYPE_INCLUDE_DIRS)
+    list(APPEND EXISTING_INCS ${FREETYPE_INCLUDE_DIRS})
+  endif()
+  if(PNGLITE_INCLUDE_DIRS)
+    list(APPEND EXISTING_INCS ${PNGLITE_INCLUDE_DIRS})
+  endif()
+  if(SDL2_INCLUDE_DIRS)
+    list(APPEND EXISTING_INCS ${SDL2_INCLUDE_DIRS})
+  endif()
+  if(WAVPACK_INCLUDE_DIRS)
+    list(APPEND EXISTING_INCS ${WAVPACK_INCLUDE_DIRS})
+  endif()
+  if(PLATFORM_CLIENT_INCLUDE_DIRS)
+    list(APPEND EXISTING_INCS ${PLATFORM_CLIENT_INCLUDE_DIRS})
+  endif()
+  set(TW_PROFILE_CLIENT_INCLUDE_DIRECTORIES ${EXISTING_INCS} CACHE INTERNAL "" FORCE)
+endfunction()
+
+function(tw_apply_profile_test_libs)
+  tw_get_profile_field(EXISTING_INCS TEST INCLUDE_DIRECTORIES)
+  if(GTEST_INCLUDE_DIRS)
+    list(APPEND EXISTING_INCS ${GTEST_INCLUDE_DIRS})
+  endif()
+  set(TW_PROFILE_TEST_INCLUDE_DIRECTORIES ${EXISTING_INCS} CACHE INTERNAL "" FORCE)
+endfunction()
+
+########################################################################
+# TARGET CREATION: tw_add_executable / tw_add_library
+########################################################################
+
+function(tw_apply_profile TARGET)
+  cmake_parse_arguments(ARG "" "PROFILE" "" ${ARGN})
+  if(NOT ARG_PROFILE)
+    message(FATAL_ERROR "tw_apply_profile: PROFILE is required. Registered: ${TW_PROFILES}")
+  endif()
+  string(TOUPPER ${ARG_PROFILE} PROFILE_UPPER)
+  if(NOT TW_PROFILE_${PROFILE_UPPER}_DEFINED)
+    message(FATAL_ERROR "tw_apply_profile: Unknown profile '${ARG_PROFILE}'. Registered: ${TW_PROFILES}")
+  endif()
+
+  set_property(GLOBAL APPEND PROPERTY TW_TARGETS ${TARGET})
+  set_property(TARGET ${TARGET} PROPERTY TW_PROFILE ${PROFILE_UPPER})
+
+  tw_get_profile_field(DEFS ${PROFILE_UPPER} COMPILE_DEFINITIONS)
+  tw_get_profile_field(INCS ${PROFILE_UPPER} INCLUDE_DIRECTORIES)
+  tw_get_profile_field(OPTS ${PROFILE_UPPER} COMPILE_OPTIONS)
+  tw_get_profile_field(MSVC_OPTS ${PROFILE_UPPER} MSVC_OPTIONS)
+  tw_get_profile_field(MSVC_RT ${PROFILE_UPPER} MSVC_RUNTIME)
+  tw_get_profile_field(LINK_OPTS ${PROFILE_UPPER} LINK_OPTIONS)
+  tw_get_profile_field(LINK_LIBS ${PROFILE_UPPER} LINK_LIBRARIES)
+
+  if(MSVC)
+    if(MSVC_RT)
+      if(POLICY CMP0091)
+        set_property(TARGET ${TARGET} PROPERTY MSVC_RUNTIME_LIBRARY "${MSVC_RT}")
+      else()
+        target_compile_options(${TARGET} PRIVATE $<$<NOT:${DBG}>:/MT> $<${DBG}:/MTd>)
+      endif()
+    endif()
+    if(MSVC_OPTS)
+      target_compile_options(${TARGET} PRIVATE ${MSVC_OPTS})
+    endif()
+  else()
+    if(OPTS)
+      target_compile_options(${TARGET} PRIVATE ${OPTS})
+    endif()
   endif()
 
   if(NOT MSVC)
-    if(IS_DEP)
+    if(PROFILE_UPPER STREQUAL "DEP")
       if(TW_FLAGS_ALL)
         target_compile_options(${TARGET} PRIVATE ${TW_FLAGS_ALL})
       endif()
@@ -220,61 +368,29 @@ function(tw_apply_profile TARGET)
       if(TW_FLAGS_OWN)
         target_compile_options(${TARGET} PRIVATE ${TW_FLAGS_OWN})
       endif()
-      target_compile_definitions(${TARGET} PRIVATE ${OWN_BASE_DEFINES})
-      target_include_directories(${TARGET} PRIVATE ${OWN_BASE_INCLUDES})
+      if(DEFS)
+        target_compile_definitions(${TARGET} PRIVATE ${DEFS})
+      endif()
+      if(INCS)
+        target_include_directories(${TARGET} PRIVATE ${INCS})
+      endif()
     endif()
   else()
-    if(POLICY CMP0091)
-      set_property(TARGET ${TARGET} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<${DBG}:Debug>")
-    else()
-      target_compile_options(${TARGET} PRIVATE $<$<NOT:${DBG}>:/MT> $<${DBG}:/MTd>)
-    endif()
-
-    target_compile_options(${TARGET} PRIVATE /MP /EHsc /GS /utf-8)
-
-    if(IS_DEP)
-      target_compile_options(${TARGET} PRIVATE /w /W0)
-      if(TW_FLAGS_ALL)
-        target_compile_options(${TARGET} PRIVATE ${TW_FLAGS_ALL})
+    if(NOT PROFILE_UPPER STREQUAL "DEP")
+      if(DEFS)
+        target_compile_definitions(${TARGET} PRIVATE ${DEFS})
       endif()
-      if(TW_FLAGS_DEP)
-        target_compile_options(${TARGET} PRIVATE ${TW_FLAGS_DEP})
+      if(INCS)
+        target_include_directories(${TARGET} PRIVATE ${INCS})
       endif()
-    else()
-      target_compile_options(${TARGET} PRIVATE /W3 /wd4244 /wd4267 /wd4800 /wd4996)
-      if(TW_FLAGS_ALL)
-        target_compile_options(${TARGET} PRIVATE ${TW_FLAGS_ALL})
-      endif()
-      if(TW_FLAGS_OWN)
-        target_compile_options(${TARGET} PRIVATE ${TW_FLAGS_OWN})
-      endif()
-      target_compile_definitions(${TARGET} PRIVATE ${OWN_BASE_DEFINES})
-      target_include_directories(${TARGET} PRIVATE ${OWN_BASE_INCLUDES})
     endif()
   endif()
 
-  if(NOT IS_DEP)
-    if(PROFILE_UPPER STREQUAL "CLIENT")
-      if(FREETYPE_INCLUDE_DIRS)
-        target_include_directories(${TARGET} PRIVATE ${FREETYPE_INCLUDE_DIRS})
-      endif()
-      if(PNGLITE_INCLUDE_DIRS)
-        target_include_directories(${TARGET} PRIVATE ${PNGLITE_INCLUDE_DIRS})
-      endif()
-      if(SDL2_INCLUDE_DIRS)
-        target_include_directories(${TARGET} PRIVATE ${SDL2_INCLUDE_DIRS})
-      endif()
-      if(WAVPACK_INCLUDE_DIRS)
-        target_include_directories(${TARGET} PRIVATE ${WAVPACK_INCLUDE_DIRS})
-      endif()
-      if(PLATFORM_CLIENT_INCLUDE_DIRS)
-        target_include_directories(${TARGET} PRIVATE ${PLATFORM_CLIENT_INCLUDE_DIRS})
-      endif()
-    elseif(PROFILE_UPPER STREQUAL "TEST")
-      if(GTEST_INCLUDE_DIRS)
-        target_include_directories(${TARGET} PRIVATE ${GTEST_INCLUDE_DIRS})
-      endif()
-    endif()
+  if(LINK_LIBS)
+    target_link_libraries(${TARGET} PRIVATE ${LINK_LIBS})
+  endif()
+  if(LINK_OPTS)
+    target_link_options(${TARGET} PRIVATE ${LINK_OPTS})
   endif()
 
   get_target_property(TARGET_TYPE ${TARGET} TYPE)
@@ -296,32 +412,41 @@ function(tw_apply_profile TARGET)
   endif()
 endfunction()
 
-########################################################################
-# CLIENT-SPECIFIC DYNAMIC CONFIGURATION (post-find)
-########################################################################
-
-include(CheckSymbolExists)
-
-function(tw_apply_client_wavpack_config TARGET)
-  set(PARAMS "${WAVPACK_INCLUDE_DIRS};${WAVPACK_INCLUDE_DIRS}")
-  if(NOT(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS STREQUAL PARAMS))
-    unset(WAVPACK_OPEN_FILE_INPUT_EX CACHE)
+function(tw_add_executable NAME)
+  cmake_parse_arguments(ARG "EXCLUDE_FROM_ALL" "PROFILE" "" ${ARGN})
+  if(NOT ARG_PROFILE)
+    message(FATAL_ERROR "tw_add_executable(${NAME}): PROFILE is required")
   endif()
-  set(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS "${PARAMS}" CACHE INTERNAL "")
 
-  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES} ${WAVPACK_INCLUDE_DIRS})
-  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES} ${WAVPACK_LIBRARIES})
-  check_symbol_exists(WavpackOpenFileInputEx wavpack.h WAVPACK_OPEN_FILE_INPUT_EX)
-  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES})
-  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES})
-
-  if(WAVPACK_OPEN_FILE_INPUT_EX)
-    target_compile_definitions(${TARGET} PRIVATE CONF_WAVPACK_OPEN_FILE_INPUT_EX)
+  set(EXTRA_ARGS)
+  if(ARG_EXCLUDE_FROM_ALL)
+    list(APPEND EXTRA_ARGS EXCLUDE_FROM_ALL)
   endif()
+
+  add_executable(${NAME} ${EXTRA_ARGS} ${ARG_UNPARSED_ARGUMENTS})
+  tw_apply_profile(${NAME} PROFILE ${ARG_PROFILE})
+endfunction()
+
+function(tw_add_library NAME)
+  cmake_parse_arguments(ARG "EXCLUDE_FROM_ALL" "PROFILE;TYPE" "" ${ARGN})
+  if(NOT ARG_PROFILE)
+    message(FATAL_ERROR "tw_add_library(${NAME}): PROFILE is required")
+  endif()
+  if(NOT ARG_TYPE)
+    set(ARG_TYPE OBJECT)
+  endif()
+
+  set(EXTRA_ARGS)
+  if(ARG_EXCLUDE_FROM_ALL)
+    list(APPEND EXTRA_ARGS EXCLUDE_FROM_ALL)
+  endif()
+
+  add_library(${NAME} ${ARG_TYPE} ${EXTRA_ARGS} ${ARG_UNPARSED_ARGUMENTS})
+  tw_apply_profile(${NAME} PROFILE ${ARG_PROFILE})
 endfunction()
 
 ########################################################################
-# INSTALL / PACKAGE UNIFIED CONFIGURATION
+# INSTALL / PACKAGE (applied automatically for targets with install info)
 ########################################################################
 
 function(tw_setup_install)
@@ -373,8 +498,21 @@ function(tw_apply_install_rules)
   foreach(T ${INST_TARGETS})
     if(TARGET ${T})
       get_target_property(_TYPE ${T} TYPE)
+      get_target_property(_PROF ${T} TW_PROFILE)
       if(_TYPE STREQUAL "EXECUTABLE")
-        install(TARGETS ${T} DESTINATION bin COMPONENT ${T})
+        if(_PROF)
+          tw_get_profile_field(_DEST ${_PROF} INSTALL_DESTINATION)
+          tw_get_profile_field(_COMP ${_PROF} INSTALL_COMPONENT)
+          if(_DEST AND _COMP)
+            install(TARGETS ${T} DESTINATION ${_DEST} COMPONENT ${_COMP})
+          elseif(_DEST)
+            install(TARGETS ${T} DESTINATION ${_DEST})
+          else()
+            install(TARGETS ${T} DESTINATION bin COMPONENT ${T})
+          endif()
+        else()
+          install(TARGETS ${T} DESTINATION bin COMPONENT ${T})
+        endif()
       endif()
     endif()
   endforeach()
@@ -411,7 +549,29 @@ function(tw_apply_install_rules)
 endfunction()
 
 ########################################################################
-# MACRO HELPERS - unified assert/log/debug configuration entry points
+# CLIENT-SPECIFIC DYNAMIC CHECKS (Wavpack API detection)
+########################################################################
+
+function(tw_apply_client_wavpack_config TARGET)
+  set(PARAMS "${WAVPACK_INCLUDE_DIRS};${WAVPACK_INCLUDE_DIRS}")
+  if(NOT(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS STREQUAL PARAMS))
+    unset(WAVPACK_OPEN_FILE_INPUT_EX CACHE)
+  endif()
+  set(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS "${PARAMS}" CACHE INTERNAL "")
+
+  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES} ${WAVPACK_INCLUDE_DIRS})
+  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES} ${WAVPACK_LIBRARIES})
+  check_symbol_exists(WavpackOpenFileInputEx wavpack.h WAVPACK_OPEN_FILE_INPUT_EX)
+  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES})
+  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES})
+
+  if(WAVPACK_OPEN_FILE_INPUT_EX)
+    target_compile_definitions(${TARGET} PRIVATE CONF_WAVPACK_OPEN_FILE_INPUT_EX)
+  endif()
+endfunction()
+
+########################################################################
+# STANDALONE MACRO HELPERS (for targets not using tw_add_*)
 ########################################################################
 
 function(tw_apply_assert_config TARGET)
@@ -419,23 +579,15 @@ function(tw_apply_assert_config TARGET)
 endfunction()
 
 function(tw_apply_debug_config TARGET)
-  target_compile_definitions(${TARGET} PRIVATE
-    $<$<CONFIG:Debug>:CONF_DEBUG>
-  )
+  target_compile_definitions(${TARGET} PRIVATE $<$<CONFIG:Debug>:CONF_DEBUG>)
   if(TW_DEFINE_FORTIFY_SOURCE)
-    target_compile_definitions(${TARGET} PRIVATE
-      $<$<NOT:$<CONFIG:Debug>>:_FORTIFY_SOURCE=2>
-    )
+    target_compile_definitions(${TARGET} PRIVATE $<$<NOT:$<CONFIG:Debug>>:_FORTIFY_SOURCE=2>)
   endif()
 endfunction()
 
 function(tw_apply_platform_defines TARGET)
   if(TARGET_OS STREQUAL "windows")
-    target_compile_definitions(${TARGET} PRIVATE
-      _WIN32_WINNT=0x0501
-      UNICODE
-      _UNICODE
-    )
+    target_compile_definitions(${TARGET} PRIVATE _WIN32_WINNT=0x0501 UNICODE _UNICODE)
   endif()
   if(HEADLESS_CLIENT)
     target_compile_definitions(${TARGET} PRIVATE CONF_HEADLESS_CLIENT)

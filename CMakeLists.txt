@@ -316,6 +316,13 @@ endif()
 
 tw_apply_dynamic_defines()
 
+if(CLIENT)
+  tw_apply_profile_client_libs()
+endif()
+if(GTEST_FOUND OR DOWNLOAD_GTEST)
+  tw_apply_profile_test_libs()
+endif()
+
 ########################################################################
 # DOWNLOAD GTEST
 ########################################################################
@@ -365,12 +372,10 @@ endif()
 ########################################################################
 
 set_src(DEP_JSON_SRC GLOB src/engine/external/json-parser json.c json.h)
-add_library(json EXCLUDE_FROM_ALL OBJECT ${DEP_JSON_SRC})
-tw_apply_profile(json PROFILE DEP)
+tw_add_library(json EXCLUDE_FROM_ALL PROFILE DEP TYPE OBJECT ${DEP_JSON_SRC})
 
 set_src(DEP_MD5_SRC GLOB src/engine/external/md5 md5.c md5.h)
-add_library(md5 EXCLUDE_FROM_ALL OBJECT ${DEP_MD5_SRC})
-tw_apply_profile(md5 PROFILE DEP)
+tw_add_library(md5 EXCLUDE_FROM_ALL PROFILE DEP TYPE OBJECT ${DEP_MD5_SRC})
 
 list(APPEND TARGETS_DEP json md5)
 set(DEP_JSON $<TARGET_OBJECTS:json>)
@@ -1275,10 +1280,10 @@ set(DEPS ${DEP_JSON} ${DEP_MD5} ${ZLIB_DEP})
 set(LIBS ${CMAKE_THREAD_LIBS_INIT} ${ZLIB_LIBRARIES} ${CRYPTO_LIBRARIES} ${PLATFORM_LIBS})
 
 # Targets
-add_library(engine-shared EXCLUDE_FROM_ALL OBJECT ${ENGINE_INTERFACE} ${ENGINE_SHARED} ${ENGINE_GENERATED_SHARED} ${BASE})
-tw_apply_profile(engine-shared PROFILE OWN)
-add_library(game-shared EXCLUDE_FROM_ALL OBJECT ${GAME_SHARED} ${GAME_GENERATED_SHARED})
-tw_apply_profile(game-shared PROFILE OWN)
+tw_add_library(engine-shared EXCLUDE_FROM_ALL PROFILE OWN TYPE OBJECT
+  ${ENGINE_INTERFACE} ${ENGINE_SHARED} ${ENGINE_GENERATED_SHARED} ${BASE})
+tw_add_library(game-shared EXCLUDE_FROM_ALL PROFILE OWN TYPE OBJECT
+  ${GAME_SHARED} ${GAME_GENERATED_SHARED})
 list(APPEND TARGETS_OWN engine-shared game-shared)
 
 
@@ -1441,7 +1446,7 @@ if(CLIENT)
 
   # Target
   set(TARGET_CLIENT ${CLIENT_EXECUTABLE})
-  add_executable(${TARGET_CLIENT}
+  tw_add_executable(${TARGET_CLIENT} PROFILE CLIENT
     ${CLIENT_SRC}
     ${CLIENT_ICON}
     ${CLIENT_MANIFEST}
@@ -1450,7 +1455,6 @@ if(CLIENT)
     $<TARGET_OBJECTS:game-shared>
   )
   target_link_libraries(${TARGET_CLIENT} ${LIBS_CLIENT})
-  tw_apply_profile(${TARGET_CLIENT} PROFILE CLIENT)
   tw_apply_client_wavpack_config(${TARGET_CLIENT})
 
   list(APPEND TARGETS_OWN ${TARGET_CLIENT})
@@ -1523,7 +1527,7 @@ if(SERVER)
 
   # Target
   set(TARGET_SERVER ${SERVER_EXECUTABLE})
-  add_executable(${TARGET_SERVER}
+  tw_add_executable(${TARGET_SERVER} PROFILE SERVER
     ${DEPS}
     ${SERVER_SRC}
     ${SERVER_ICON}
@@ -1531,16 +1535,14 @@ if(SERVER)
     $<TARGET_OBJECTS:game-shared>
   )
   target_link_libraries(${TARGET_SERVER} ${LIBS_SERVER})
-  tw_apply_profile(${TARGET_SERVER} PROFILE SERVER)
   list(APPEND TARGETS_OWN ${TARGET_SERVER})
   list(APPEND TARGETS_LINK ${TARGET_SERVER})
 
   if(TARGET_OS AND TARGET_OS STREQUAL "mac")
     set(SERVER_LAUNCHER_SRC src/macoslaunch/server.mm)
     set(TARGET_SERVER_LAUNCHER ${TARGET_SERVER}-Launcher)
-    add_executable(${TARGET_SERVER_LAUNCHER} ${SERVER_LAUNCHER_SRC})
+    tw_add_executable(${TARGET_SERVER_LAUNCHER} PROFILE SERVER ${SERVER_LAUNCHER_SRC})
     target_link_libraries(${TARGET_SERVER_LAUNCHER} ${COCOA})
-    tw_apply_profile(${TARGET_SERVER_LAUNCHER} PROFILE SERVER)
     list(APPEND TARGETS_OWN ${TARGET_SERVER_LAUNCHER})
     list(APPEND TARGETS_LINK ${TARGET_SERVER_LAUNCHER})
   endif()
@@ -1559,10 +1561,10 @@ list(APPEND VERSIONSRV_SRC ${PROJECT_BINARY_DIR}/src/generated/nethash.cpp)
 set(TARGET_MASTERSRV mastersrv)
 set(TARGET_VERSIONSRV versionsrv)
 
-add_executable(${TARGET_MASTERSRV} EXCLUDE_FROM_ALL ${MASTERSRV_SRC} $<TARGET_OBJECTS:engine-shared> ${DEPS})
-add_executable(${TARGET_VERSIONSRV} EXCLUDE_FROM_ALL ${VERSIONSRV_SRC} $<TARGET_OBJECTS:engine-shared> ${DEPS})
-tw_apply_profile(${TARGET_MASTERSRV} PROFILE TOOL)
-tw_apply_profile(${TARGET_VERSIONSRV} PROFILE TOOL)
+tw_add_executable(${TARGET_MASTERSRV} EXCLUDE_FROM_ALL PROFILE TOOL
+  ${MASTERSRV_SRC} $<TARGET_OBJECTS:engine-shared> ${DEPS})
+tw_add_executable(${TARGET_VERSIONSRV} EXCLUDE_FROM_ALL PROFILE TOOL
+  ${VERSIONSRV_SRC} $<TARGET_OBJECTS:engine-shared> ${DEPS})
 
 target_link_libraries(${TARGET_MASTERSRV} ${LIBS})
 target_link_libraries(${TARGET_VERSIONSRV} ${LIBS})
@@ -1582,14 +1584,13 @@ foreach(ABS_T ${TOOLS})
   file(RELATIVE_PATH T "${PROJECT_SOURCE_DIR}/src/tools/" ${ABS_T})
   if(T MATCHES "\\.cpp$")
     string(REGEX REPLACE "\\.cpp$" "" TOOL "${T}")
-    add_executable(${TOOL} EXCLUDE_FROM_ALL
+    tw_add_executable(${TOOL} EXCLUDE_FROM_ALL PROFILE TOOL
       ${DEPS}
       src/tools/${TOOL}.cpp
       ${EXTRA_TOOL_SRC}
       $<TARGET_OBJECTS:engine-shared>
     )
     target_link_libraries(${TOOL} ${LIBS})
-    tw_apply_profile(${TOOL} PROFILE TOOL)
     list(APPEND TARGETS_TOOLS ${TOOL})
   endif()
 endforeach()
@@ -1627,14 +1628,13 @@ if(GTEST_FOUND OR DOWNLOAD_GTEST)
     thread.cpp
   )
   set(TARGET_TESTRUNNER testrunner)
-  add_executable(${TARGET_TESTRUNNER} EXCLUDE_FROM_ALL
+  tw_add_executable(${TARGET_TESTRUNNER} EXCLUDE_FROM_ALL PROFILE TEST
     ${TESTS}
     $<TARGET_OBJECTS:engine-shared>
     $<TARGET_OBJECTS:game-shared>
     ${DEPS}
   )
   target_link_libraries(${TARGET_TESTRUNNER} ${LIBS} ${GTEST_LIBRARIES})
-  tw_apply_profile(${TARGET_TESTRUNNER} PROFILE TEST)
 
   list(APPEND TARGETS_OWN ${TARGET_TESTRUNNER})
   list(APPEND TARGETS_LINK ${TARGET_TESTRUNNER})
