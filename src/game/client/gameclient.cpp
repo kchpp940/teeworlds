@@ -557,21 +557,8 @@ void CGameClient::UpdatePositions()
 
 void CGameClient::EvolveCharacter(CNetObj_Character *pCharacter, int Tick)
 {
-	CWorldCore TempWorld;
-	CCharacterCore TempCore;
-	mem_zero(&TempCore, sizeof(TempCore));
-	TempCore.Init(&TempWorld, Collision());
-	TempCore.Read(pCharacter);
-
-	while(pCharacter->m_Tick < Tick)
-	{
-		pCharacter->m_Tick++;
-		TempCore.Tick(false);
-		TempCore.Move();
-		TempCore.Quantize();
-	}
-
-	TempCore.Write(pCharacter);
+	CMovementUpdate Update(0, Collision(), &m_Tuning);
+	Update.AdvanceSnapshot(pCharacter, Tick);
 }
 
 void CGameClient::StartRendering()

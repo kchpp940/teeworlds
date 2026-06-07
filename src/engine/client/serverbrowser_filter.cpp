@@ -11,24 +11,6 @@
 #include "serverbrowser_entry.h"
 #include "serverbrowser_filter.h"
 
-// ---- Built-in filter presets (defined in engine, UI never needs these) ----
-static const CServerFilterInfo gs_FilterStandard = {IServerBrowser::FILTER_COMPAT_VERSION|IServerBrowser::FILTER_PURE|IServerBrowser::FILTER_PURE_MAP, 999, -1, 0, {{0}}, {0}, {0}};
-static const CServerFilterInfo gs_FilterRace = {IServerBrowser::FILTER_COMPAT_VERSION, 999, -1, 0, {{"Race"}}, {false}, {0}};
-static const CServerFilterInfo gs_FilterFavorites = {IServerBrowser::FILTER_COMPAT_VERSION|IServerBrowser::FILTER_FAVORITE, 999, -1, 0, {{0}}, {0}, {0}};
-static const CServerFilterInfo gs_FilterAll = {IServerBrowser::FILTER_COMPAT_VERSION, 999, -1, 0, {{0}}, {0}, {0}};
-
-static const CServerFilterInfo *GetPresetFilterInfo(int Preset)
-{
-	switch(Preset)
-	{
-	case IServerBrowser::PRESET_STANDARD: return &gs_FilterStandard;
-	case IServerBrowser::PRESET_RACE: return &gs_FilterRace;
-	case IServerBrowser::PRESET_FAVORITES: return &gs_FilterFavorites;
-	case IServerBrowser::PRESET_ALL: return &gs_FilterAll;
-	default: return &gs_FilterAll;
-	}
-}
-
 
 class SortWrap
 {
@@ -44,9 +26,6 @@ public:
 CServerBrowserFilter::CServerFilter::CServerFilter()
 {
 	m_pServerBrowserFilter = 0;
-	m_Id = -1;
-	m_Preset = IServerBrowser::PRESET_CUSTOM;
-	m_aName[0] = 0;
 
 	m_FilterInfo.m_SortHash = 0;
 	m_FilterInfo.m_Ping = 0;
@@ -77,9 +56,6 @@ CServerBrowserFilter::CServerFilter& CServerBrowserFilter::CServerFilter::operat
 	if(&Other != this)
 	{
 		m_pServerBrowserFilter = Other.m_pServerBrowserFilter;
-		m_Id = Other.m_Id;
-		m_Preset = Other.m_Preset;
-		str_copy(m_aName, Other.m_aName, sizeof(m_aName));
 		m_FilterInfo.Set(&Other.m_FilterInfo);
 		m_NumSortedPlayers = Other.m_NumSortedPlayers;
 		m_NumSortedServers = Other.m_NumSortedServers;
@@ -115,27 +91,12 @@ void CServerBrowserFilter::CServerFilter::Filter()
 		bool Filtered = false;
 
 		int RelevantClientCount = (m_FilterInfo.m_SortHash&IServerBrowser::FILTER_SPECTATORS) ? m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumPlayers : m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumClients;
-		int RelevantMaxCount = (m_FilterInfo.m_SortHash&IServerBrowser::FILTER_SPECTATORS) ? m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_MaxPlayers : m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_MaxClients;
 		if(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_BOTS)
 		{
 			RelevantClientCount -= m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumBotPlayers;
-			RelevantMaxCount -= m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumBotPlayers;
 			if(!(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_SPECTATORS))
-			{
 				RelevantClientCount -= m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumBotSpectators;
-				RelevantMaxCount -= m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumBotSpectators;
-			}
 		}
-		if(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_SPECTATORS)
-		{
-			int SpecNum = m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumClients - m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumPlayers;
-			if(m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_MaxClients - m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_MaxPlayers < SpecNum)
-				RelevantMaxCount -= SpecNum;
-		}
-
-		// store derived display fields so UI never has to recompute
-		m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_NumDisplayClients = RelevantClientCount;
-		m_pServerBrowserFilter->m_ppServerlist[i]->m_Info.m_MaxDisplayClients = RelevantMaxCount;
 
 		if(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_EMPTY && RelevantClientCount == 0)
 			Filtered = true;
@@ -269,14 +230,6 @@ int CServerBrowserFilter::CServerFilter::GetSortHash() const
 	if(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_PURE) i |= 1<<12;
 	if(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_PURE_MAP) i |= 1<<13;
 	if(m_FilterInfo.m_SortHash&IServerBrowser::FILTER_COUNTRY) i |= 1<<14;
-	// fold quick-search string into hash so any change triggers a re-filter
-	if(Config()->m_BrFilterString[0])
-	{
-		unsigned h = 2166136261u;
-		for(const char *p = Config()->m_BrFilterString; *p; ++p)
-			h = (h ^ (unsigned char)*p) * 16777619u;
-		i ^= (int)(h & 0x7FFF) << 15;
-	}
 	return i;
 }
 
@@ -382,19 +335,6 @@ void CServerBrowserFilter::Init(CConfig *pConfig, IFriends *pFriends, const char
 	m_pConfig = pConfig;
 	m_pFriends = pFriends;
 	str_copy(m_aNetVersion, pNetVersion, sizeof(m_aNetVersion));
-	for(int i = 0; i < IServerBrowser::NUM_TYPES; ++i)
-		m_aActiveFilters[i] = -1;
-	m_NextFilterId = 1;
-}
-
-int CServerBrowserFilter::GetFilterIndex(int FilterId) const
-{
-	for(int i = 0; i < m_lFilters.size(); ++i)
-	{
-		if(m_lFilters[i].m_Id == FilterId)
-			return i;
-	}
-	return -1;
 }
 
 void CServerBrowserFilter::Clear()
@@ -462,313 +402,4 @@ void CServerBrowserFilter::SetFilter(int Index, const CServerFilterInfo *pFilter
 void CServerBrowserFilter::RemoveFilter(int Index)
 {
 	m_lFilters.remove_index(Index);
-}
-
-// ---- Semantic filter state API implementations ----
-
-void CServerBrowserFilter::SetFilterFlag(int FilterId, int Flag, bool Enabled)
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return;
-	CServerFilter *pFilter = &m_lFilters[Idx];
-	if(Enabled)
-		pFilter->m_FilterInfo.m_SortHash |= Flag;
-	else
-		pFilter->m_FilterInfo.m_SortHash &= ~Flag;
-	pFilter->Sort();
-}
-
-void CServerBrowserFilter::SetFilterPing(int FilterId, int Ping)
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return;
-	CServerFilter *pFilter = &m_lFilters[Idx];
-	pFilter->m_FilterInfo.m_Ping = Ping;
-	pFilter->Sort();
-}
-
-void CServerBrowserFilter::SetFilterAddress(int FilterId, const char *pAddress)
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return;
-	CServerFilter *pFilter = &m_lFilters[Idx];
-	str_copy(pFilter->m_FilterInfo.m_aAddress, pAddress, sizeof(pFilter->m_FilterInfo.m_aAddress));
-	pFilter->Sort();
-}
-
-void CServerBrowserFilter::SetFilterCountry(int FilterId, int Country)
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return;
-	CServerFilter *pFilter = &m_lFilters[Idx];
-	pFilter->m_FilterInfo.m_Country = Country;
-	pFilter->Sort();
-}
-
-void CServerBrowserFilter::ToggleLevelFilter(int FilterId, int Level)
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return;
-	CServerFilter *pFilter = &m_lFilters[Idx];
-	pFilter->m_FilterInfo.ToggleLevel(Level);
-	pFilter->Sort();
-}
-
-int CServerBrowserFilter::GetNumGametypeFilters(int FilterId) const
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return 0;
-	const CServerFilterInfo &Info = m_lFilters[Idx].m_FilterInfo;
-	int Count = 0;
-	for(int i = 0; i < CServerFilterInfo::MAX_GAMETYPES; ++i)
-	{
-		if(Info.m_aGametype[i][0])
-			Count++;
-		else
-			break;
-	}
-	return Count;
-}
-
-void CServerBrowserFilter::GetGametypeFilter(int FilterId, int Idx2, char *pName, int NameSize, bool *pExclusive) const
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0)
-	{
-		if(pName && NameSize > 0)
-			pName[0] = 0;
-		if(pExclusive)
-			*pExclusive = false;
-		return;
-	}
-	const CServerFilterInfo &Info = m_lFilters[Idx].m_FilterInfo;
-	if(Idx2 >= 0 && Idx2 < CServerFilterInfo::MAX_GAMETYPES && Info.m_aGametype[Idx2][0])
-	{
-		if(pName)
-			str_copy(pName, Info.m_aGametype[Idx2], NameSize);
-		if(pExclusive)
-			*pExclusive = Info.m_aGametypeExclusive[Idx2] != 0;
-	}
-	else
-	{
-		if(pName && NameSize > 0)
-			pName[0] = 0;
-		if(pExclusive)
-			*pExclusive = false;
-	}
-}
-
-void CServerBrowserFilter::AddGametypeFilter(int FilterId, const char *pName, bool Exclusive)
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return;
-	CServerFilter *pFilter = &m_lFilters[Idx];
-	for(int i = 0; i < CServerFilterInfo::MAX_GAMETYPES; ++i)
-	{
-		if(!pFilter->m_FilterInfo.m_aGametype[i][0])
-		{
-			str_copy(pFilter->m_FilterInfo.m_aGametype[i], pName, sizeof(pFilter->m_FilterInfo.m_aGametype[i]));
-			pFilter->m_FilterInfo.m_aGametypeExclusive[i] = Exclusive;
-			pFilter->Sort();
-			return;
-		}
-	}
-}
-
-void CServerBrowserFilter::RemoveGametypeFilter(int FilterId, int Idx2)
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return;
-	CServerFilter *pFilter = &m_lFilters[Idx];
-	if(Idx2 < 0 || Idx2 >= CServerFilterInfo::MAX_GAMETYPES)
-		return;
-	if(Idx2 == CServerFilterInfo::MAX_GAMETYPES - 1 || !pFilter->m_FilterInfo.m_aGametype[Idx2 + 1][0])
-	{
-		pFilter->m_FilterInfo.m_aGametype[Idx2][0] = 0;
-		pFilter->m_FilterInfo.m_aGametypeExclusive[Idx2] = false;
-	}
-	else
-	{
-		int j = Idx2;
-		for(; j < CServerFilterInfo::MAX_GAMETYPES - 1 && pFilter->m_FilterInfo.m_aGametype[j + 1][0]; ++j)
-		{
-			str_copy(pFilter->m_FilterInfo.m_aGametype[j], pFilter->m_FilterInfo.m_aGametype[j + 1], sizeof(pFilter->m_FilterInfo.m_aGametype[j]));
-			pFilter->m_FilterInfo.m_aGametypeExclusive[j] = pFilter->m_FilterInfo.m_aGametypeExclusive[j + 1];
-		}
-		pFilter->m_FilterInfo.m_aGametype[j][0] = 0;
-		pFilter->m_FilterInfo.m_aGametypeExclusive[j] = false;
-	}
-	pFilter->Sort();
-}
-
-void CServerBrowserFilter::ClearGametypeFilters(int FilterId)
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return;
-	CServerFilter *pFilter = &m_lFilters[Idx];
-	for(int i = 0; i < CServerFilterInfo::MAX_GAMETYPES; ++i)
-	{
-		pFilter->m_FilterInfo.m_aGametype[i][0] = 0;
-		pFilter->m_FilterInfo.m_aGametypeExclusive[i] = false;
-	}
-	pFilter->Sort();
-}
-
-void CServerBrowserFilter::CServerFilter::GetDisplayCounts(int Index, int *pNum, int *pMax) const
-{
-	if(Index < 0 || Index >= m_pServerBrowserFilter->m_NumServers)
-	{
-		if(pNum) *pNum = 0;
-		if(pMax) *pMax = 0;
-		return;
-	}
-	const CServerInfo &Info = m_pServerBrowserFilter->m_ppServerlist[Index]->m_Info;
-	if(pNum) *pNum = Info.m_NumDisplayClients;
-	if(pMax) *pMax = Info.m_MaxDisplayClients;
-}
-
-bool CServerBrowserFilter::CServerFilter::IsClientHidden(int Index, int ClientIndex) const
-{
-	if(Index < 0 || Index >= m_pServerBrowserFilter->m_NumServers)
-		return true;
-	const CServerInfo &Info = m_pServerBrowserFilter->m_ppServerlist[Index]->m_Info;
-	if(ClientIndex < 0 || ClientIndex >= Info.m_NumClients)
-		return true;
-	return (m_FilterInfo.m_SortHash & IServerBrowser::FILTER_BOTS) != 0
-		&& (Info.m_aClients[ClientIndex].m_PlayerType & CServerInfo::CClient::PLAYERFLAG_BOT) != 0;
-}
-
-// ---- Filter presets and metadata API implementations ----
-
-int CServerBrowserFilter::AddFilterFromPreset(int Preset, const char *pName)
-{
-	const CServerFilterInfo *pPresetInfo = GetPresetFilterInfo(Preset);
-	int FilterIndex = AddFilter(pPresetInfo);
-	m_lFilters[FilterIndex].m_Id = m_NextFilterId++;
-	m_lFilters[FilterIndex].m_Preset = Preset;
-	str_copy(m_lFilters[FilterIndex].m_aName, pName, sizeof(m_lFilters[FilterIndex].m_aName));
-	return m_lFilters[FilterIndex].m_Id;
-}
-
-void CServerBrowserFilter::ResetFilterToPreset(int FilterId)
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return;
-	CServerFilter *pFilter = &m_lFilters[Idx];
-	const CServerFilterInfo *pPresetInfo = GetPresetFilterInfo(pFilter->m_Preset);
-	pFilter->m_FilterInfo.Set(pPresetInfo);
-	pFilter->Sort();
-}
-
-void CServerBrowserFilter::SetFilterName(int FilterId, const char *pName)
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return;
-	str_copy(m_lFilters[Idx].m_aName, pName, sizeof(m_lFilters[Idx].m_aName));
-}
-
-// ---- Aggregated persistence getters/setters ----
-
-void CServerBrowserFilter::SetFilterFlags(int FilterId, int Flags)
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return;
-	CServerFilter *pFilter = &m_lFilters[Idx];
-	const int FilterFlagsMask = 0xFFFF;
-	pFilter->m_FilterInfo.m_SortHash = (pFilter->m_FilterInfo.m_SortHash & ~FilterFlagsMask) | (Flags & FilterFlagsMask);
-	pFilter->Sort();
-}
-
-void CServerBrowserFilter::SetFilterLevelMask(int FilterId, int Mask)
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return;
-	CServerFilter *pFilter = &m_lFilters[Idx];
-	pFilter->m_FilterInfo.m_ServerLevel = Mask & ((1 << CServerInfo::NUM_SERVER_LEVELS) - 1);
-	pFilter->Sort();
-}
-
-// ---- Filter store in-memory operations ----
-
-void CServerBrowserFilter::EnsureDefaultFilters()
-{
-	int Filters = 0;
-	for(int i = 0; i < m_lFilters.size(); i++)
-		Filters |= 1 << m_lFilters[i].m_Preset;
-
-	if((Filters & (1 << IServerBrowser::PRESET_STANDARD)) == 0)
-	{
-		const int NewFilterId = AddFilterFromPreset(IServerBrowser::PRESET_STANDARD, "Teeworlds");
-		for(int Pos = m_lFilters.size() - 1; Pos > 0; --Pos)
-			MoveFilter(GetFilterId(Pos), true);
-		(void)NewFilterId;
-	}
-
-	if((Filters & (1 << IServerBrowser::PRESET_RACE)) == 0)
-	{
-		AddFilterFromPreset(IServerBrowser::PRESET_RACE, "Race");
-		for(int Pos = m_lFilters.size() - 1; Pos > 1; --Pos)
-			MoveFilter(GetFilterId(Pos), true);
-	}
-
-	if((Filters & (1 << IServerBrowser::PRESET_FAVORITES)) == 0)
-	{
-		AddFilterFromPreset(IServerBrowser::PRESET_FAVORITES, "Favorites");
-		for(int Pos = m_lFilters.size() - 1; Pos > 2; --Pos)
-			MoveFilter(GetFilterId(Pos), true);
-	}
-
-	if((Filters & (1 << IServerBrowser::PRESET_ALL)) == 0)
-	{
-		AddFilterFromPreset(IServerBrowser::PRESET_ALL, "All");
-		for(int Pos = m_lFilters.size() - 1; Pos > 3; --Pos)
-			MoveFilter(GetFilterId(Pos), true);
-	}
-
-	const bool UseDefaultFilters = Filters == 0;
-	if(UseDefaultFilters)
-	{
-		const int AllFilterId = GetFilterId(m_lFilters.size() - 1);
-		for(int i = 0; i < IServerBrowser::NUM_TYPES; ++i)
-			m_aActiveFilters[i] = AllFilterId;
-	}
-}
-
-void CServerBrowserFilter::DeleteFilter(int FilterId)
-{
-	const int Idx = GetFilterIndex(FilterId);
-	if(Idx < 0) return;
-	RemoveFilter(Idx);
-	// active filters store stable ids; only patch the one that just got deleted
-	const int FallbackId = m_lFilters.size() > 0 ? m_lFilters[clamp(Idx, 0, (int)m_lFilters.size() - 1)].m_Id : -1;
-	for(int i = 0; i < IServerBrowser::NUM_TYPES; ++i)
-	{
-		if(m_aActiveFilters[i] == FilterId)
-			m_aActiveFilters[i] = FallbackId;
-	}
-}
-
-void CServerBrowserFilter::MoveFilter(int FilterId, bool Up)
-{
-	const int FilterIndex = GetFilterIndex(FilterId);
-	if(FilterIndex < 0) return;
-	if(Up)
-	{
-		if(FilterIndex > 0)
-		{
-			CServerFilter Temp = m_lFilters[FilterIndex];
-			m_lFilters[FilterIndex] = m_lFilters[FilterIndex - 1];
-			m_lFilters[FilterIndex - 1] = Temp;
-		}
-	}
-	else
-	{
-		if(FilterIndex < m_lFilters.size() - 1)
-		{
-			CServerFilter Temp = m_lFilters[FilterIndex];
-			m_lFilters[FilterIndex] = m_lFilters[FilterIndex + 1];
-			m_lFilters[FilterIndex + 1] = Temp;
-		}
-	}
-	// active filters store stable ids; no adjustment needed when reordering
 }

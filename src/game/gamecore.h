@@ -131,6 +131,150 @@ enum
 	HOOK_GRABBED,
 };
 
+enum
+{
+	MOVEMENTFLAG_ALIVE=1,
+	MOVEMENTFLAG_FROZEN=2,
+};
+
+class CMovementInput
+{
+public:
+	int m_Direction;
+	int m_TargetX;
+	int m_TargetY;
+	bool m_Jump;
+	int m_Fire;
+	bool m_Hook;
+	int m_PlayerFlags;
+	int m_WantedWeapon;
+	int m_NextWeapon;
+	int m_PrevWeapon;
+
+	void Reset()
+	{
+		m_Direction = 0;
+		m_TargetX = 0;
+		m_TargetY = -1;
+		m_Jump = false;
+		m_Fire = 0;
+		m_Hook = false;
+		m_PlayerFlags = 0;
+		m_WantedWeapon = 0;
+		m_NextWeapon = 0;
+		m_PrevWeapon = 0;
+	}
+
+	void FromPlayerInput(const CNetObj_PlayerInput *pInput)
+	{
+		m_Direction = pInput->m_Direction;
+		m_TargetX = pInput->m_TargetX;
+		m_TargetY = pInput->m_TargetY;
+		m_Jump = pInput->m_Jump != 0;
+		m_Fire = pInput->m_Fire;
+		m_Hook = pInput->m_Hook != 0;
+		m_PlayerFlags = pInput->m_PlayerFlags;
+		m_WantedWeapon = pInput->m_WantedWeapon;
+		m_NextWeapon = pInput->m_NextWeapon;
+		m_PrevWeapon = pInput->m_PrevWeapon;
+		if(m_TargetX == 0 && m_TargetY == 0)
+			m_TargetY = -1;
+	}
+
+	void ToPlayerInput(CNetObj_PlayerInput *pInput) const
+	{
+		pInput->m_Direction = m_Direction;
+		pInput->m_TargetX = m_TargetX;
+		pInput->m_TargetY = m_TargetY;
+		pInput->m_Jump = m_Jump ? 1 : 0;
+		pInput->m_Fire = m_Fire;
+		pInput->m_Hook = m_Hook ? 1 : 0;
+		pInput->m_PlayerFlags = m_PlayerFlags;
+		pInput->m_WantedWeapon = m_WantedWeapon;
+		pInput->m_NextWeapon = m_NextWeapon;
+		pInput->m_PrevWeapon = m_PrevWeapon;
+	}
+};
+
+class CMovementState
+{
+public:
+	vec2 m_Pos;
+	vec2 m_Vel;
+	vec2 m_HookDragVel;
+	vec2 m_HookPos;
+	vec2 m_HookDir;
+	int m_HookTick;
+	int m_HookState;
+	int m_HookedPlayer;
+	int m_Jumped;
+	int m_Direction;
+	int m_Angle;
+	bool m_Death;
+	int m_ActiveWeapon;
+	int m_QueuedWeapon;
+	bool m_Alive;
+	int m_TriggeredEvents;
+
+	void Reset()
+	{
+		m_Pos = vec2(0, 0);
+		m_Vel = vec2(0, 0);
+		m_HookDragVel = vec2(0, 0);
+		m_HookPos = vec2(0, 0);
+		m_HookDir = vec2(0, 0);
+		m_HookTick = 0;
+		m_HookState = HOOK_IDLE;
+		m_HookedPlayer = -1;
+		m_Jumped = 0;
+		m_Direction = 0;
+		m_Angle = 0;
+		m_Death = false;
+		m_ActiveWeapon = 0;
+		m_QueuedWeapon = -1;
+		m_Alive = true;
+		m_TriggeredEvents = 0;
+	}
+};
+
+class CMovementUpdate
+{
+public:
+	class CWorldCore *m_pWorld;
+	class CCollision *m_pCollision;
+	const CTuningParams *m_pTuning;
+
+	CMovementUpdate() : m_pWorld(0), m_pCollision(0), m_pTuning(0) {}
+	CMovementUpdate(class CWorldCore *pWorld, class CCollision *pCollision, const CTuningParams *pTuning)
+		: m_pWorld(pWorld), m_pCollision(pCollision), m_pTuning(pTuning) {}
+
+	void Init(class CWorldCore *pWorld, class CCollision *pCollision, const CTuningParams *pTuning)
+	{
+		m_pWorld = pWorld;
+		m_pCollision = pCollision;
+		m_pTuning = pTuning;
+	}
+
+	bool IsGrounded(const CMovementState *pState) const;
+	void ApplyInput(CMovementState *pState, const CMovementInput *pInput) const;
+	void Tick(CMovementState *pState, const CMovementInput *pInput, bool UseInput) const;
+	void Move(CMovementState *pState) const;
+	void AddDragVelocity(CMovementState *pState) const;
+	void ResetDragVelocity(CMovementState *pState) const;
+	void Quantize(CMovementState *pState) const;
+
+	void ReadState(CMovementState *pState, const CNetObj_CharacterCore *pObjCore) const;
+	void WriteState(const CMovementState *pState, CNetObj_CharacterCore *pObjCore) const;
+
+	void AdvanceSnapshot(CNetObj_Character *pCharacter, int TargetTick) const;
+
+private:
+	void TickHook(CMovementState *pState, const CMovementInput *pInput, bool UseInput, vec2 TargetDirection) const;
+	void TickJump(CMovementState *pState, const CMovementInput *pInput, bool UseInput, bool Grounded) const;
+	void TickVelocity(CMovementState *pState, bool Grounded) const;
+	void TickPlayerCollisions(CMovementState *pState) const;
+};
+
 class CWorldCore
 {
 public:
@@ -147,29 +291,69 @@ class CCharacterCore
 {
 	CWorldCore *m_pWorld;
 	CCollision *m_pCollision;
+	CMovementUpdate m_Update;
 public:
 	static const float PHYS_SIZE;
-	vec2 m_Pos;
-	vec2 m_Vel;
 
-	vec2 m_HookDragVel;
+	CMovementState m_State;
+	CMovementInput m_InputState;
 
-	vec2 m_HookPos;
-	vec2 m_HookDir;
-	int m_HookTick;
-	int m_HookState;
-	int m_HookedPlayer;
-
-	int m_Jumped;
-
-	int m_Direction;
-	int m_Angle;
-
-	bool m_Death;
-
+	vec2 &m_Pos;
+	vec2 &m_Vel;
+	vec2 &m_HookDragVel;
+	vec2 &m_HookPos;
+	vec2 &m_HookDir;
+	int &m_HookTick;
+	int &m_HookState;
+	int &m_HookedPlayer;
+	int &m_Jumped;
+	int &m_Direction;
+	int &m_Angle;
+	bool &m_Death;
 	CNetObj_PlayerInput m_Input;
+	int &m_TriggeredEvents;
 
-	int m_TriggeredEvents;
+	CCharacterCore()
+		: m_pWorld(0), m_pCollision(0),
+		m_Pos(m_State.m_Pos), m_Vel(m_State.m_Vel),
+		m_HookDragVel(m_State.m_HookDragVel),
+		m_HookPos(m_State.m_HookPos), m_HookDir(m_State.m_HookDir),
+		m_HookTick(m_State.m_HookTick), m_HookState(m_State.m_HookState),
+		m_HookedPlayer(m_State.m_HookedPlayer), m_Jumped(m_State.m_Jumped),
+		m_Direction(m_State.m_Direction), m_Angle(m_State.m_Angle),
+		m_Death(m_State.m_Death), m_TriggeredEvents(m_State.m_TriggeredEvents)
+	{
+		mem_zero(&m_Input, sizeof(m_Input));
+	}
+
+	CCharacterCore(const CCharacterCore &Other)
+		: m_pWorld(Other.m_pWorld), m_pCollision(Other.m_pCollision),
+		m_State(Other.m_State), m_InputState(Other.m_InputState),
+		m_Pos(m_State.m_Pos), m_Vel(m_State.m_Vel),
+		m_HookDragVel(m_State.m_HookDragVel),
+		m_HookPos(m_State.m_HookPos), m_HookDir(m_State.m_HookDir),
+		m_HookTick(m_State.m_HookTick), m_HookState(m_State.m_HookState),
+		m_HookedPlayer(m_State.m_HookedPlayer), m_Jumped(m_State.m_Jumped),
+		m_Direction(m_State.m_Direction), m_Angle(m_State.m_Angle),
+		m_Death(m_State.m_Death), m_TriggeredEvents(m_State.m_TriggeredEvents)
+	{
+		m_Update.Init(m_pWorld, m_pCollision, m_pWorld ? &m_pWorld->m_Tuning : 0);
+		mem_copy(&m_Input, &Other.m_Input, sizeof(m_Input));
+	}
+
+	CCharacterCore &operator=(const CCharacterCore &Other)
+	{
+		if(this != &Other)
+		{
+			m_pWorld = Other.m_pWorld;
+			m_pCollision = Other.m_pCollision;
+			m_State = Other.m_State;
+			m_InputState = Other.m_InputState;
+			m_Update.Init(m_pWorld, m_pCollision, m_pWorld ? &m_pWorld->m_Tuning : 0);
+			mem_copy(&m_Input, &Other.m_Input, sizeof(m_Input));
+		}
+		return *this;
+	}
 
 	void Init(CWorldCore *pWorld, CCollision *pCollision);
 	void Reset();

@@ -358,31 +358,37 @@ private:
 	class CBrowserFilter
 	{
 		bool m_Extended;
-		char m_aName[64]; // cached copy of engine-side name, needed for const char* return
-		int m_FilterId; // stable engine filter id (never reused, never invalidated by Delete/Move)
+		int m_Custom;
+		char m_aName[64];
+		int m_Filter;
 		IServerBrowser *m_pServerBrowser;
+
+		static CServerFilterInfo ms_FilterStandard;
+		static CServerFilterInfo ms_FilterRace;
+		static CServerFilterInfo ms_FilterFavorites;
+		static CServerFilterInfo ms_FilterAll;
 
 	public:
 		enum
 		{
-			FILTER_CUSTOM = IServerBrowser::PRESET_CUSTOM,
-			FILTER_ALL = IServerBrowser::PRESET_ALL,
-			FILTER_STANDARD = IServerBrowser::PRESET_STANDARD,
-			FILTER_FAVORITES = IServerBrowser::PRESET_FAVORITES,
-			FILTER_RACE = IServerBrowser::PRESET_RACE,
-			NUM_FILTERS = IServerBrowser::NUM_PRESETS,
+			FILTER_CUSTOM = 0,
+			FILTER_ALL,
+			FILTER_STANDARD,
+			FILTER_FAVORITES,
+			FILTER_RACE,
+			NUM_FILTERS,
 		};
 
 		CButtonContainer m_DeleteButtonContainer;
 		CButtonContainer m_UpButtonContainer;
 		CButtonContainer m_DownButtonContainer;
 
-		CBrowserFilter() { m_FilterId = -1; }
-		CBrowserFilter(int EngineFilterId, IServerBrowser *pServerBrowser);
+		CBrowserFilter() {}
+		CBrowserFilter(int Custom, const char* pName, IServerBrowser *pServerBrowser);
 		void Switch();
 		bool Extended() const;
 		int Custom() const;
-		int FilterId() const { return m_FilterId; }
+		int Filter() const;
 		const char* Name() const;
 
 		void SetFilterNum(int Num);
@@ -392,33 +398,6 @@ private:
 		const CServerInfo* SortedGet(int Index) const;
 		const void* ID(int Index) const;
 
-		void GetDisplayCounts(int Index, int *pNum, int *pMax) const;
-		bool IsClientHidden(int Index, int ClientIndex) const;
-
-		// ---- Semantic filter state API ----
-		bool GetFilterFlag(int Flag) const { return m_pServerBrowser->GetFilterFlag(m_FilterId, Flag); }
-		void SetFilterFlag(int Flag, bool Enabled) { m_pServerBrowser->SetFilterFlag(m_FilterId, Flag, Enabled); }
-
-		int GetFilterPing() const { return m_pServerBrowser->GetFilterPing(m_FilterId); }
-		void SetFilterPing(int Ping) { m_pServerBrowser->SetFilterPing(m_FilterId, Ping); }
-
-		void GetFilterAddress(char *pBuf, int Size) const { m_pServerBrowser->GetFilterAddress(m_FilterId, pBuf, Size); }
-		void SetFilterAddress(const char *pAddress) { m_pServerBrowser->SetFilterAddress(m_FilterId, pAddress); }
-
-		bool GetFilterCountryEnabled() const { return m_pServerBrowser->GetFilterCountryEnabled(m_FilterId); }
-		void SetFilterCountryEnabled(bool Enabled) { m_pServerBrowser->SetFilterCountryEnabled(m_FilterId, Enabled); }
-		int GetFilterCountry() const { return m_pServerBrowser->GetFilterCountry(m_FilterId); }
-		void SetFilterCountry(int Country) { m_pServerBrowser->SetFilterCountry(m_FilterId, Country); }
-
-		bool IsLevelFiltered(int Level) const { return m_pServerBrowser->IsLevelFiltered(m_FilterId, Level); }
-		void ToggleLevelFilter(int Level) { m_pServerBrowser->ToggleLevelFilter(m_FilterId, Level); }
-
-		int GetNumGametypeFilters() const { return m_pServerBrowser->GetNumGametypeFilters(m_FilterId); }
-		void GetGametypeFilter(int Idx, char *pName, int NameSize, bool *pExclusive) const { m_pServerBrowser->GetGametypeFilter(m_FilterId, Idx, pName, NameSize, pExclusive); }
-		void AddGametypeFilter(const char *pName, bool Exclusive) { m_pServerBrowser->AddGametypeFilter(m_FilterId, pName, Exclusive); }
-		void RemoveGametypeFilter(int Idx) { m_pServerBrowser->RemoveGametypeFilter(m_FilterId, Idx); }
-		void ClearGametypeFilters() { m_pServerBrowser->ClearGametypeFilters(m_FilterId); }
-
 		void Reset();
 		void GetFilter(CServerFilterInfo *pFilterInfo) const;
 		void SetFilter(const CServerFilterInfo *pFilterInfo);
@@ -426,12 +405,13 @@ private:
 
 	array<CBrowserFilter> m_lFilters;
 
-	int m_RemoveFilterId; // stores stable id of filter queued for deletion
+	int m_RemoveFilterIndex;
 
 	void LoadFilters();
 	void SaveFilters();
-	void RemoveFilter(int FilterId);
-	void MoveFilter(bool Up, int FilterId);
+	void RemoveFilter(int FilterIndex);
+	void MoveFilter(bool Up, int Filter);
+	void InitDefaultFilters();
 
 	struct CColumn
 	{
@@ -475,6 +455,7 @@ private:
 	bool m_SidebarActive;
 	bool m_ShowServerDetails;
 	int m_LastBrowserType; // -1 if not initialized
+	int m_aSelectedFilters[IServerBrowser::NUM_TYPES]; // -1 if none selected, -2 if not initialized
 	int m_aSelectedServers[IServerBrowser::NUM_TYPES]; // -1 if none selected
 	int m_AddressSelection;
 	static CColumn ms_aBrowserCols[NUM_BROWSER_COLS];
@@ -483,13 +464,9 @@ private:
 	CBrowserFilter *GetSelectedBrowserFilter()
 	{
 		const int Tab = ServerBrowser()->GetType();
-		const int ActiveFilterId = ServerBrowser()->GetActiveFilter(Tab);
-		for(int i = 0; i < m_lFilters.size(); ++i)
-		{
-			if(m_lFilters[i].FilterId() == ActiveFilterId)
-				return &m_lFilters[i];
-		}
-		return 0;
+		if(m_aSelectedFilters[Tab] < 0 || m_aSelectedFilters[Tab] >= m_lFilters.size())
+			return 0;
+		return &m_lFilters[m_aSelectedFilters[Tab]];
 	}
 
 	const CServerInfo *GetSelectedServerInfo()
@@ -564,13 +541,13 @@ private:
 	void RenderServerbrowserInfoTab(CUIRect View);
 	void RenderServerbrowserFriendList(CUIRect View);
 	void RenderDetailInfo(CUIRect View, const CServerInfo *pInfo, const vec4 &TextColor, const vec4 &TextOutlineColor);
-	void RenderDetailScoreboard(CUIRect View, const CServerInfo *pInfo, const CBrowserFilter *pFilter, int ServerIndex, int RowCount, const vec4 &TextColor, const vec4 &TextOutlineColor);
-	void RenderServerbrowserServerDetail(CUIRect View, const CServerInfo *pInfo, const CBrowserFilter *pFilter, int ServerIndex);
+	void RenderDetailScoreboard(CUIRect View, const CServerInfo *pInfo, int RowCount, const vec4 &TextColor, const vec4 &TextOutlineColor);
+	void RenderServerbrowserServerDetail(CUIRect View, const CServerInfo *pInfo);
 	void RenderServerbrowserBottomBox(CUIRect View);
 	void RenderFilterHeader(CUIRect View, int FilterIndex);
 	void PopupConfirmRemoveFilter();
 	void PopupConfirmCountryFilter();
-	int DoBrowserEntry(const void *pID, CUIRect View, const CServerInfo *pEntry, const CBrowserFilter *pFilter, int ServerIndex, bool Selected, bool ShowServerInfo, CScrollRegion *pScroll = 0);
+	int DoBrowserEntry(const void *pID, CUIRect View, const CServerInfo *pEntry, const CBrowserFilter *pFilter, bool Selected, bool ShowServerInfo, CScrollRegion *pScroll = 0);
 	void RenderServerbrowser(CUIRect MainView);
 	static void ConchainConnect(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
 	static void ConchainFriendlistUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);

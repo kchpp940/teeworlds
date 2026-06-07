@@ -38,13 +38,10 @@ public:
 	int NumClients() const { return m_aServerlist[m_ActServerlistType].m_NumClients; }
 	const CServerInfo *Get(int Index) const { return &m_aServerlist[m_ActServerlistType].m_ppServerlist[Index]->m_Info; }
 
-	int NumSortedServers(int FilterId) const { return m_ServerBrowserFilter.GetNumSortedServers(FilterId); }
-	int NumSortedPlayers(int FilterId) const { return m_ServerBrowserFilter.GetNumSortedPlayers(FilterId); }
-	const CServerInfo *SortedGet(int FilterId, int Index) const { return &m_aServerlist[m_ActServerlistType].m_ppServerlist[m_ServerBrowserFilter.GetIndex(FilterId, Index)]->m_Info; }
-	const void *GetID(int FilterId, int Index) const { return m_ServerBrowserFilter.GetID(FilterId, Index); }
-
-	void GetDisplayCounts(int FilterId, int Index, int *pNum, int *pMax) const { m_ServerBrowserFilter.GetDisplayCounts(FilterId, m_ServerBrowserFilter.GetIndex(FilterId, Index), pNum, pMax); }
-	bool IsClientHidden(int FilterId, int Index, int ClientIndex) const { return m_ServerBrowserFilter.IsClientHidden(FilterId, m_ServerBrowserFilter.GetIndex(FilterId, Index), ClientIndex); }
+	int NumSortedServers(int FilterIndex) const { return m_ServerBrowserFilter.GetNumSortedServers(FilterIndex); }
+	int NumSortedPlayers(int FilterIndex) const { return m_ServerBrowserFilter.GetNumSortedPlayers(FilterIndex); }
+	const CServerInfo *SortedGet(int FilterIndex, int Index) const { return &m_aServerlist[m_ActServerlistType].m_ppServerlist[m_ServerBrowserFilter.GetIndex(FilterIndex, Index)]->m_Info; }
+	const void *GetID(int FilterIndex, int Index) const { return m_ServerBrowserFilter.GetID(FilterIndex, Index); }
 
 	void AddFavorite(const CServerInfo *pInfo);
 	void RemoveFavorite(const CServerInfo *pInfo);
@@ -56,68 +53,6 @@ public:
 	void SetFilter(int Index, const CServerFilterInfo *pFilterInfo) { m_ServerBrowserFilter.SetFilter(Index, pFilterInfo); }
 	void GetFilter(int Index, CServerFilterInfo *pFilterInfo) { m_ServerBrowserFilter.GetFilter(Index, pFilterInfo); }
 	void RemoveFilter(int Index) { m_ServerBrowserFilter.RemoveFilter(Index); }
-	int NumFilters() const { return m_ServerBrowserFilter.NumFilters(); }
-
-	// ---- Stable FilterId <-> display order helpers ----
-	int GetFilterId(int Index) const { return m_ServerBrowserFilter.GetFilterId(Index); }
-	int GetFilterIndex(int FilterId) const { return m_ServerBrowserFilter.GetFilterIndex(FilterId); }
-
-	// ---- Filter presets and metadata ----
-	int AddFilterFromPreset(int Preset, const char *pName) { return m_ServerBrowserFilter.AddFilterFromPreset(Preset, pName); }
-	void ResetFilterToPreset(int FilterId) { m_ServerBrowserFilter.ResetFilterToPreset(FilterId); RequestResort(); }
-	int GetFilterPreset(int FilterId) const { return m_ServerBrowserFilter.GetFilterPreset(FilterId); }
-	void GetFilterName(int FilterId, char *pBuf, int Size) const { m_ServerBrowserFilter.GetFilterName(FilterId, pBuf, Size); }
-	void SetFilterName(int FilterId, const char *pName) { m_ServerBrowserFilter.SetFilterName(FilterId, pName); }
-
-	// ---- Filter store (persistence + CRUD + ordering + active selection) ----
-	void LoadFilters();
-	void SaveFilters();
-	void EnsureDefaultFilters() { m_ServerBrowserFilter.EnsureDefaultFilters(); }
-
-	int GetActiveFilter(int Type) const { return m_ServerBrowserFilter.GetActiveFilter(Type); }
-	void SetActiveFilter(int Type, int FilterId) { m_ServerBrowserFilter.SetActiveFilter(Type, FilterId); }
-
-	int CreateFilter(int Preset, const char *pName) { RequestResort(); return m_ServerBrowserFilter.CreateFilter(Preset, pName); }
-	void DeleteFilter(int FilterId) { m_ServerBrowserFilter.DeleteFilter(FilterId); RequestResort(); }
-	void RenameFilter(int FilterId, const char *pName) { m_ServerBrowserFilter.SetFilterName(FilterId, pName); }
-	void MoveFilter(int FilterId, bool Up) { m_ServerBrowserFilter.MoveFilter(FilterId, Up); RequestResort(); }
-
-	// ---- Aggregated getters/setters for persistence ----
-	int GetFilterFlags(int FilterId) const { return m_ServerBrowserFilter.GetFilterFlags(FilterId); }
-	void SetFilterFlags(int FilterId, int Flags) { m_ServerBrowserFilter.SetFilterFlags(FilterId, Flags); RequestResort(); }
-	int GetFilterLevelMask(int FilterId) const { return m_ServerBrowserFilter.GetFilterLevelMask(FilterId); }
-	void SetFilterLevelMask(int FilterId, int Mask) { m_ServerBrowserFilter.SetFilterLevelMask(FilterId, Mask); RequestResort(); }
-
-	// ---- Semantic filter state API ----
-	bool GetFilterFlag(int FilterId, int Flag) const { return m_ServerBrowserFilter.GetFilterFlag(FilterId, Flag); }
-	void SetFilterFlag(int FilterId, int Flag, bool Enabled) { m_ServerBrowserFilter.SetFilterFlag(FilterId, Flag, Enabled); RequestResort(); }
-
-	int GetFilterPing(int FilterId) const { return m_ServerBrowserFilter.GetFilterPing(FilterId); }
-	void SetFilterPing(int FilterId, int Ping) { m_ServerBrowserFilter.SetFilterPing(FilterId, Ping); RequestResort(); }
-
-	void GetFilterAddress(int FilterId, char *pBuf, int Size) const { m_ServerBrowserFilter.GetFilterAddress(FilterId, pBuf, Size); }
-	void SetFilterAddress(int FilterId, const char *pAddress) { m_ServerBrowserFilter.SetFilterAddress(FilterId, pAddress); RequestResort(); }
-
-	bool GetFilterCountryEnabled(int FilterId) const { return m_ServerBrowserFilter.GetFilterCountryEnabled(FilterId); }
-	void SetFilterCountryEnabled(int FilterId, bool Enabled) { m_ServerBrowserFilter.SetFilterCountryEnabled(FilterId, Enabled); RequestResort(); }
-	int GetFilterCountry(int FilterId) const { return m_ServerBrowserFilter.GetFilterCountry(FilterId); }
-	void SetFilterCountry(int FilterId, int Country) { m_ServerBrowserFilter.SetFilterCountry(FilterId, Country); RequestResort(); }
-
-	bool IsLevelFiltered(int FilterId, int Level) const { return m_ServerBrowserFilter.IsLevelFiltered(FilterId, Level); }
-	void ToggleLevelFilter(int FilterId, int Level) { m_ServerBrowserFilter.ToggleLevelFilter(FilterId, Level); RequestResort(); }
-
-	int GetNumGametypeFilters(int FilterId) const { return m_ServerBrowserFilter.GetNumGametypeFilters(FilterId); }
-	void GetGametypeFilter(int FilterId, int Idx, char *pName, int NameSize, bool *pExclusive) const { m_ServerBrowserFilter.GetGametypeFilter(FilterId, Idx, pName, NameSize, pExclusive); }
-	void AddGametypeFilter(int FilterId, const char *pName, bool Exclusive) { m_ServerBrowserFilter.AddGametypeFilter(FilterId, pName, Exclusive); RequestResort(); }
-	void RemoveGametypeFilter(int FilterId, int Idx) { m_ServerBrowserFilter.RemoveGametypeFilter(FilterId, Idx); RequestResort(); }
-	void ClearGametypeFilters(int FilterId) { m_ServerBrowserFilter.ClearGametypeFilters(FilterId); RequestResort(); }
-
-	int GetSort() const { return Config()->m_BrSort; }
-	int GetSortOrder() const { return Config()->m_BrSortOrder; }
-	void SetSortAndOrder(int SortType, int SortOrder);
-
-	void GetQuickSearchString(char *pBuf, int Size) const { str_copy(pBuf, Config()->m_BrFilterString, Size); }
-	void SetQuickSearchString(const char *pString);
 
 	static void CBFTrackPacket(int TrackID, void *pUser);
 	

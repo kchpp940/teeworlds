@@ -68,12 +68,6 @@ public:
 	char m_aVersion[32];
 	char m_aAddress[NETADDR_MAXSTRSIZE];
 	CClient m_aClients[MAX_CLIENTS];
-
-	// ---- derived display fields (calculated during filter) ----
-	// NumClients/NumPlayers adjusted by bot-filter and spectator-filter settings,
-	// ready for UI display without re-running the business rules.
-	int m_NumDisplayClients;
-	int m_MaxDisplayClients;
 };
 
 class CServerFilterInfo
@@ -103,7 +97,7 @@ public:
 		}
 	}
 
-	int IsLevelFiltered(int Level) const
+	int IsLevelFiltered(int Level)
 	{
 		return m_ServerLevel & (1 << Level);
 	}
@@ -174,15 +168,10 @@ public:
 	virtual int NumClients() const = 0;
 	virtual const CServerInfo *Get(int Index) const = 0;
 
-	virtual int NumSortedServers(int FilterId) const = 0;
-	virtual int NumSortedPlayers(int FilterId) const = 0;
-	virtual const CServerInfo *SortedGet(int FilterId, int Index) const = 0;
-	virtual const void *GetID(int FilterId, int Index) const = 0;
-
-	// UI-facing helpers: run all business rules inside engine so menus don't
-	// need to know about FILTER_* flags or recompute counts.
-	virtual void GetDisplayCounts(int FilterId, int Index, int *pNum, int *pMax) const = 0;
-	virtual bool IsClientHidden(int FilterId, int Index, int ClientIndex) const = 0;
+	virtual int NumSortedServers(int Index) const = 0;
+	virtual int NumSortedPlayers(int Index) const = 0;
+	virtual const CServerInfo *SortedGet(int FilterIndex, int Index) const = 0;
+	virtual const void *GetID(int FilterIndex, int Index) const = 0;
 
 	virtual void AddFavorite(const CServerInfo *pInfo) = 0;
 	virtual void RemoveFavorite(const CServerInfo *pInfo) = 0;
@@ -194,93 +183,6 @@ public:
 	virtual void SetFilter(int Index, const CServerFilterInfo *pFilterInfo) = 0;
 	virtual void GetFilter(int Index, CServerFilterInfo *pFilterInfo) = 0;
 	virtual void RemoveFilter(int Index) = 0;
-	virtual int NumFilters() const = 0;
-
-	// ---- Stable FilterId <-> display order helpers ----
-	// Each filter has a unique, never-reused id that survives Delete/Move.
-	// UI stores and operates on these ids; array index is an internal detail.
-	virtual int GetFilterId(int Index) const = 0;
-	virtual int GetFilterIndex(int FilterId) const = 0;
-
-	// ---- Filter presets and metadata ----
-	// Presets are built-in filter templates that live in engine.
-	// UI creates filters from presets and never needs to know the
-	// default values of FILTER_COMPAT_VERSION, gametype lists, etc.
-	enum
-	{
-		PRESET_CUSTOM = 0,
-		PRESET_ALL,
-		PRESET_STANDARD,
-		PRESET_FAVORITES,
-		PRESET_RACE,
-		NUM_PRESETS,
-	};
-	virtual int AddFilterFromPreset(int Preset, const char *pName) = 0;
-	virtual void ResetFilterToPreset(int FilterId) = 0;
-	virtual int GetFilterPreset(int FilterId) const = 0;
-	virtual void GetFilterName(int FilterId, char *pBuf, int Size) const = 0;
-	virtual void SetFilterName(int FilterId, const char *pName) = 0;
-
-	// ---- Filter store (persistence + CRUD + ordering + active selection) ----
-	// Engine owns the entire filter list, its order, per-type active filter
-	// selection, and JSON persistence. UI only asks engine to mutate state.
-	virtual void LoadFilters() = 0;
-	virtual void SaveFilters() = 0;
-	virtual void EnsureDefaultFilters() = 0;
-
-	virtual int GetActiveFilter(int Type) const = 0;
-	virtual void SetActiveFilter(int Type, int FilterId) = 0;
-
-	virtual int CreateFilter(int Preset, const char *pName) = 0;
-	virtual void DeleteFilter(int FilterId) = 0;
-	virtual void RenameFilter(int FilterId, const char *pName) = 0;
-	virtual void MoveFilter(int FilterId, bool Up) = 0;
-
-	// ---- Aggregated state getters/setters for persistence ----
-	// These let the persistence layer (UI settings file) read/write
-	// entire flags mask / level mask without understanding how
-	// FILTER_* flags are packed into SortHash or how Level bits are
-	// stored. They are intentionally coarse and not used by normal UI.
-	virtual int GetFilterFlags(int FilterId) const = 0;
-	virtual void SetFilterFlags(int FilterId, int Flags) = 0;
-	virtual int GetFilterLevelMask(int FilterId) const = 0;
-	virtual void SetFilterLevelMask(int FilterId, int Mask) = 0;
-
-	// ---- Semantic filter state API ----
-	// UI calls these instead of manipulating CServerFilterInfo directly.
-	// All mutations auto-trigger re-filter/sort and update derived display fields.
-
-	virtual bool GetFilterFlag(int FilterId, int Flag) const = 0;
-	virtual void SetFilterFlag(int FilterId, int Flag, bool Enabled) = 0;
-
-	virtual int GetFilterPing(int FilterId) const = 0;
-	virtual void SetFilterPing(int FilterId, int Ping) = 0;
-
-	virtual void GetFilterAddress(int FilterId, char *pBuf, int Size) const = 0;
-	virtual void SetFilterAddress(int FilterId, const char *pAddress) = 0;
-
-	virtual bool GetFilterCountryEnabled(int FilterId) const = 0;
-	virtual void SetFilterCountryEnabled(int FilterId, bool Enabled) = 0;
-	virtual int GetFilterCountry(int FilterId) const = 0;
-	virtual void SetFilterCountry(int FilterId, int Country) = 0;
-
-	virtual bool IsLevelFiltered(int FilterId, int Level) const = 0;
-	virtual void ToggleLevelFilter(int FilterId, int Level) = 0;
-
-	virtual int GetNumGametypeFilters(int FilterId) const = 0;
-	virtual void GetGametypeFilter(int FilterId, int Idx, char *pName, int NameSize, bool *pExclusive) const = 0;
-	virtual void AddGametypeFilter(int FilterId, const char *pName, bool Exclusive) = 0;
-	virtual void RemoveGametypeFilter(int FilterId, int Idx) = 0;
-	virtual void ClearGametypeFilters(int FilterId) = 0;
-
-	// Global sorting (not per-filter)
-	virtual int GetSort() const = 0;
-	virtual int GetSortOrder() const = 0;
-	virtual void SetSortAndOrder(int SortType, int SortOrder) = 0;
-
-	// Global quick-search string (lives in Config, but accessed uniformly)
-	virtual void GetQuickSearchString(char *pBuf, int Size) const = 0;
-	virtual void SetQuickSearchString(const char *pString) = 0;
 };
 
 #endif
