@@ -140,15 +140,6 @@ function(set_src VAR GLOBBING DIRECTORY) # ...
 endfunction()
 
 ########################################################################
-# INITIALIZE TARGET LISTS
-########################################################################
-
-set(TARGETS_OWN)
-set(TARGETS_DEP)
-
-set(TARGETS_LINK) # Targets with a linking stage.
-
-########################################################################
 # DEPENDENCIES
 ########################################################################
 
@@ -377,7 +368,6 @@ tw_add_library(json EXCLUDE_FROM_ALL PROFILE DEP TYPE OBJECT ${DEP_JSON_SRC})
 set_src(DEP_MD5_SRC GLOB src/engine/external/md5 md5.c md5.h)
 tw_add_library(md5 EXCLUDE_FROM_ALL PROFILE DEP TYPE OBJECT ${DEP_MD5_SRC})
 
-list(APPEND TARGETS_DEP json md5)
 set(DEP_JSON $<TARGET_OBJECTS:json>)
 set(DEP_MD5)
 if(NOT CRYPTO_FOUND)
@@ -1276,15 +1266,11 @@ set(GAME_GENERATED_SHARED
 
 set(DEPS ${DEP_JSON} ${DEP_MD5} ${ZLIB_DEP})
 
-# Libraries
-set(LIBS ${CMAKE_THREAD_LIBS_INIT} ${ZLIB_LIBRARIES} ${CRYPTO_LIBRARIES} ${PLATFORM_LIBS})
-
 # Targets
 tw_add_library(engine-shared EXCLUDE_FROM_ALL PROFILE OWN TYPE OBJECT
   ${ENGINE_INTERFACE} ${ENGINE_SHARED} ${ENGINE_GENERATED_SHARED} ${BASE})
 tw_add_library(game-shared EXCLUDE_FROM_ALL PROFILE OWN TYPE OBJECT
   ${GAME_SHARED} ${GAME_GENERATED_SHARED})
-list(APPEND TARGETS_OWN engine-shared game-shared)
 
 
 ########################################################################
@@ -1423,16 +1409,6 @@ if(CLIENT)
 
   set(DEPS_CLIENT ${DEPS} ${PNGLITE_DEP} ${WAVPACK_DEP})
 
-  # Libraries
-  set(LIBS_CLIENT
-    ${LIBS}
-    ${FREETYPE_LIBRARIES}
-    ${PNGLITE_LIBRARIES}
-    ${SDL2_LIBRARIES}
-    ${WAVPACK_LIBRARIES}
-    ${PLATFORM_CLIENT_LIBS}
-  )
-
   if(TARGET_OS STREQUAL "windows")
     set(CLIENT_ICON "other/icons/${CLIENT_EXECUTABLE}.rc")
     if(NOT MINGW)
@@ -1454,11 +1430,8 @@ if(CLIENT)
     $<TARGET_OBJECTS:engine-shared>
     $<TARGET_OBJECTS:game-shared>
   )
-  target_link_libraries(${TARGET_CLIENT} ${LIBS_CLIENT})
   tw_apply_client_wavpack_config(${TARGET_CLIENT})
 
-  list(APPEND TARGETS_OWN ${TARGET_CLIENT})
-  list(APPEND TARGETS_LINK ${TARGET_CLIENT})
 endif()
 
 
@@ -1522,9 +1495,6 @@ if(SERVER)
     set(SERVER_ICON)
   endif()
 
-  # Libraries
-  set(LIBS_SERVER ${LIBS})
-
   # Target
   set(TARGET_SERVER ${SERVER_EXECUTABLE})
   tw_add_executable(${TARGET_SERVER} PROFILE SERVER
@@ -1534,17 +1504,12 @@ if(SERVER)
     $<TARGET_OBJECTS:engine-shared>
     $<TARGET_OBJECTS:game-shared>
   )
-  target_link_libraries(${TARGET_SERVER} ${LIBS_SERVER})
-  list(APPEND TARGETS_OWN ${TARGET_SERVER})
-  list(APPEND TARGETS_LINK ${TARGET_SERVER})
 
   if(TARGET_OS AND TARGET_OS STREQUAL "mac")
     set(SERVER_LAUNCHER_SRC src/macoslaunch/server.mm)
     set(TARGET_SERVER_LAUNCHER ${TARGET_SERVER}-Launcher)
     tw_add_executable(${TARGET_SERVER_LAUNCHER} PROFILE SERVER ${SERVER_LAUNCHER_SRC})
-    target_link_libraries(${TARGET_SERVER_LAUNCHER} ${COCOA})
-    list(APPEND TARGETS_OWN ${TARGET_SERVER_LAUNCHER})
-    list(APPEND TARGETS_LINK ${TARGET_SERVER_LAUNCHER})
+    target_link_libraries(${TARGET_SERVER_LAUNCHER} PRIVATE ${COCOA})
   endif()
 endif()
 
@@ -1566,12 +1531,6 @@ tw_add_executable(${TARGET_MASTERSRV} EXCLUDE_FROM_ALL PROFILE TOOL
 tw_add_executable(${TARGET_VERSIONSRV} EXCLUDE_FROM_ALL PROFILE TOOL
   ${VERSIONSRV_SRC} $<TARGET_OBJECTS:engine-shared> ${DEPS})
 
-target_link_libraries(${TARGET_MASTERSRV} ${LIBS})
-target_link_libraries(${TARGET_VERSIONSRV} ${LIBS})
-
-list(APPEND TARGETS_OWN ${TARGET_MASTERSRV} ${TARGET_VERSIONSRV})
-list(APPEND TARGETS_LINK ${TARGET_MASTERSRV} ${TARGET_VERSIONSRV})
-
 set(TARGETS_TOOLS)
 set_src(TOOLS GLOB src/tools
   crapnet.cpp
@@ -1590,13 +1549,9 @@ foreach(ABS_T ${TOOLS})
       ${EXTRA_TOOL_SRC}
       $<TARGET_OBJECTS:engine-shared>
     )
-    target_link_libraries(${TOOL} ${LIBS})
     list(APPEND TARGETS_TOOLS ${TOOL})
   endif()
 endforeach()
-
-list(APPEND TARGETS_OWN ${TARGETS_TOOLS})
-list(APPEND TARGETS_LINK ${TARGETS_TOOLS})
 
 add_custom_target(tools DEPENDS ${TARGETS_TOOLS})
 add_custom_target(everything DEPENDS ${TARGETS_OWN})
@@ -1634,10 +1589,6 @@ if(GTEST_FOUND OR DOWNLOAD_GTEST)
     $<TARGET_OBJECTS:game-shared>
     ${DEPS}
   )
-  target_link_libraries(${TARGET_TESTRUNNER} ${LIBS} ${GTEST_LIBRARIES})
-
-  list(APPEND TARGETS_OWN ${TARGET_TESTRUNNER})
-  list(APPEND TARGETS_LINK ${TARGET_TESTRUNNER})
 
   add_custom_target(run_tests
     COMMAND $<TARGET_FILE:${TARGET_TESTRUNNER}> ${TESTRUNNER_ARGS}
@@ -1742,14 +1693,6 @@ endforeach()
 
 tw_setup_install()
 
-set(CPACK_TARGETS)
-if(TARGET ${TARGET_CLIENT})
-  list(APPEND CPACK_TARGETS ${TARGET_CLIENT})
-endif()
-if(TARGET ${TARGET_SERVER})
-  list(APPEND CPACK_TARGETS ${TARGET_SERVER})
-endif()
-
 set(CPACK_DIRS ${PROJECT_BINARY_DIR}/data)
 set(CPACK_FILES
   license.txt
@@ -1761,7 +1704,6 @@ if(TARGET_OS STREQUAL "windows")
 endif()
 
 tw_apply_install_rules(
-  TARGETS ${CPACK_TARGETS}
   DATA_DIRS ${CPACK_DIRS}
   EXTRA_FILES ${CPACK_FILES}
 )
