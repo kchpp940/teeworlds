@@ -66,112 +66,136 @@ float VelocityRamp(float Value, float Start, float Range, float Curvature)
 
 const float CCharacterCore::PHYS_SIZE = 28.0f;
 
-bool CMovementUpdate::IsGrounded(const CMovementState *pState) const
+void CCharacterCore::Init(CWorldCore *pWorld, CCollision *pCollision)
 {
-	return m_pCollision && (
-		m_pCollision->CheckPoint(pState->m_Pos.x+CCharacterCore::PHYS_SIZE/2, pState->m_Pos.y+CCharacterCore::PHYS_SIZE/2+5)
-		|| m_pCollision->CheckPoint(pState->m_Pos.x-CCharacterCore::PHYS_SIZE/2, pState->m_Pos.y+CCharacterCore::PHYS_SIZE/2+5));
+	m_pWorld = pWorld;
+	m_pCollision = pCollision;
 }
 
-void CMovementUpdate::ApplyInput(CMovementState *pState, const CMovementInput *pInput) const
+void CCharacterCore::Reset()
 {
-	pState->m_Direction = pInput->m_Direction;
-	pState->m_Angle = (int)(angle(vec2(pInput->m_TargetX, pInput->m_TargetY))*256.0f);
+	m_Pos = vec2(0,0);
+	m_Vel = vec2(0,0);
+	m_HookDragVel = vec2(0,0);
+	m_HookPos = vec2(0,0);
+	m_HookDir = vec2(0,0);
+	m_HookTick = 0;
+	m_HookState = HOOK_IDLE;
+	m_HookedPlayer = -1;
+	m_Jumped = 0;
+	m_TriggeredEvents = 0;
+	m_Death = false;
 }
 
-void CMovementUpdate::TickJump(CMovementState *pState, const CMovementInput *pInput, bool UseInput, bool Grounded) const
+void CCharacterCore::Tick(bool UseInput)
 {
-	if(Grounded)
-		pState->m_Jumped &= ~2;
+	m_TriggeredEvents = 0;
 
-	if(!UseInput)
-		return;
+	// get ground state
+	const bool Grounded =
+		m_pCollision->CheckPoint(m_Pos.x+PHYS_SIZE/2, m_Pos.y+PHYS_SIZE/2+5)
+		|| m_pCollision->CheckPoint(m_Pos.x-PHYS_SIZE/2, m_Pos.y+PHYS_SIZE/2+5);
 
-	if(pInput->m_Jump)
-	{
-		if(!(pState->m_Jumped&1))
-		{
-			if(Grounded)
-			{
-				pState->m_TriggeredEvents |= COREEVENTFLAG_GROUND_JUMP;
-				pState->m_Vel.y = -m_pTuning->m_GroundJumpImpulse;
-				pState->m_Jumped |= 1;
-			}
-			else if(!(pState->m_Jumped&2))
-			{
-				pState->m_TriggeredEvents |= COREEVENTFLAG_AIR_JUMP;
-				pState->m_Vel.y = -m_pTuning->m_AirJumpImpulse;
-				pState->m_Jumped |= 3;
-			}
-		}
-	}
-	else
-		pState->m_Jumped &= ~1;
-}
+	vec2 TargetDirection = normalize(vec2(m_Input.m_TargetX, m_Input.m_TargetY));
 
-void CMovementUpdate::TickVelocity(CMovementState *pState, bool Grounded) const
-{
-	float MaxSpeed = Grounded ? m_pTuning->m_GroundControlSpeed : m_pTuning->m_AirControlSpeed;
-	float Accel = Grounded ? m_pTuning->m_GroundControlAccel : m_pTuning->m_AirControlAccel;
-	float Friction = Grounded ? m_pTuning->m_GroundFriction : m_pTuning->m_AirFriction;
+	m_Vel.y += m_pWorld->m_Tuning.m_Gravity;
 
-	if(pState->m_Direction < 0)
-		pState->m_Vel.x = SaturatedAdd(-MaxSpeed, MaxSpeed, pState->m_Vel.x, -Accel);
-	if(pState->m_Direction > 0)
-		pState->m_Vel.x = SaturatedAdd(-MaxSpeed, MaxSpeed, pState->m_Vel.x, Accel);
-	if(pState->m_Direction == 0)
-		pState->m_Vel.x *= Friction;
-}
+	float MaxSpeed = Grounded ? m_pWorld->m_Tuning.m_GroundControlSpeed : m_pWorld->m_Tuning.m_AirControlSpeed;
+	float Accel = Grounded ? m_pWorld->m_Tuning.m_GroundControlAccel : m_pWorld->m_Tuning.m_AirControlAccel;
+	float Friction = Grounded ? m_pWorld->m_Tuning.m_GroundFriction : m_pWorld->m_Tuning.m_AirFriction;
 
-void CMovementUpdate::TickHook(CMovementState *pState, const CMovementInput *pInput, bool UseInput, vec2 TargetDirection) const
-{
+	// handle input
 	if(UseInput)
 	{
-		if(pInput->m_Hook)
+		m_Direction = m_Input.m_Direction;
+		m_Angle = (int)(angle(vec2(m_Input.m_TargetX, m_Input.m_TargetY))*256.0f);
+
+		// handle jump
+		if(m_Input.m_Jump)
 		{
-			if(pState->m_HookState == HOOK_IDLE)
+			if(!(m_Jumped&1))
 			{
-				pState->m_HookState = HOOK_FLYING;
-				pState->m_HookPos = pState->m_Pos+TargetDirection*CCharacterCore::PHYS_SIZE*1.5f;
-				pState->m_HookDir = TargetDirection;
-				pState->m_HookedPlayer = -1;
-				pState->m_HookTick = 0;
+				if(Grounded)
+				{
+					m_TriggeredEvents |= COREEVENTFLAG_GROUND_JUMP;
+					m_Vel.y = -m_pWorld->m_Tuning.m_GroundJumpImpulse;
+					m_Jumped |= 1;
+				}
+				else if(!(m_Jumped&2))
+				{
+					m_TriggeredEvents |= COREEVENTFLAG_AIR_JUMP;
+					m_Vel.y = -m_pWorld->m_Tuning.m_AirJumpImpulse;
+					m_Jumped |= 3;
+				}
+			}
+		}
+		else
+			m_Jumped &= ~1;
+
+		// handle hook
+		if(m_Input.m_Hook)
+		{
+			if(m_HookState == HOOK_IDLE)
+			{
+				m_HookState = HOOK_FLYING;
+				m_HookPos = m_Pos+TargetDirection*PHYS_SIZE*1.5f;
+				m_HookDir = TargetDirection;
+				m_HookedPlayer = -1;
+				m_HookTick = 0;
+				//m_TriggeredEvents |= COREEVENTFLAG_HOOK_LAUNCH;
 			}
 		}
 		else
 		{
-			pState->m_HookedPlayer = -1;
-			pState->m_HookState = HOOK_IDLE;
-			pState->m_HookPos = pState->m_Pos;
+			m_HookedPlayer = -1;
+			m_HookState = HOOK_IDLE;
+			m_HookPos = m_Pos;
 		}
 	}
 
-	if(pState->m_HookState == HOOK_IDLE)
+	// add the speed modification according to players wanted direction
+	if(m_Direction < 0)
+		m_Vel.x = SaturatedAdd(-MaxSpeed, MaxSpeed, m_Vel.x, -Accel);
+	if(m_Direction > 0)
+		m_Vel.x = SaturatedAdd(-MaxSpeed, MaxSpeed, m_Vel.x, Accel);
+	if(m_Direction == 0)
+		m_Vel.x *= Friction;
+
+	// handle jumping
+	// 1 bit = to keep track if a jump has been made on this input
+	// 2 bit = to keep track if a air-jump has been made
+	if(Grounded)
+		m_Jumped &= ~2;
+
+	// do hook
+	if(m_HookState == HOOK_IDLE)
 	{
-		pState->m_HookedPlayer = -1;
-		pState->m_HookState = HOOK_IDLE;
-		pState->m_HookPos = pState->m_Pos;
+		m_HookedPlayer = -1;
+		m_HookState = HOOK_IDLE;
+		m_HookPos = m_Pos;
 	}
-	else if(pState->m_HookState >= HOOK_RETRACT_START && pState->m_HookState < HOOK_RETRACT_END)
+	else if(m_HookState >= HOOK_RETRACT_START && m_HookState < HOOK_RETRACT_END)
 	{
-		pState->m_HookState++;
+		m_HookState++;
 	}
-	else if(pState->m_HookState == HOOK_RETRACT_END)
+	else if(m_HookState == HOOK_RETRACT_END)
 	{
-		pState->m_HookState = HOOK_RETRACTED;
+		m_HookState = HOOK_RETRACTED;
+		//m_TriggeredEvents |= COREEVENTFLAG_HOOK_RETRACT;
 	}
-	else if(pState->m_HookState == HOOK_FLYING)
+	else if(m_HookState == HOOK_FLYING)
 	{
-		vec2 NewPos = pState->m_HookPos+pState->m_HookDir*m_pTuning->m_HookFireSpeed;
-		if(distance(pState->m_Pos, NewPos) > m_pTuning->m_HookLength)
+		vec2 NewPos = m_HookPos+m_HookDir*m_pWorld->m_Tuning.m_HookFireSpeed;
+		if(distance(m_Pos, NewPos) > m_pWorld->m_Tuning.m_HookLength)
 		{
-			pState->m_HookState = HOOK_RETRACT_START;
-			NewPos = pState->m_Pos + normalize(NewPos-pState->m_Pos) * m_pTuning->m_HookLength;
+			m_HookState = HOOK_RETRACT_START;
+			NewPos = m_Pos + normalize(NewPos-m_Pos) * m_pWorld->m_Tuning.m_HookLength;
 		}
 
+		// make sure that the hook doesn't go though the ground
 		bool GoingToHitGround = false;
 		bool GoingToRetract = false;
-		int Hit = m_pCollision->IntersectLine(pState->m_HookPos, NewPos, &NewPos, 0);
+		int Hit = m_pCollision->IntersectLine(m_HookPos, NewPos, &NewPos, 0);
 		if(Hit)
 		{
 			if(Hit&CCollision::COLFLAG_NOHOOK)
@@ -180,441 +204,253 @@ void CMovementUpdate::TickHook(CMovementState *pState, const CMovementInput *pIn
 				GoingToHitGround = true;
 		}
 
-		if(m_pWorld && m_pTuning->m_PlayerHooking)
+		// Check against other players first
+		if(m_pWorld && m_pWorld->m_Tuning.m_PlayerHooking)
 		{
 			float Distance = 0.0f;
 			for(int i = 0; i < MAX_CLIENTS; i++)
 			{
 				CCharacterCore *pCharCore = m_pWorld->m_apCharacters[i];
-				if(!pCharCore || &pCharCore->m_State == pState)
+				if(!pCharCore || pCharCore == this)
 					continue;
 
-				vec2 ClosestPoint = closest_point_on_line(pState->m_HookPos, NewPos, pCharCore->m_Pos);
-				if(distance(pCharCore->m_Pos, ClosestPoint) < CCharacterCore::PHYS_SIZE+2.0f)
+				vec2 ClosestPoint = closest_point_on_line(m_HookPos, NewPos, pCharCore->m_Pos);
+				if(distance(pCharCore->m_Pos, ClosestPoint) < PHYS_SIZE+2.0f)
 				{
-					if(pState->m_HookedPlayer == -1 || distance(pState->m_HookPos, pCharCore->m_Pos) < Distance)
+					if(m_HookedPlayer == -1 || distance(m_HookPos, pCharCore->m_Pos) < Distance)
 					{
-						pState->m_TriggeredEvents |= COREEVENTFLAG_HOOK_ATTACH_PLAYER;
-						pState->m_HookState = HOOK_GRABBED;
-						pState->m_HookedPlayer = i;
-						Distance = distance(pState->m_HookPos, pCharCore->m_Pos);
+						m_TriggeredEvents |= COREEVENTFLAG_HOOK_ATTACH_PLAYER;
+						m_HookState = HOOK_GRABBED;
+						m_HookedPlayer = i;
+						Distance = distance(m_HookPos, pCharCore->m_Pos);
 					}
 				}
 			}
 		}
 
-		if(pState->m_HookState == HOOK_FLYING)
+		if(m_HookState == HOOK_FLYING)
 		{
+			// check against ground
 			if(GoingToHitGround)
 			{
-				pState->m_TriggeredEvents |= COREEVENTFLAG_HOOK_ATTACH_GROUND;
-				pState->m_HookState = HOOK_GRABBED;
+				m_TriggeredEvents |= COREEVENTFLAG_HOOK_ATTACH_GROUND;
+				m_HookState = HOOK_GRABBED;
 			}
 			else if(GoingToRetract)
 			{
-				pState->m_TriggeredEvents |= COREEVENTFLAG_HOOK_HIT_NOHOOK;
-				pState->m_HookState = HOOK_RETRACT_START;
+				m_TriggeredEvents |= COREEVENTFLAG_HOOK_HIT_NOHOOK;
+				m_HookState = HOOK_RETRACT_START;
 			}
 
-			pState->m_HookPos = NewPos;
+			m_HookPos = NewPos;
 		}
 	}
 
-	if(pState->m_HookState == HOOK_GRABBED)
+	if(m_HookState == HOOK_GRABBED)
 	{
-		if(pState->m_HookedPlayer != -1)
+		if(m_HookedPlayer != -1)
 		{
-			CCharacterCore *pCharCore = m_pWorld ? m_pWorld->m_apCharacters[pState->m_HookedPlayer] : 0;
+			CCharacterCore *pCharCore = m_pWorld->m_apCharacters[m_HookedPlayer];
 			if(pCharCore)
-				pState->m_HookPos = pCharCore->m_Pos;
+				m_HookPos = pCharCore->m_Pos;
 			else
 			{
-				pState->m_HookedPlayer = -1;
-				pState->m_HookState = HOOK_RETRACTED;
-				pState->m_HookPos = pState->m_Pos;
+				// release hook
+				m_HookedPlayer = -1;
+				m_HookState = HOOK_RETRACTED;
+				m_HookPos = m_Pos;
 			}
+
+			// keep players hooked for a max of 1.5sec
+			//if(Server()->Tick() > hook_tick+(Server()->TickSpeed()*3)/2)
+				//release_hooked();
 		}
 
-		if(pState->m_HookedPlayer == -1 && distance(pState->m_HookPos, pState->m_Pos) > 46.0f)
+		// don't do this hook routine when we are already hooked to a player
+		if(m_HookedPlayer == -1 && distance(m_HookPos, m_Pos) > 46.0f)
 		{
-			vec2 HookVel = normalize(pState->m_HookPos-pState->m_Pos)*m_pTuning->m_HookDragAccel;
+			vec2 HookVel = normalize(m_HookPos-m_Pos)*m_pWorld->m_Tuning.m_HookDragAccel;
+			// the hook as more power to drag you up then down.
+			// this makes it easier to get on top of an platform
 			if(HookVel.y > 0)
 				HookVel.y *= 0.3f;
 
-			if((HookVel.x < 0 && pState->m_Direction < 0) || (HookVel.x > 0 && pState->m_Direction > 0))
+			// the hook will boost it's power if the player wants to move
+			// in that direction. otherwise it will dampen everything abit
+			if((HookVel.x < 0 && m_Direction < 0) || (HookVel.x > 0 && m_Direction > 0))
 				HookVel.x *= 0.95f;
 			else
 				HookVel.x *= 0.75f;
 
-			vec2 NewVel = pState->m_Vel+HookVel;
+			vec2 NewVel = m_Vel+HookVel;
 
-			if(length(NewVel) < m_pTuning->m_HookDragSpeed || length(NewVel) < length(pState->m_Vel))
-				pState->m_Vel = NewVel;
+			// check if we are under the legal limit for the hook
+			if(length(NewVel) < m_pWorld->m_Tuning.m_HookDragSpeed || length(NewVel) < length(m_Vel))
+				m_Vel = NewVel; // no problem. apply
+
 		}
 
-		pState->m_HookTick++;
-		if(pState->m_HookedPlayer != -1 && (pState->m_HookTick > SERVER_TICK_SPEED+SERVER_TICK_SPEED/5 || (m_pWorld && !m_pWorld->m_apCharacters[pState->m_HookedPlayer])))
+		// release hook (max hook time is 1.25
+		m_HookTick++;
+		if(m_HookedPlayer != -1 && (m_HookTick > SERVER_TICK_SPEED+SERVER_TICK_SPEED/5 || !m_pWorld->m_apCharacters[m_HookedPlayer]))
 		{
-			pState->m_HookedPlayer = -1;
-			pState->m_HookState = HOOK_RETRACTED;
-			pState->m_HookPos = pState->m_Pos;
+			m_HookedPlayer = -1;
+			m_HookState = HOOK_RETRACTED;
+			m_HookPos = m_Pos;
 		}
 	}
-}
 
-void CMovementUpdate::TickPlayerCollisions(CMovementState *pState) const
-{
-	if(!m_pWorld)
-		return;
-
-	for(int i = 0; i < MAX_CLIENTS; i++)
+	if(m_pWorld)
 	{
-		CCharacterCore *pCharCore = m_pWorld->m_apCharacters[i];
-		if(!pCharCore || &pCharCore->m_State == pState)
-			continue;
-
-		float Distance = distance(pState->m_Pos, pCharCore->m_Pos);
-		vec2 Dir = normalize(pState->m_Pos - pCharCore->m_Pos);
-		if(m_pTuning->m_PlayerCollision && Distance < CCharacterCore::PHYS_SIZE*1.25f && Distance > 0.0f)
+		for(int i = 0; i < MAX_CLIENTS; i++)
 		{
-			float a = (CCharacterCore::PHYS_SIZE*1.45f - Distance);
-			float Velocity = 0.5f;
+			CCharacterCore *pCharCore = m_pWorld->m_apCharacters[i];
+			if(!pCharCore)
+				continue;
 
-			if(length(pState->m_Vel) > 0.0001)
-				Velocity = 1-(dot(normalize(pState->m_Vel), Dir)+1)/2;
+			//player *p = (player*)ent;
+			if(pCharCore == this) // || !(p->flags&FLAG_ALIVE)
+				continue; // make sure that we don't nudge our self
 
-			pState->m_Vel += Dir*a*(Velocity*0.75f);
-			pState->m_Vel *= 0.85f;
-		}
-
-		if(pState->m_HookedPlayer == i && m_pTuning->m_PlayerHooking)
-		{
-			if(Distance > CCharacterCore::PHYS_SIZE*1.50f)
+			// handle player <-> player collision
+			float Distance = distance(m_Pos, pCharCore->m_Pos);
+			vec2 Dir = normalize(m_Pos - pCharCore->m_Pos);
+			if(m_pWorld->m_Tuning.m_PlayerCollision && Distance < PHYS_SIZE*1.25f && Distance > 0.0f)
 			{
-				float Accel = m_pTuning->m_HookDragAccel * (Distance/m_pTuning->m_HookLength);
-				pCharCore->m_HookDragVel += Dir*Accel*1.5f;
-				pState->m_HookDragVel -= Dir*Accel*0.25f;
+				float a = (PHYS_SIZE*1.45f - Distance);
+				float Velocity = 0.5f;
+
+				// make sure that we don't add excess force by checking the
+				// direction against the current velocity. if not zero.
+				if(length(m_Vel) > 0.0001)
+					Velocity = 1-(dot(normalize(m_Vel), Dir)+1)/2;
+
+				m_Vel += Dir*a*(Velocity*0.75f);
+				m_Vel *= 0.85f;
+			}
+
+			// handle hook influence
+			if(m_HookedPlayer == i && m_pWorld->m_Tuning.m_PlayerHooking)
+			{
+				if(Distance > PHYS_SIZE*1.50f) // TODO: fix tweakable variable
+				{
+					float Accel = m_pWorld->m_Tuning.m_HookDragAccel * (Distance/m_pWorld->m_Tuning.m_HookLength);
+
+					// add force to the hooked player
+					pCharCore->m_HookDragVel += Dir*Accel*1.5f;
+
+					// add a little bit force to the guy who has the grip
+					m_HookDragVel -= Dir*Accel*0.25f;
+				}
 			}
 		}
 	}
+
+	// clamp the velocity to something sane
+	if(length(m_Vel) > 6000)
+		m_Vel = normalize(m_Vel) * 6000;
 }
 
-void CMovementUpdate::Tick(CMovementState *pState, const CMovementInput *pInput, bool UseInput) const
+void CCharacterCore::AddDragVelocity()
 {
-	pState->m_TriggeredEvents = 0;
+	// Apply hook interaction velocity
+	float DragSpeed = m_pWorld->m_Tuning.m_HookDragSpeed;
 
-	const bool Grounded = IsGrounded(pState);
-	vec2 TargetDirection = normalize(vec2(pInput->m_TargetX, pInput->m_TargetY));
-
-	pState->m_Vel.y += m_pTuning->m_Gravity;
-
-	if(UseInput)
-		ApplyInput(pState, pInput);
-
-	TickJump(pState, pInput, UseInput, Grounded);
-	TickHook(pState, pInput, UseInput, TargetDirection);
-	TickVelocity(pState, Grounded);
-	TickPlayerCollisions(pState);
-
-	if(length(pState->m_Vel) > 6000)
-		pState->m_Vel = normalize(pState->m_Vel) * 6000;
+	m_Vel.x = SaturatedAdd(-DragSpeed, DragSpeed, m_Vel.x, m_HookDragVel.x);
+	m_Vel.y = SaturatedAdd(-DragSpeed, DragSpeed, m_Vel.y, m_HookDragVel.y);
 }
 
-void CMovementUpdate::Move(CMovementState *pState) const
+void CCharacterCore::ResetDragVelocity()
+{
+	m_HookDragVel = vec2(0,0);
+}
+
+void CCharacterCore::Move()
 {
 	if(!m_pWorld)
 		return;
 
-	float RampValue = VelocityRamp(length(pState->m_Vel)*50, m_pTuning->m_VelrampStart, m_pTuning->m_VelrampRange, m_pTuning->m_VelrampCurvature);
+	float RampValue = VelocityRamp(length(m_Vel)*50, m_pWorld->m_Tuning.m_VelrampStart, m_pWorld->m_Tuning.m_VelrampRange, m_pWorld->m_Tuning.m_VelrampCurvature);
 
-	pState->m_Vel.x = pState->m_Vel.x*RampValue;
+	m_Vel.x = m_Vel.x*RampValue;
 
-	vec2 OldPos = pState->m_Pos;
-	vec2 NewPos = pState->m_Pos;
-	m_pCollision->MoveBox(&NewPos, &pState->m_Vel, vec2(CCharacterCore::PHYS_SIZE, CCharacterCore::PHYS_SIZE), 0, &pState->m_Death);
+	vec2 NewPos = m_Pos;
+	m_pCollision->MoveBox(&NewPos, &m_Vel, vec2(PHYS_SIZE, PHYS_SIZE), 0, &m_Death);
 
-	pState->m_Vel.x = pState->m_Vel.x*(1.0f/RampValue);
+	m_Vel.x = m_Vel.x*(1.0f/RampValue);
 
-	if(m_pTuning->m_PlayerCollision)
+	if(m_pWorld->m_Tuning.m_PlayerCollision)
 	{
-		float Distance = distance(OldPos, NewPos);
-		int End = (int)Distance+1;
-		vec2 LastPos = OldPos;
+		// check player collision
+		float Distance = distance(m_Pos, NewPos);
+		int End = Distance+1;
+		vec2 LastPos = m_Pos;
 		for(int i = 0; i < End; i++)
 		{
-			float a = Distance > 0.0001f ? i/Distance : 0.0f;
-			vec2 Pos = mix(OldPos, NewPos, a);
+			float a = i/Distance;
+			vec2 Pos = mix(m_Pos, NewPos, a);
 			for(int p = 0; p < MAX_CLIENTS; p++)
 			{
 				CCharacterCore *pCharCore = m_pWorld->m_apCharacters[p];
-				if(!pCharCore || &pCharCore->m_State == pState)
+				if(!pCharCore || pCharCore == this)
 					continue;
 				float D = distance(Pos, pCharCore->m_Pos);
-				if(D < CCharacterCore::PHYS_SIZE && D >= 0.0f)
+				if(D < PHYS_SIZE && D >= 0.0f)
 				{
 					if(a > 0.0f)
-					{
-						pState->m_Pos = LastPos;
-						return;
-					}
+						m_Pos = LastPos;
 					else if(distance(NewPos, pCharCore->m_Pos) > D)
-					{
-						pState->m_Pos = NewPos;
-						return;
-					}
+						m_Pos = NewPos;
+					return;
 				}
 			}
 			LastPos = Pos;
 		}
 	}
 
-	pState->m_Pos = NewPos;
-}
-
-void CMovementUpdate::AddDragVelocity(CMovementState *pState) const
-{
-	float DragSpeed = m_pTuning->m_HookDragSpeed;
-	pState->m_Vel.x = SaturatedAdd(-DragSpeed, DragSpeed, pState->m_Vel.x, pState->m_HookDragVel.x);
-	pState->m_Vel.y = SaturatedAdd(-DragSpeed, DragSpeed, pState->m_Vel.y, pState->m_HookDragVel.y);
-}
-
-void CMovementUpdate::ResetDragVelocity(CMovementState *pState) const
-{
-	pState->m_HookDragVel = vec2(0, 0);
-}
-
-void CMovementUpdate::ReadState(CMovementState *pState, const CNetObj_CharacterCore *pObjCore) const
-{
-	pState->m_Pos.x = pObjCore->m_X;
-	pState->m_Pos.y = pObjCore->m_Y;
-	pState->m_Vel.x = pObjCore->m_VelX/256.0f;
-	pState->m_Vel.y = pObjCore->m_VelY/256.0f;
-	pState->m_HookState = pObjCore->m_HookState;
-	pState->m_HookTick = pObjCore->m_HookTick;
-	pState->m_HookPos.x = pObjCore->m_HookX;
-	pState->m_HookPos.y = pObjCore->m_HookY;
-	pState->m_HookDir.x = pObjCore->m_HookDx/256.0f;
-	pState->m_HookDir.y = pObjCore->m_HookDy/256.0f;
-	pState->m_HookedPlayer = pObjCore->m_HookedPlayer;
-	pState->m_Jumped = pObjCore->m_Jumped;
-	pState->m_Direction = pObjCore->m_Direction;
-	pState->m_Angle = pObjCore->m_Angle;
-}
-
-void CMovementUpdate::WriteState(const CMovementState *pState, CNetObj_CharacterCore *pObjCore) const
-{
-	pObjCore->m_X = round_to_int(pState->m_Pos.x);
-	pObjCore->m_Y = round_to_int(pState->m_Pos.y);
-	pObjCore->m_VelX = round_to_int(pState->m_Vel.x*256.0f);
-	pObjCore->m_VelY = round_to_int(pState->m_Vel.y*256.0f);
-	pObjCore->m_HookState = pState->m_HookState;
-	pObjCore->m_HookTick = pState->m_HookTick;
-	pObjCore->m_HookX = round_to_int(pState->m_HookPos.x);
-	pObjCore->m_HookY = round_to_int(pState->m_HookPos.y);
-	pObjCore->m_HookDx = round_to_int(pState->m_HookDir.x*256.0f);
-	pObjCore->m_HookDy = round_to_int(pState->m_HookDir.y*256.0f);
-	pObjCore->m_HookedPlayer = pState->m_HookedPlayer;
-	pObjCore->m_Jumped = pState->m_Jumped;
-	pObjCore->m_Direction = pState->m_Direction;
-	pObjCore->m_Angle = pState->m_Angle;
-}
-
-void CMovementUpdate::Quantize(CMovementState *pState) const
-{
-	CNetObj_CharacterCore Core;
-	WriteState(pState, &Core);
-	ReadState(pState, &Core);
-}
-
-void CMovementUpdate::AdvanceSnapshot(CNetObj_Character *pCharacter, int TargetTick) const
-{
-	CWorldCore TempWorld;
-	TempWorld.m_Tuning = *m_pTuning;
-	CMovementUpdate TempUpdate(&TempWorld, m_pCollision, m_pTuning);
-	CMovementState TempState;
-	TempState.Reset();
-	TempUpdate.ReadState(&TempState, pCharacter);
-
-	CMovementInput DummyInput;
-	DummyInput.Reset();
-
-	while(pCharacter->m_Tick < TargetTick)
-	{
-		pCharacter->m_Tick++;
-		TempUpdate.AdvanceTick(&TempState, &DummyInput, false);
-	}
-
-	TempUpdate.WriteState(&TempState, pCharacter);
-}
-
-void CCharacterCore::Init(CWorldCore *pWorld, CCollision *pCollision)
-{
-	m_pWorld = pWorld;
-	m_pCollision = pCollision;
-	m_Update.Init(pWorld, pCollision, pWorld ? &pWorld->m_Tuning : 0);
-}
-
-void CCharacterCore::Reset()
-{
-	m_State.Reset();
-	m_InputState.Reset();
-	mem_zero(&m_Input, sizeof(m_Input));
-}
-
-void CCharacterCore::Tick(bool UseInput)
-{
-	if(UseInput)
-		m_InputState.FromPlayerInput(&m_Input);
-	m_Update.Tick(&m_State, &m_InputState, UseInput);
-}
-
-void CCharacterCore::Move()
-{
-	m_Update.Move(&m_State);
-}
-
-void CCharacterCore::AddDragVelocity()
-{
-	m_Update.AddDragVelocity(&m_State);
-}
-
-void CCharacterCore::ResetDragVelocity()
-{
-	m_Update.ResetDragVelocity(&m_State);
+	m_Pos = NewPos;
 }
 
 void CCharacterCore::Write(CNetObj_CharacterCore *pObjCore) const
 {
-	m_Update.WriteState(&m_State, pObjCore);
+	pObjCore->m_X = round_to_int(m_Pos.x);
+	pObjCore->m_Y = round_to_int(m_Pos.y);
+
+	pObjCore->m_VelX = round_to_int(m_Vel.x*256.0f);
+	pObjCore->m_VelY = round_to_int(m_Vel.y*256.0f);
+	pObjCore->m_HookState = m_HookState;
+	pObjCore->m_HookTick = m_HookTick;
+	pObjCore->m_HookX = round_to_int(m_HookPos.x);
+	pObjCore->m_HookY = round_to_int(m_HookPos.y);
+	pObjCore->m_HookDx = round_to_int(m_HookDir.x*256.0f);
+	pObjCore->m_HookDy = round_to_int(m_HookDir.y*256.0f);
+	pObjCore->m_HookedPlayer = m_HookedPlayer;
+	pObjCore->m_Jumped = m_Jumped;
+	pObjCore->m_Direction = m_Direction;
+	pObjCore->m_Angle = m_Angle;
 }
 
 void CCharacterCore::Read(const CNetObj_CharacterCore *pObjCore)
 {
-	m_Update.ReadState(&m_State, pObjCore);
+	m_Pos.x = pObjCore->m_X;
+	m_Pos.y = pObjCore->m_Y;
+	m_Vel.x = pObjCore->m_VelX/256.0f;
+	m_Vel.y = pObjCore->m_VelY/256.0f;
+	m_HookState = pObjCore->m_HookState;
+	m_HookTick = pObjCore->m_HookTick;
+	m_HookPos.x = pObjCore->m_HookX;
+	m_HookPos.y = pObjCore->m_HookY;
+	m_HookDir.x = pObjCore->m_HookDx/256.0f;
+	m_HookDir.y = pObjCore->m_HookDy/256.0f;
+	m_HookedPlayer = pObjCore->m_HookedPlayer;
+	m_Jumped = pObjCore->m_Jumped;
+	m_Direction = pObjCore->m_Direction;
+	m_Angle = pObjCore->m_Angle;
 }
 
 void CCharacterCore::Quantize()
 {
-	m_Update.Quantize(&m_State);
-}
-
-CMovementUpdate::CInputCount CMovementUpdate::CountInputState(int Prev, int Cur) const
-{
-	CInputCount c = {0, 0};
-	Prev &= INPUT_STATE_MASK;
-	Cur &= INPUT_STATE_MASK;
-	int i = Prev;
-
-	while(i != Cur)
-	{
-		i = (i+1)&INPUT_STATE_MASK;
-		if(i&1)
-			c.m_Presses++;
-		else
-			c.m_Releases++;
-	}
-
-	return c;
-}
-
-int CMovementUpdate::ComputeWeaponRequest(CMovementInput *pInput, int CurrentWeapon, const bool *pWeaponsGot) const
-{
-	int WantedWeapon = CurrentWeapon;
-
-	int Next = CountInputState(pInput->m_PrevInputNextWeapon, pInput->m_NextWeapon).m_Presses;
-	int Prev = CountInputState(pInput->m_PrevInputPrevWeapon, pInput->m_PrevWeapon).m_Presses;
-
-	if(Next < 128)
-	{
-		while(Next)
-		{
-			WantedWeapon = (WantedWeapon+1)%NUM_WEAPONS;
-			if(pWeaponsGot[WantedWeapon])
-				Next--;
-		}
-	}
-
-	if(Prev < 128)
-	{
-		while(Prev)
-		{
-			WantedWeapon = (WantedWeapon-1)<0?NUM_WEAPONS-1:WantedWeapon-1;
-			if(pWeaponsGot[WantedWeapon])
-				Prev--;
-		}
-	}
-
-	if(pInput->m_WantedWeapon)
-		WantedWeapon = pInput->m_WantedWeapon-1;
-
-	pInput->m_PrevInputNextWeapon = pInput->m_NextWeapon;
-	pInput->m_PrevInputPrevWeapon = pInput->m_PrevWeapon;
-
-	if(WantedWeapon >= 0 && WantedWeapon < NUM_WEAPONS && WantedWeapon != CurrentWeapon && pWeaponsGot[WantedWeapon])
-		return WantedWeapon;
-	return -1;
-}
-
-void CMovementUpdate::AdvanceTickPhase1(CMovementState *pState, const CMovementInput *pInput, bool UseInput) const
-{
-	Tick(pState, pInput, UseInput);
-}
-
-void CMovementUpdate::AdvanceTickPhase2(CMovementState *pState) const
-{
-	AddDragVelocity(pState);
-	ResetDragVelocity(pState);
-	Move(pState);
-	Quantize(pState);
-}
-
-void CMovementUpdate::AdvanceTick(CMovementState *pState, const CMovementInput *pInput, bool UseInput) const
-{
-	AdvanceTickPhase1(pState, pInput, UseInput);
-	AdvanceTickPhase2(pState);
-}
-
-void CMovementUpdate::ApplySnapshot(CMovementState *pState, const CNetObj_CharacterCore *pObjCore) const
-{
-	ReadState(pState, pObjCore);
-}
-
-void CMovementUpdate::WriteSnapshot(const CMovementState *pState, CNetObj_CharacterCore *pObjCore) const
-{
-	WriteState(pState, pObjCore);
-}
-
-int CCharacterCore::ComputeWeaponRequest(int CurrentWeapon, const bool *pWeaponsGot)
-{
-	m_InputState.UpdateFromPlayerInput(&m_Input);
-	return m_Update.ComputeWeaponRequest(&m_InputState, CurrentWeapon, pWeaponsGot);
-}
-
-void CCharacterCore::AdvanceTickPhase1(bool UseInput)
-{
-	if(UseInput)
-		m_InputState.UpdateFromPlayerInput(&m_Input);
-	m_Update.AdvanceTickPhase1(&m_State, &m_InputState, UseInput);
-}
-
-void CCharacterCore::AdvanceTickPhase2()
-{
-	m_Update.AdvanceTickPhase2(&m_State);
-}
-
-void CCharacterCore::AdvanceTick(bool UseInput)
-{
-	if(UseInput)
-		m_InputState.UpdateFromPlayerInput(&m_Input);
-	m_Update.AdvanceTick(&m_State, &m_InputState, UseInput);
-}
-
-void CCharacterCore::ApplySnapshot(const CNetObj_CharacterCore *pObjCore)
-{
-	m_Update.ApplySnapshot(&m_State, pObjCore);
-}
-
-void CCharacterCore::WriteSnapshot(CNetObj_CharacterCore *pObjCore) const
-{
-	m_Update.WriteSnapshot(&m_State, pObjCore);
+	CNetObj_CharacterCore Core;
+	Write(&Core);
+	Read(&Core);
 }

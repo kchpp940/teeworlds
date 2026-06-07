@@ -98,7 +98,6 @@ private:
 	// these are non-heldback inputs
 	CNetObj_PlayerInput m_LatestPrevInput;
 	CNetObj_PlayerInput m_LatestInput;
-	CMovementInput m_WeaponInput;
 
 	// input
 	CNetObj_PlayerInput m_Input;

@@ -4,7 +4,6 @@
 #define GAME_CLIENT_COMPONENTS_CONTROLS_H
 #include <base/vmath.h>
 #include <game/client/component.h>
-#include <game/gamecore.h>
 
 class CControls : public CComponent
 {
@@ -12,8 +11,8 @@ public:
 	vec2 m_MousePos;
 	vec2 m_TargetPos;
 
-	CMovementInput m_InputData;
-	CMovementInput m_LastData;
+	CNetObj_PlayerInput m_InputData;
+	CNetObj_PlayerInput m_LastData;
 	int m_InputDirectionLeft;
 	int m_InputDirectionRight;
 

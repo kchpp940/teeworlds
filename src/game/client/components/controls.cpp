@@ -131,7 +131,7 @@ int CControls::SnapInput(int *pData)
 	{
 		OnReset();
 
-		m_InputData.ToPlayerInput(reinterpret_cast<CNetObj_PlayerInput*>(pData));
+		mem_copy(pData, &m_InputData, sizeof(m_InputData));
 
 		// send once a second just to be sure
 		if(time_get() > s_LastSendTime + time_freq())
@@ -192,8 +192,8 @@ int CControls::SnapInput(int *pData)
 		return 0;
 
 	s_LastSendTime = time_get();
-	m_InputData.ToPlayerInput(reinterpret_cast<CNetObj_PlayerInput*>(pData));
-	return sizeof(CNetObj_PlayerInput);
+	mem_copy(pData, &m_InputData, sizeof(m_InputData));
+	return sizeof(m_InputData);
 }
 
 void CControls::OnRender()

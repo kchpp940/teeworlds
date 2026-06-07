@@ -47,8 +47,6 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set(TARGET_OS "mac")
 endif()
 
-include(CheckCCompilerFlag)
-include(CheckCXXCompilerFlag)
 include(CheckSymbolExists)
 
 check_symbol_exists(__i386 "" TARGET_ARCH_X86_i386)
@@ -58,30 +56,7 @@ else()
   set(TARGET_ARCH)
 endif()
 
-set(AUTO_DEPENDENCIES_DEFAULT OFF)
-if(TARGET_OS STREQUAL "windows")
-  set(AUTO_DEPENDENCIES_DEFAULT ON)
-endif()
-
-option(CLIENT "Compile client" ON)
-option(HEADLESS_CLIENT "Build the client without graphics" OFF)
-option(DOWNLOAD_DEPENDENCIES "Download dependencies (only available on Windows)" ${AUTO_DEPENDENCIES_DEFAULT})
-option(DOWNLOAD_GTEST "Download and compile GTest if not found" ${AUTO_DEPENDENCIES_DEFAULT})
-option(PREFER_BUNDLED_LIBS "Prefer bundled libraries over system libraries" ${AUTO_DEPENDENCIES_DEFAULT})
-option(DEV "Don't generate stuff necessary for packaging" OFF)
-
-set(OpenGL_GL_PREFERENCE GLVND)
-
-# Set the default build type to Release
-if(NOT(CMAKE_BUILD_TYPE))
-  if(NOT(DEV))
-    set(CMAKE_BUILD_TYPE Release)
-  else()
-    set(CMAKE_BUILD_TYPE Debug)
-  endif()
-endif()
-
-set(DBG $<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>)
+include(BuildProfiles)
 
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   src/game/version.h
@@ -110,72 +85,6 @@ if(DOWNLOAD_DEPENDENCIES)
       )
     endif()
   endif()
-endif()
-
-########################################################################
-# Compiler flags
-########################################################################
-
-function(add_c_compiler_flag_if_supported VARIABLE FLAG)
-  if(ARGC GREATER 2)
-    set(CHECKED_FLAG "${ARGV2}")
-  else()
-    set(CHECKED_FLAG "${FLAG}")
-  endif()
-  string(REGEX REPLACE "[^A-Za-z0-9]" "_" CONFIG_VARIABLE "FLAG_SUPPORTED${CHECKED_FLAG}")
-  check_c_compiler_flag("${CHECKED_FLAG}" ${CONFIG_VARIABLE})
-  if(${CONFIG_VARIABLE})
-    if(${VARIABLE})
-      set("${VARIABLE}" "${${VARIABLE}};${FLAG}" PARENT_SCOPE)
-    else()
-      set("${VARIABLE}" "${FLAG}" PARENT_SCOPE)
-    endif()
-  endif()
-endfunction()
-
-if(NOT MSVC)
-  # Protect the stack pointer.
-  add_c_compiler_flag_if_supported(OUR_FLAGS -fstack-protector-all)
-
-  # Control-flow protection. Should protect against ROP.
-  add_c_compiler_flag_if_supported(OUR_FLAGS -fcf-protection)
-
-  # Inaccurate floating point numbers cause problems on mingw-w64-gcc when
-  # compiling for x86, might cause problems elsewhere. So don't store floats
-  # in registers but keep them at higher accuracy.
-  if(TARGET_ARCH STREQUAL "x86")
-    add_c_compiler_flag_if_supported(OUR_FLAGS -ffloat-store)
-  endif()
-
-  # gcc < 4.10 chokes on _mm_pause on x86 without SSE support.
-  if(TARGET_ARCH STREQUAL "x86")
-    check_c_source_compiles("#include <immintrin.h>\nint main() { _mm_pause(); return 0; }" MM_PAUSE_WORKS_WITHOUT_MSSE2)
-    if(NOT MM_PAUSE_WORKS_WITHOUT_MSSE2)
-      add_c_compiler_flag_if_supported(OUR_FLAGS -msse2)
-    endif()
-  endif()
-
-  if(TARGET_OS STREQUAL "mac")
-    add_c_compiler_flag_if_supported(OUR_FLAGS -stdlib=libc++)
-    add_c_compiler_flag_if_supported(OUR_FLAGS -mmacosx-version-min=10.7)
-  endif()
-
-  add_c_compiler_flag_if_supported(OUR_FLAGS_OWN -Wall)
-  if(CMAKE_VERSION VERSION_GREATER 3.3 OR CMAKE_VERSION VERSION_EQUAL 3.3)
-    add_c_compiler_flag_if_supported(OUR_FLAGS_OWN
-      $<$<COMPILE_LANGUAGE:C>:-Wdeclaration-after-statement>
-      -Wdeclaration-after-statement
-    )
-  endif()
-  add_c_compiler_flag_if_supported(OUR_FLAGS_OWN -Wextra)
-  add_c_compiler_flag_if_supported(OUR_FLAGS_OWN -Wno-unused-parameter)
-  add_c_compiler_flag_if_supported(OUR_FLAGS_OWN -Wno-missing-field-initializers)
-  add_c_compiler_flag_if_supported(OUR_FLAGS_OWN -Wformat=2) # Warn about format strings.
-  add_c_compiler_flag_if_supported(OUR_FLAGS_DEP -Wno-implicit-function-declaration)
-endif()
-
-if(NOT MSVC)
-  check_c_compiler_flag("-O2;-Wp,-Werror;-D_FORTIFY_SOURCE=2" DEFINE_FORTIFY_SOURCE) # Some distributions define _FORTIFY_SOURCE by themselves.
 endif()
 
 ########################################################################
@@ -405,6 +314,8 @@ else()
   endif()
 endif()
 
+tw_apply_dynamic_defines()
+
 ########################################################################
 # DOWNLOAD GTEST
 ########################################################################
@@ -440,15 +351,8 @@ if(NOT(GTEST_FOUND) AND DOWNLOAD_GTEST)
 
       if(MSVC)
         foreach(target gtest)
-          # `/w` disables all warnings. This is needed because `gtest` enables
-          # `/WX` (equivalent of `-Werror`) for some reason, breaking builds
-          # when MSVS adds new warnings.
           target_compile_options(${target} PRIVATE /w)
-          if(POLICY CMP0091)
-            set_property(TARGET ${target} PROPERTY MSVC_RUNTIME_LIBRARY MultiThreaded$<${DBG}:Debug>)
-          else()
-            target_compile_options(${target} PRIVATE $<$<NOT:${DBG}>:/MT> $<${DBG}:/MTd>)
-          endif()
+          tw_apply_profile(${target} PROFILE DEP)
         endforeach()
       endif()
 
@@ -467,9 +371,11 @@ endif()
 
 set_src(DEP_JSON_SRC GLOB src/engine/external/json-parser json.c json.h)
 add_library(json EXCLUDE_FROM_ALL OBJECT ${DEP_JSON_SRC})
+tw_apply_profile(json PROFILE DEP)
 
 set_src(DEP_MD5_SRC GLOB src/engine/external/md5 md5.c md5.h)
 add_library(md5 EXCLUDE_FROM_ALL OBJECT ${DEP_MD5_SRC})
+tw_apply_profile(md5 PROFILE DEP)
 
 list(APPEND TARGETS_DEP json md5)
 set(DEP_JSON $<TARGET_OBJECTS:json>)
@@ -1375,7 +1281,9 @@ set(LIBS ${CMAKE_THREAD_LIBS_INIT} ${ZLIB_LIBRARIES} ${CRYPTO_LIBRARIES} ${PLATF
 
 # Targets
 add_library(engine-shared EXCLUDE_FROM_ALL OBJECT ${ENGINE_INTERFACE} ${ENGINE_SHARED} ${ENGINE_GENERATED_SHARED} ${BASE})
+tw_apply_profile(engine-shared PROFILE OWN)
 add_library(game-shared EXCLUDE_FROM_ALL OBJECT ${GAME_SHARED} ${GAME_GENERATED_SHARED})
+tw_apply_profile(game-shared PROFILE OWN)
 list(APPEND TARGETS_OWN engine-shared game-shared)
 
 
@@ -1547,29 +1455,8 @@ if(CLIENT)
     $<TARGET_OBJECTS:game-shared>
   )
   target_link_libraries(${TARGET_CLIENT} ${LIBS_CLIENT})
-
-  target_include_directories(${TARGET_CLIENT} PRIVATE
-    ${FREETYPE_INCLUDE_DIRS}
-    ${PNGLITE_INCLUDE_DIRS}
-    ${SDL2_INCLUDE_DIRS}
-    ${WAVPACK_INCLUDE_DIRS}
-  )
-
-  set(PARAMS "${WAVPACK_INCLUDE_DIRS};${WAVPACK_INCLUDE_DIRS}")
-  if(NOT(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS STREQUAL PARAMS))
-    unset(WAVPACK_OPEN_FILE_INPUT_EX CACHE)
-  endif()
-  set(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS "${PARAMS}" CACHE INTERNAL "")
-
-  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES} ${WAVPACK_INCLUDE_DIRS})
-  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES} ${WAVPACK_LIBRARIES})
-  check_symbol_exists(WavpackOpenFileInputEx wavpack.h WAVPACK_OPEN_FILE_INPUT_EX)
-  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES})
-  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES})
-
-  if(WAVPACK_OPEN_FILE_INPUT_EX)
-    target_compile_definitions(${TARGET_CLIENT} PRIVATE CONF_WAVPACK_OPEN_FILE_INPUT_EX)
-  endif()
+  tw_apply_profile(${TARGET_CLIENT} PROFILE CLIENT)
+  tw_apply_client_wavpack_config(${TARGET_CLIENT})
 
   list(APPEND TARGETS_OWN ${TARGET_CLIENT})
   list(APPEND TARGETS_LINK ${TARGET_CLIENT})
@@ -1648,6 +1535,7 @@ add_executable(${TARGET_SERVER}
   $<TARGET_OBJECTS:game-shared>
 )
 target_link_libraries(${TARGET_SERVER} ${LIBS_SERVER})
+tw_apply_profile(${TARGET_SERVER} PROFILE SERVER)
 list(APPEND TARGETS_OWN ${TARGET_SERVER})
 list(APPEND TARGETS_LINK ${TARGET_SERVER})
 
@@ -1656,6 +1544,7 @@ if(TARGET_OS AND TARGET_OS STREQUAL "mac")
   set(TARGET_SERVER_LAUNCHER ${TARGET_SERVER}-Launcher)
   add_executable(${TARGET_SERVER_LAUNCHER} ${SERVER_LAUNCHER_SRC})
   target_link_libraries(${TARGET_SERVER_LAUNCHER} ${COCOA})
+  tw_apply_profile(${TARGET_SERVER_LAUNCHER} PROFILE SERVER)
   list(APPEND TARGETS_OWN ${TARGET_SERVER_LAUNCHER})
   list(APPEND TARGETS_LINK ${TARGET_SERVER_LAUNCHER})
 endif()
@@ -1673,6 +1562,8 @@ set(TARGET_VERSIONSRV versionsrv)
 
 add_executable(${TARGET_MASTERSRV} EXCLUDE_FROM_ALL ${MASTERSRV_SRC} $<TARGET_OBJECTS:engine-shared> ${DEPS})
 add_executable(${TARGET_VERSIONSRV} EXCLUDE_FROM_ALL ${VERSIONSRV_SRC} $<TARGET_OBJECTS:engine-shared> ${DEPS})
+tw_apply_profile(${TARGET_MASTERSRV} PROFILE TOOL)
+tw_apply_profile(${TARGET_VERSIONSRV} PROFILE TOOL)
 
 target_link_libraries(${TARGET_MASTERSRV} ${LIBS})
 target_link_libraries(${TARGET_VERSIONSRV} ${LIBS})
@@ -1699,6 +1590,7 @@ foreach(ABS_T ${TOOLS})
       $<TARGET_OBJECTS:engine-shared>
     )
     target_link_libraries(${TOOL} ${LIBS})
+    tw_apply_profile(${TOOL} PROFILE TOOL)
     list(APPEND TARGETS_TOOLS ${TOOL})
   endif()
 endforeach()
@@ -1741,7 +1633,7 @@ if(GTEST_FOUND OR DOWNLOAD_GTEST)
     ${DEPS}
   )
   target_link_libraries(${TARGET_TESTRUNNER} ${LIBS} ${GTEST_LIBRARIES})
-  target_include_directories(${TARGET_TESTRUNNER} PRIVATE ${GTEST_INCLUDE_DIRS})
+  tw_apply_profile(${TARGET_TESTRUNNER} PROFILE TEST)
 
   list(APPEND TARGETS_OWN ${TARGET_TESTRUNNER})
   list(APPEND TARGETS_LINK ${TARGET_TESTRUNNER})
@@ -2062,86 +1954,3 @@ macro(source_group_tree dir)
   endforeach()
 endmacro()
 source_group_tree(src)
-
-set(TARGETS ${TARGETS_OWN} ${TARGETS_DEP})
-
-foreach(target ${TARGETS})
-  if(MSVC)
-    if(POLICY CMP0091)
-      set_property(TARGET ${target} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<${DBG}:Debug>")
-    else()
-      target_compile_options(${target} PRIVATE $<$<NOT:${DBG}>:/MT> $<${DBG}:/MTd>)
-    endif()
-    target_compile_options(${target} PRIVATE /MP) # Use multiple cores
-    target_compile_options(${target} PRIVATE /EHsc) # Only catch C++ exceptions with catch.
-    target_compile_options(${target} PRIVATE /GS) # Protect the stack pointer.
-    target_compile_options(${target} PRIVATE /wd4996) # Use of non-_s functions.
-    target_compile_options(${target} PRIVATE /utf-8) # Use UTF-8 for source files.
-  endif()
-  if(OUR_FLAGS)
-    target_compile_options(${target} PRIVATE ${OUR_FLAGS})
-  endif()
-  if(DEFINE_FORTIFY_SOURCE)
-    target_compile_definitions(${target} PRIVATE $<$<NOT:$<CONFIG:Debug>>:_FORTIFY_SOURCE=2>) # Detect some buffer overflows.
-  endif()
-  target_compile_definitions(${target} PRIVATE _GLIBCXX_ASSERTIONS) # Enable run-time bounds-checking for the STL
-endforeach()
-
-foreach(target ${TARGETS_LINK})
-  if(MSVC)
-    set_property(TARGET ${target} APPEND PROPERTY LINK_FLAGS /SAFESEH:NO) # Disable SafeSEH because the shipped libraries don't support it (would cause error LNK2026 otherwise).
-  endif()
-  if(TARGET_OS STREQUAL "mac")
-    target_link_libraries(${target} -stdlib=libc++)
-    target_link_libraries(${target} -mmacosx-version-min=10.7)
-  endif()
-  if((MINGW OR TARGET_OS STREQUAL "linux") AND PREFER_BUNDLED_LIBS)
-    # Statically link the standard libraries with on MinGW/Linux so we don't
-    # have to ship them as DLLs.
-    target_link_libraries(${target} -static-libgcc)
-    target_link_libraries(${target} -static-libstdc++)
-    if(MINGW)
-      # Link pthread library statically instead of dynamically.
-      # Solution from https://stackoverflow.com/a/28001261.
-      target_link_libraries(${target} -Wl,-Bstatic -lstdc++ -lpthread -Wl,-Bdynamic)
-    endif()
-  endif()
-endforeach()
-
-foreach(target ${TARGETS_OWN})
-  if(MSVC)
-    target_compile_options(${target} PRIVATE /W3)
-    target_compile_options(${target} PRIVATE /wd4244) # Possible loss of data (float -> int, int -> float, etc.).
-    target_compile_options(${target} PRIVATE /wd4267) # Possible loss of data (size_t - int on win64).
-    target_compile_options(${target} PRIVATE /wd4800) # Implicit conversion of int to bool.
-  endif()
-  if(TARGET_OS STREQUAL "windows")
-    target_compile_definitions(${target} PRIVATE _WIN32_WINNT=0x0501)
-    target_compile_definitions(${target} PRIVATE UNICODE) # Windows headers
-    target_compile_definitions(${target} PRIVATE _UNICODE) # C-runtime
-  endif()
-  if(OUR_FLAGS_OWN)
-    target_compile_options(${target} PRIVATE ${OUR_FLAGS_OWN})
-  endif()
-  target_include_directories(${target} PRIVATE ${PROJECT_BINARY_DIR}/src)
-  target_include_directories(${target} PRIVATE src)
-  target_compile_definitions(${target} PRIVATE $<$<CONFIG:Debug>:CONF_DEBUG>)
-  target_include_directories(${target} PRIVATE ${CURL_INCLUDE_DIRS})
-  target_include_directories(${target} PRIVATE ${ZLIB_INCLUDE_DIRS})
-  if(CRYPTO_FOUND)
-    target_compile_definitions(${target} PRIVATE CONF_OPENSSL)
-    target_include_directories(${target} PRIVATE ${CRYPTO_INCLUDE_DIRS})
-  endif()
-  if(HEADLESS_CLIENT)
-    target_compile_definitions(${target} PRIVATE CONF_HEADLESS_CLIENT)
-  endif()
-endforeach()
-
-foreach(target ${TARGETS_DEP})
-  if(MSVC)
-    target_compile_options(${target} PRIVATE /W0)
-  endif()
-  if(OUR_FLAGS_DEP)
-    target_compile_options(${target} PRIVATE ${OUR_FLAGS_DEP})
-  endif()
-endforeach()
