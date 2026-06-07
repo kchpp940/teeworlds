@@ -143,9 +143,9 @@ public:
 	int m_Direction;
 	int m_TargetX;
 	int m_TargetY;
-	bool m_Jump;
+	int m_Jump;
 	int m_Fire;
-	bool m_Hook;
+	int m_Hook;
 	int m_PlayerFlags;
 	int m_WantedWeapon;
 	int m_NextWeapon;
@@ -156,9 +156,9 @@ public:
 		m_Direction = 0;
 		m_TargetX = 0;
 		m_TargetY = -1;
-		m_Jump = false;
+		m_Jump = 0;
 		m_Fire = 0;
-		m_Hook = false;
+		m_Hook = 0;
 		m_PlayerFlags = 0;
 		m_WantedWeapon = 0;
 		m_NextWeapon = 0;
@@ -170,9 +170,9 @@ public:
 		m_Direction = pInput->m_Direction;
 		m_TargetX = pInput->m_TargetX;
 		m_TargetY = pInput->m_TargetY;
-		m_Jump = pInput->m_Jump != 0;
+		m_Jump = pInput->m_Jump;
 		m_Fire = pInput->m_Fire;
-		m_Hook = pInput->m_Hook != 0;
+		m_Hook = pInput->m_Hook;
 		m_PlayerFlags = pInput->m_PlayerFlags;
 		m_WantedWeapon = pInput->m_WantedWeapon;
 		m_NextWeapon = pInput->m_NextWeapon;
@@ -186,9 +186,9 @@ public:
 		pInput->m_Direction = m_Direction;
 		pInput->m_TargetX = m_TargetX;
 		pInput->m_TargetY = m_TargetY;
-		pInput->m_Jump = m_Jump ? 1 : 0;
+		pInput->m_Jump = m_Jump;
 		pInput->m_Fire = m_Fire;
-		pInput->m_Hook = m_Hook ? 1 : 0;
+		pInput->m_Hook = m_Hook;
 		pInput->m_PlayerFlags = m_PlayerFlags;
 		pInput->m_WantedWeapon = m_WantedWeapon;
 		pInput->m_NextWeapon = m_NextWeapon;

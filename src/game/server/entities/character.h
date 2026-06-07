@@ -60,14 +60,12 @@ public:
 
 	void SetEmote(int Emote, int Tick);
 
-	bool IsAlive() const { return m_Alive; }
+	bool IsAlive() const { return m_Core.m_Alive; }
 	class CPlayer *GetPlayer() { return m_pPlayer; }
 
 private:
 	// player controlling this character
 	class CPlayer *m_pPlayer;
-
-	bool m_Alive;
 
 	// weapon info
 	CEntity *m_apHitObjects[MAX_PLAYERS];
@@ -81,9 +79,7 @@ private:
 
 	} m_aWeapons[NUM_WEAPONS];
 
-	int m_ActiveWeapon;
 	int m_LastWeapon;
-	int m_QueuedWeapon;
 
 	int m_ReloadTimer;
 	int m_AttackTick;
