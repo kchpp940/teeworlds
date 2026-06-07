@@ -40,11 +40,13 @@ if(NOT WAVPACK_FOUND)
     wputils.c
   )
   add_library(wavpack EXCLUDE_FROM_ALL OBJECT ${WAVPACK_SRC})
+  tw_apply_profile(wavpack PROFILE DEP)
+
+  list(APPEND TARGETS_DEP wavpack)
+
   set(WAVPACK_DEP $<TARGET_OBJECTS:wavpack>)
   set(WAVPACK_INCLUDEDIR ${WAVPACK_SRC_DIR})
   set(WAVPACK_INCLUDE_DIRS ${WAVPACK_INCLUDEDIR})
-
-  list(APPEND TARGETS_DEP wavpack)
 
   include(FindPackageHandleStandardArgs)
   find_package_handle_standard_args(Wavpack DEFAULT_MSG WAVPACK_INCLUDEDIR)

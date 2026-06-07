@@ -349,12 +349,7 @@ if(NOT(GTEST_FOUND) AND DOWNLOAD_GTEST)
         EXCLUDE_FROM_ALL
       )
 
-      if(MSVC)
-        foreach(target gtest)
-          target_compile_options(${target} PRIVATE /w)
-          tw_apply_profile(${target} PROFILE DEP)
-        endforeach()
-      endif()
+      tw_apply_profile(gtest PROFILE DEP)
 
       set(GTEST_LIBRARIES gtest)
       set(GTEST_INCLUDE_DIRS)
@@ -1467,91 +1462,95 @@ endif()
 # SERVER
 ########################################################################
 
-# Sources
-set_src(ENGINE_SERVER GLOB src/engine/server
-  register.cpp
-  register.h
-  server.cpp
-  server.h
-)
-set_src(GAME_SERVER GLOB_RECURSE src/game/server
-  alloc.h
-  entities/character.cpp
-  entities/character.h
-  entities/flag.cpp
-  entities/flag.h
-  entities/laser.cpp
-  entities/laser.h
-  entities/pickup.cpp
-  entities/pickup.h
-  entities/projectile.cpp
-  entities/projectile.h
-  entity.cpp
-  entity.h
-  eventhandler.cpp
-  eventhandler.h
-  gamecontext.cpp
-  gamecontext.h
-  gamecontroller.cpp
-  gamecontroller.h
-  gamemodes/ctf.cpp
-  gamemodes/ctf.h
-  gamemodes/dm.cpp
-  gamemodes/dm.h
-  gamemodes/lms.cpp
-  gamemodes/lms.h
-  gamemodes/lts.cpp
-  gamemodes/lts.h
-  gamemodes/mod.cpp
-  gamemodes/mod.h
-  gamemodes/tdm.cpp
-  gamemodes/tdm.h
-  gameworld.cpp
-  gameworld.h
-  player.cpp
-  player.h
-)
-set(GAME_GENERATED_SERVER
-  src/generated/server_data.cpp
-  src/generated/server_data.h
-)
-set(SERVER_SRC ${ENGINE_SERVER} ${GAME_SERVER} ${GAME_GENERATED_SERVER})
-if(TARGET_OS STREQUAL "windows")
-  set(SERVER_ICON "other/icons/${SERVER_EXECUTABLE}.rc")
-else()
-  set(SERVER_ICON)
-endif()
+if(SERVER)
+  # Sources
+  set_src(ENGINE_SERVER GLOB src/engine/server
+    register.cpp
+    register.h
+    server.cpp
+    server.h
+  )
+  set_src(GAME_SERVER GLOB_RECURSE src/game/server
+    alloc.h
+    entities/character.cpp
+    entities/character.h
+    entities/flag.cpp
+    entities/flag.h
+    entities/laser.cpp
+    entities/laser.h
+    entities/pickup.cpp
+    entities/pickup.h
+    entities/projectile.cpp
+    entities/projectile.h
+    entity.cpp
+    entity.h
+    eventhandler.cpp
+    eventhandler.h
+    gamecontext.cpp
+    gamecontext.h
+    gamecontroller.cpp
+    gamecontroller.h
+    gamemodes/ctf.cpp
+    gamemodes/ctf.h
+    gamemodes/dm.cpp
+    gamemodes/dm.h
+    gamemodes/lms.cpp
+    gamemodes/lms.h
+    gamemodes/lts.cpp
+    gamemodes/lts.h
+    gamemodes/mod.cpp
+    gamemodes/mod.h
+    gamemodes/tdm.cpp
+    gamemodes/tdm.h
+    gameworld.cpp
+    gameworld.h
+    player.cpp
+    player.h
+  )
+  set(GAME_GENERATED_SERVER
+    src/generated/server_data.cpp
+    src/generated/server_data.h
+  )
+  set(SERVER_SRC ${ENGINE_SERVER} ${GAME_SERVER} ${GAME_GENERATED_SERVER})
+  if(TARGET_OS STREQUAL "windows")
+    set(SERVER_ICON "other/icons/${SERVER_EXECUTABLE}.rc")
+  else()
+    set(SERVER_ICON)
+  endif()
 
-# Libraries
-set(LIBS_SERVER ${LIBS})
+  # Libraries
+  set(LIBS_SERVER ${LIBS})
 
-# Target
-set(TARGET_SERVER ${SERVER_EXECUTABLE})
-add_executable(${TARGET_SERVER}
-  ${DEPS}
-  ${SERVER_SRC}
-  ${SERVER_ICON}
-  $<TARGET_OBJECTS:engine-shared>
-  $<TARGET_OBJECTS:game-shared>
-)
-target_link_libraries(${TARGET_SERVER} ${LIBS_SERVER})
-tw_apply_profile(${TARGET_SERVER} PROFILE SERVER)
-list(APPEND TARGETS_OWN ${TARGET_SERVER})
-list(APPEND TARGETS_LINK ${TARGET_SERVER})
+  # Target
+  set(TARGET_SERVER ${SERVER_EXECUTABLE})
+  add_executable(${TARGET_SERVER}
+    ${DEPS}
+    ${SERVER_SRC}
+    ${SERVER_ICON}
+    $<TARGET_OBJECTS:engine-shared>
+    $<TARGET_OBJECTS:game-shared>
+  )
+  target_link_libraries(${TARGET_SERVER} ${LIBS_SERVER})
+  tw_apply_profile(${TARGET_SERVER} PROFILE SERVER)
+  list(APPEND TARGETS_OWN ${TARGET_SERVER})
+  list(APPEND TARGETS_LINK ${TARGET_SERVER})
 
-if(TARGET_OS AND TARGET_OS STREQUAL "mac")
-  set(SERVER_LAUNCHER_SRC src/macoslaunch/server.mm)
-  set(TARGET_SERVER_LAUNCHER ${TARGET_SERVER}-Launcher)
-  add_executable(${TARGET_SERVER_LAUNCHER} ${SERVER_LAUNCHER_SRC})
-  target_link_libraries(${TARGET_SERVER_LAUNCHER} ${COCOA})
-  tw_apply_profile(${TARGET_SERVER_LAUNCHER} PROFILE SERVER)
-  list(APPEND TARGETS_OWN ${TARGET_SERVER_LAUNCHER})
-  list(APPEND TARGETS_LINK ${TARGET_SERVER_LAUNCHER})
+  if(TARGET_OS AND TARGET_OS STREQUAL "mac")
+    set(SERVER_LAUNCHER_SRC src/macoslaunch/server.mm)
+    set(TARGET_SERVER_LAUNCHER ${TARGET_SERVER}-Launcher)
+    add_executable(${TARGET_SERVER_LAUNCHER} ${SERVER_LAUNCHER_SRC})
+    target_link_libraries(${TARGET_SERVER_LAUNCHER} ${COCOA})
+    tw_apply_profile(${TARGET_SERVER_LAUNCHER} PROFILE SERVER)
+    list(APPEND TARGETS_OWN ${TARGET_SERVER_LAUNCHER})
+    list(APPEND TARGETS_LINK ${TARGET_SERVER_LAUNCHER})
+  endif()
 endif()
 
 ########################################################################
-# VARIOUS TARGETS
+# VARIOUS TARGETS (tools)
 ########################################################################
+
+if(TOOLS)
 
 set_src(MASTERSRV_SRC GLOB src/mastersrv mastersrv.cpp mastersrv.h)
 set_src(VERSIONSRV_SRC GLOB src/versionsrv mapversions.h versionsrv.cpp versionsrv.h)
@@ -1600,6 +1599,8 @@ list(APPEND TARGETS_LINK ${TARGETS_TOOLS})
 
 add_custom_target(tools DEPENDS ${TARGETS_TOOLS})
 add_custom_target(everything DEPENDS ${TARGETS_OWN})
+
+endif()
 
 ########################################################################
 # TESTS
@@ -1711,38 +1712,6 @@ function(regex_inverted VAR)
   set(${VAR} ${RESULT} PARENT_SCOPE)
 endfunction()
 
-set(CPACK_PACKAGE_NAME ${PROJECT_NAME})
-set(CPACK_GENERATOR TGZ TXZ)
-set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
-set(CPACK_STRIP_FILES TRUE)
-set(CPACK_COMPONENTS_ALL portable)
-set(CPACK_SOURCE_GENERATOR ZIP TGZ TBZ2 TXZ)
-set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
-set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
-set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
-set(CPACK_PACKAGE_VERSION ${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH})
-set(CPACK_SYSTEM_NAME ${CMAKE_SYSTEM_NAME})
-
-if(TARGET_OS AND TARGET_BITS)
-  if(TARGET_OS STREQUAL "windows")
-    set(CPACK_SYSTEM_NAME "win${TARGET_BITS}")
-    set(CPACK_GENERATOR ZIP)
-  elseif(TARGET_OS STREQUAL "linux")
-    # Assuming Intel here.
-    if(TARGET_BITS EQUAL 32)
-      set(CPACK_SYSTEM_NAME "linux_x86")
-    elseif(TARGET_BITS EQUAL 64)
-      set(CPACK_SYSTEM_NAME "linux_x86_64")
-    endif()
-  elseif(TARGET_OS STREQUAL "mac")
-    set(CPACK_SYSTEM_NAME "macos")
-    set(CPACK_GENERATOR DMG)
-  endif()
-endif()
-
-set(CPACK_PACKAGE_FILE_NAME ${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_SYSTEM_NAME})
-set(CPACK_ARCHIVE_PORTABLE_FILE_NAME ${CPACK_PACKAGE_FILE_NAME})
-set(CPACK_SOURCE_PACKAGE_FILE_NAME ${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-src)
 set(CPACK_SOURCE_FILES
   CMakeLists.txt
   bam.lua
@@ -1771,12 +1740,16 @@ foreach(str ${CPACK_SOURCE_FILES_INVERTED})
   list(APPEND CPACK_SOURCE_IGNORE_FILES "${STR_ESCAPED}")
 endforeach()
 
-set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME ${PROJECT_NAME})
+tw_setup_install()
 
-set(CPACK_TARGETS
-  ${TARGET_CLIENT}
-  ${TARGET_SERVER}
-)
+set(CPACK_TARGETS)
+if(TARGET ${TARGET_CLIENT})
+  list(APPEND CPACK_TARGETS ${TARGET_CLIENT})
+endif()
+if(TARGET ${TARGET_SERVER})
+  list(APPEND CPACK_TARGETS ${TARGET_SERVER})
+endif()
+
 set(CPACK_DIRS ${PROJECT_BINARY_DIR}/data)
 set(CPACK_FILES
   license.txt
@@ -1787,22 +1760,11 @@ if(TARGET_OS STREQUAL "windows")
   list(APPEND CPACK_FILES other/config_directory.bat)
 endif()
 
-if(NOT DEV)
-  install(DIRECTORY ${PROJECT_BINARY_DIR}/data DESTINATION share/${PROJECT_NAME} COMPONENT data)
-  install(TARGETS ${TARGET_CLIENT} DESTINATION bin COMPONENT client)
-  install(TARGETS ${TARGET_SERVER} DESTINATION bin COMPONENT server)
-endif()
-
-if(DEV)
-  # Don't generate CPack targets.
-elseif(CMAKE_VERSION VERSION_LESS 3.6 OR CMAKE_VERSION VERSION_EQUAL 3.6)
-  message(WARNING "Cannot create CPack targets, CMake version too old. Use CMake 3.6 or newer.")
-else()
-  set(EXTRA_ARGS DESTINATION ${CPACK_PACKAGE_FILE_NAME} COMPONENT portable EXCLUDE_FROM_ALL)
-  install(TARGETS ${CPACK_TARGETS} ${EXTRA_ARGS})
-  install(DIRECTORY ${CPACK_DIRS} ${EXTRA_ARGS})
-  install(FILES ${CPACK_FILES} ${EXTRA_ARGS})
-endif()
+tw_apply_install_rules(
+  TARGETS ${CPACK_TARGETS}
+  DATA_DIRS ${CPACK_DIRS}
+  EXTRA_FILES ${CPACK_FILES}
+)
 
 set(PACKAGE_TARGETS)
 
@@ -1824,23 +1786,53 @@ if(CLIENT AND (DMGTOOLS_FOUND OR HDIUTIL))
     ${TARGET_CLIENT}.app/Contents/Frameworks
     ${TARGET_CLIENT}.app/Contents/MacOS
     ${TARGET_CLIENT}.app/Contents/Resources
-    ${TARGET_SERVER}.app
-    ${TARGET_SERVER}.app/Contents
-    ${TARGET_SERVER}.app/Contents/MacOS
-    ${TARGET_SERVER}.app/Contents/Resources
-    ${TARGET_SERVER}.app/Contents/Resources/data
-    # Needed so the server recognizes the data directory.
-    ${TARGET_SERVER}.app/Contents/Resources/data/mapres
   )
+  set(DMG_DEPENDS
+    ${TARGET_CLIENT}
+    ${PROJECT_BINARY_DIR}/bundle/client/Info.plist
+    other/bundle/client/PkgInfo
+    other/icons/${TARGET_CLIENT}.icns
+  )
+
+  if(SERVER)
+    list(APPEND DMG_MKDIRS
+      ${TARGET_SERVER}.app
+      ${TARGET_SERVER}.app/Contents
+      ${TARGET_SERVER}.app/Contents/MacOS
+      ${TARGET_SERVER}.app/Contents/Resources
+      ${TARGET_SERVER}.app/Contents/Resources/data
+      ${TARGET_SERVER}.app/Contents/Resources/data/mapres
+    )
+    list(APPEND DMG_DEPENDS
+      ${TARGET_SERVER_LAUNCHER}
+      ${TARGET_SERVER}
+      ${PROJECT_BINARY_DIR}/bundle/server/Info.plist
+      other/bundle/server/PkgInfo
+      other/icons/${TARGET_SERVER}.icns
+    )
+  endif()
+
   set(DMG_MKDIR_COMMANDS)
   foreach(dir ${DMG_MKDIRS})
     list(APPEND DMG_MKDIR_COMMANDS COMMAND ${CMAKE_COMMAND} -E make_directory ${DMG_TMPDIR}/${dir})
   endforeach()
+
+  set(DMG_SERVER_COMMANDS)
+  if(SERVER)
+    list(APPEND DMG_SERVER_COMMANDS
+      COMMAND ${CMAKE_COMMAND} -E copy_directory data/maps ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/Resources/data/maps
+      COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/other/icons/${TARGET_SERVER}.icns ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/Resources/
+      COMMAND ${CMAKE_COMMAND} -E copy bundle/server/Info.plist ${PROJECT_SOURCE_DIR}/other/bundle/server/PkgInfo ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/
+      COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${TARGET_SERVER}> $<TARGET_FILE:${TARGET_SERVER_LAUNCHER}> ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/MacOS/
+    )
+  endif()
+
+  list(APPEND DMG_DEPENDS scripts/dmg.py)
+
   add_custom_command(OUTPUT ${CPACK_PACKAGE_FILE_NAME}.dmg
     COMMAND ${CMAKE_COMMAND} -E remove_directory ${DMG_TMPDIR}
     ${DMG_MKDIR_COMMANDS}
 
-    # CLIENT
     COMMAND ${CMAKE_COMMAND} -E copy_directory data ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/Resources/data
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/other/icons/${TARGET_CLIENT}.icns ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/Resources/
     COMMAND ${CMAKE_COMMAND} -E copy bundle/client/Info.plist ${PROJECT_SOURCE_DIR}/other/bundle/client/PkgInfo ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/
@@ -1850,26 +1842,11 @@ if(CLIENT AND (DMGTOOLS_FOUND OR HDIUTIL))
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/darwin_change_dylib.py change --tools ${CMAKE_INSTALL_NAME_TOOL} ${CMAKE_OTOOL} ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/MacOS/${TARGET_CLIENT} SDL2 @executable_path/../Frameworks/libSDL2-2.0.0.dylib
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/darwin_change_dylib.py change --tools ${CMAKE_INSTALL_NAME_TOOL} ${CMAKE_OTOOL} ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/MacOS/${TARGET_CLIENT} libfreetype @executable_path/../Frameworks/libfreetype.6.dylib
 
-    # SERVER
-    COMMAND ${CMAKE_COMMAND} -E copy_directory data/maps ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/Resources/data/maps
-    COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/other/icons/${TARGET_SERVER}.icns ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/Resources/
-    COMMAND ${CMAKE_COMMAND} -E copy bundle/server/Info.plist ${PROJECT_SOURCE_DIR}/other/bundle/server/PkgInfo ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/
-    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${TARGET_SERVER}> $<TARGET_FILE:${TARGET_SERVER_LAUNCHER}> ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/MacOS/
+    ${DMG_SERVER_COMMANDS}
 
-    # DMG
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/dmg.py create ${DMG_PARAMS} ${CPACK_PACKAGE_FILE_NAME}.dmg ${CPACK_PACKAGE_FILE_NAME} ${DMG_TMPDIR}
 
-    DEPENDS
-      ${TARGET_CLIENT}
-      ${TARGET_SERVER_LAUNCHER}
-      ${TARGET_SERVER}
-      ${PROJECT_BINARY_DIR}/bundle/client/Info.plist
-      ${PROJECT_BINARY_DIR}/bundle/server/Info.plist
-      other/bundle/client/PkgInfo
-      other/bundle/server/PkgInfo
-      other/icons/${TARGET_CLIENT}.icns
-      other/icons/${TARGET_SERVER}.icns
-      scripts/dmg.py
+    DEPENDS ${DMG_DEPENDS}
   )
   add_custom_target(package_dmg DEPENDS ${CPACK_PACKAGE_FILE_NAME}.dmg)
   list(APPEND PACKAGE_TARGETS package_dmg)

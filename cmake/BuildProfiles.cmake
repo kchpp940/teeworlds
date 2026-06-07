@@ -233,7 +233,7 @@ function(tw_apply_profile TARGET)
     target_compile_options(${TARGET} PRIVATE /MP /EHsc /GS /utf-8)
 
     if(IS_DEP)
-      target_compile_options(${TARGET} PRIVATE /W0)
+      target_compile_options(${TARGET} PRIVATE /w /W0)
       if(TW_FLAGS_ALL)
         target_compile_options(${TARGET} PRIVATE ${TW_FLAGS_ALL})
       endif()
@@ -317,5 +317,127 @@ function(tw_apply_client_wavpack_config TARGET)
 
   if(WAVPACK_OPEN_FILE_INPUT_EX)
     target_compile_definitions(${TARGET} PRIVATE CONF_WAVPACK_OPEN_FILE_INPUT_EX)
+  endif()
+endfunction()
+
+########################################################################
+# INSTALL / PACKAGE UNIFIED CONFIGURATION
+########################################################################
+
+function(tw_setup_install)
+  set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME ${PROJECT_NAME} PARENT_SCOPE)
+
+  set(CPACK_PACKAGE_NAME ${PROJECT_NAME} PARENT_SCOPE)
+  set(CPACK_GENERATOR TGZ TXZ PARENT_SCOPE)
+  set(CPACK_ARCHIVE_COMPONENT_INSTALL ON PARENT_SCOPE)
+  set(CPACK_STRIP_FILES TRUE PARENT_SCOPE)
+  set(CPACK_COMPONENTS_ALL portable PARENT_SCOPE)
+  set(CPACK_SOURCE_GENERATOR ZIP TGZ TBZ2 TXZ PARENT_SCOPE)
+  set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR} PARENT_SCOPE)
+  set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR} PARENT_SCOPE)
+  set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH} PARENT_SCOPE)
+  set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH} PARENT_SCOPE)
+  set(CPACK_SYSTEM_NAME ${CMAKE_SYSTEM_NAME} PARENT_SCOPE)
+
+  if(TARGET_OS AND TARGET_BITS)
+    if(TARGET_OS STREQUAL "windows")
+      set(CPACK_SYSTEM_NAME "win${TARGET_BITS}" PARENT_SCOPE)
+      set(CPACK_GENERATOR ZIP PARENT_SCOPE)
+    elseif(TARGET_OS STREQUAL "linux")
+      if(TARGET_BITS EQUAL 32)
+        set(CPACK_SYSTEM_NAME "linux_x86" PARENT_SCOPE)
+      elseif(TARGET_BITS EQUAL 64)
+        set(CPACK_SYSTEM_NAME "linux_x86_64" PARENT_SCOPE)
+      endif()
+    elseif(TARGET_OS STREQUAL "mac")
+      set(CPACK_SYSTEM_NAME "macos" PARENT_SCOPE)
+      set(CPACK_GENERATOR DMG PARENT_SCOPE)
+    endif()
+  endif()
+endfunction()
+
+function(tw_apply_install_rules)
+  cmake_parse_arguments(INST "" "" "TARGETS;DATA_DIRS;EXTRA_FILES" ${ARGN})
+
+  if(DEV)
+    return()
+  endif()
+
+  if(INST_DATA_DIRS)
+    install(DIRECTORY ${INST_DATA_DIRS}
+      DESTINATION share/${PROJECT_NAME}
+      COMPONENT data
+    )
+  endif()
+
+  foreach(T ${INST_TARGETS})
+    if(TARGET ${T})
+      get_target_property(_TYPE ${T} TYPE)
+      if(_TYPE STREQUAL "EXECUTABLE")
+        install(TARGETS ${T} DESTINATION bin COMPONENT ${T})
+      endif()
+    endif()
+  endforeach()
+
+  if(CMAKE_VERSION VERSION_LESS 3.6 OR CMAKE_VERSION VERSION_EQUAL 3.6)
+    message(WARNING "Cannot create CPack targets, CMake version too old. Use CMake 3.6 or newer.")
+    return()
+  endif()
+
+  set(CPACK_PACKAGE_FILE_NAME
+    ${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_SYSTEM_NAME})
+  set(CPACK_ARCHIVE_PORTABLE_FILE_NAME ${CPACK_PACKAGE_FILE_NAME})
+  set(CPACK_SOURCE_PACKAGE_FILE_NAME
+    ${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-src)
+
+  set(EXTRA_ARGS DESTINATION ${CPACK_PACKAGE_FILE_NAME} COMPONENT portable EXCLUDE_FROM_ALL)
+
+  foreach(T ${INST_TARGETS})
+    if(TARGET ${T})
+      get_target_property(_TYPE ${T} TYPE)
+      if(_TYPE STREQUAL "EXECUTABLE")
+        install(TARGETS ${T} ${EXTRA_ARGS})
+      endif()
+    endif()
+  endforeach()
+
+  if(INST_DATA_DIRS)
+    install(DIRECTORY ${INST_DATA_DIRS} ${EXTRA_ARGS})
+  endif()
+
+  if(INST_EXTRA_FILES)
+    install(FILES ${INST_EXTRA_FILES} ${EXTRA_ARGS})
+  endif()
+endfunction()
+
+########################################################################
+# MACRO HELPERS - unified assert/log/debug configuration entry points
+########################################################################
+
+function(tw_apply_assert_config TARGET)
+  target_compile_definitions(${TARGET} PRIVATE _GLIBCXX_ASSERTIONS)
+endfunction()
+
+function(tw_apply_debug_config TARGET)
+  target_compile_definitions(${TARGET} PRIVATE
+    $<$<CONFIG:Debug>:CONF_DEBUG>
+  )
+  if(TW_DEFINE_FORTIFY_SOURCE)
+    target_compile_definitions(${TARGET} PRIVATE
+      $<$<NOT:$<CONFIG:Debug>>:_FORTIFY_SOURCE=2>
+    )
+  endif()
+endfunction()
+
+function(tw_apply_platform_defines TARGET)
+  if(TARGET_OS STREQUAL "windows")
+    target_compile_definitions(${TARGET} PRIVATE
+      _WIN32_WINNT=0x0501
+      UNICODE
+      _UNICODE
+    )
+  endif()
+  if(HEADLESS_CLIENT)
+    target_compile_definitions(${TARGET} PRIVATE CONF_HEADLESS_CLIENT)
   endif()
 endfunction()
