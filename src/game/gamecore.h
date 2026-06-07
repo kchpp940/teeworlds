@@ -185,6 +185,22 @@ public:
 			m_TargetY = -1;
 	}
 
+	void UpdateFromPlayerInput(const CNetObj_PlayerInput *pInput)
+	{
+		m_Direction = pInput->m_Direction;
+		m_TargetX = pInput->m_TargetX;
+		m_TargetY = pInput->m_TargetY;
+		m_Jump = pInput->m_Jump;
+		m_Fire = pInput->m_Fire;
+		m_Hook = pInput->m_Hook;
+		m_PlayerFlags = pInput->m_PlayerFlags;
+		m_WantedWeapon = pInput->m_WantedWeapon;
+		m_NextWeapon = pInput->m_NextWeapon;
+		m_PrevWeapon = pInput->m_PrevWeapon;
+		if(m_TargetX == 0 && m_TargetY == 0)
+			m_TargetY = -1;
+	}
+
 	void ToPlayerInput(CNetObj_PlayerInput *pInput) const
 	{
 		pInput->m_Direction = m_Direction;
@@ -266,8 +282,10 @@ public:
 
 	void AdvanceSnapshot(CNetObj_Character *pCharacter, int TargetTick) const;
 
-	int ComputeRequestedWeapon(CMovementInput *pInput, int CurrentWeapon, const bool *pWeaponsGot) const;
+	int ComputeWeaponRequest(CMovementInput *pInput, int CurrentWeapon, const bool *pWeaponsGot) const;
 
+	void AdvanceTickPhase1(CMovementState *pState, const CMovementInput *pInput, bool UseInput) const;
+	void AdvanceTickPhase2(CMovementState *pState) const;
 	void AdvanceTick(CMovementState *pState, const CMovementInput *pInput, bool UseInput) const;
 	void ApplySnapshot(CMovementState *pState, const CNetObj_CharacterCore *pObjCore) const;
 	void WriteSnapshot(const CMovementState *pState, CNetObj_CharacterCore *pObjCore) const;
@@ -377,7 +395,9 @@ public:
 	void Write(CNetObj_CharacterCore *pObjCore) const;
 	void Quantize();
 
-	int ComputeRequestedWeapon(int CurrentWeapon, const bool *pWeaponsGot);
+	int ComputeWeaponRequest(int CurrentWeapon, const bool *pWeaponsGot);
+	void AdvanceTickPhase1(bool UseInput);
+	void AdvanceTickPhase2();
 	void AdvanceTick(bool UseInput);
 	void ApplySnapshot(const CNetObj_CharacterCore *pObjCore);
 	void WriteSnapshot(CNetObj_CharacterCore *pObjCore) const;

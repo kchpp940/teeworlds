@@ -1567,11 +1567,11 @@ void CGameClient::OnPredict()
 				if(pInput)
 					World.m_apCharacters[c]->m_Input = *((const CNetObj_PlayerInput*)pInput);
 
-				World.m_apCharacters[c]->Tick(true);
+				World.m_apCharacters[c]->AdvanceTickPhase1(true);
 			}
 			else
 			{
-				World.m_apCharacters[c]->Tick(false);
+				World.m_apCharacters[c]->AdvanceTickPhase1(false);
 			}
 		}
 
@@ -1580,10 +1580,7 @@ void CGameClient::OnPredict()
 			if (!World.m_apCharacters[c])
 				continue;
 
-			World.m_apCharacters[c]->AddDragVelocity();
-			World.m_apCharacters[c]->ResetDragVelocity();
-			World.m_apCharacters[c]->Move();
-			World.m_apCharacters[c]->Quantize();
+			World.m_apCharacters[c]->AdvanceTickPhase2();
 		}
 
 		if(Tick > m_LastNewPredictedTick)

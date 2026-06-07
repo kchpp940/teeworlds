@@ -74,6 +74,7 @@ bool CCharacter::Spawn(CPlayer *pPlayer, vec2 Pos)
 		m_aWeapons[i].m_Got = false;
 	m_aWeapons[WEAPON_HAMMER].m_Got = true;
 	m_aWeapons[WEAPON_GUN].m_Got = true;
+	m_WeaponInput.Reset();
 	GameWorld()->m_Core.m_apCharacters[m_pPlayer->GetCID()] = &m_Core;
 
 	m_ReckoningTick = 0;
@@ -210,13 +211,12 @@ void CCharacter::DoWeaponSwitch()
 
 void CCharacter::HandleWeaponSwitch()
 {
-	CMovementInput Input;
-	Input.FromPlayerInput(&m_LatestInput);
+	m_WeaponInput.UpdateFromPlayerInput(&m_LatestInput);
 	bool aWeaponsGot[NUM_WEAPONS];
 	for(int i = 0; i < NUM_WEAPONS; i++)
 		aWeaponsGot[i] = m_aWeapons[i].m_Got;
 	CMovementUpdate Update;
-	int Requested = Update.ComputeRequestedWeapon(&Input, m_ActiveWeapon, aWeaponsGot);
+	int Requested = Update.ComputeWeaponRequest(&m_WeaponInput, m_ActiveWeapon, aWeaponsGot);
 	if(Requested != -1)
 	{
 		m_QueuedWeapon = Requested;
@@ -499,12 +499,13 @@ void CCharacter::ResetInput()
 	m_Input.m_Fire &= INPUT_STATE_MASK;
 	m_Input.m_Jump = 0;
 	m_LatestPrevInput = m_LatestInput = m_Input;
+	m_WeaponInput.Reset();
 }
 
 void CCharacter::Tick()
 {
 	m_Core.m_Input = m_Input;
-	m_Core.Tick(true);
+	m_Core.AdvanceTickPhase1(true);
 
 	// handle leaving gamelayer
 	if(GameLayerClipped(m_Pos))
@@ -522,9 +523,7 @@ void CCharacter::TickDefered()
 	{
 		CWorldCore TempWorld;
 		m_ReckoningCore.Init(&TempWorld, GameServer()->Collision());
-		m_ReckoningCore.Tick(false);
-		m_ReckoningCore.Move();
-		m_ReckoningCore.Quantize();
+		m_ReckoningCore.AdvanceTick(false);
 	}
 
 	if(m_ActiveWeapon != WEAPON_NINJA || m_Ninja.m_CurrentMoveTime < 0)

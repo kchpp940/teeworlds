@@ -441,9 +441,7 @@ void CMovementUpdate::AdvanceSnapshot(CNetObj_Character *pCharacter, int TargetT
 	while(pCharacter->m_Tick < TargetTick)
 	{
 		pCharacter->m_Tick++;
-		TempUpdate.Tick(&TempState, &DummyInput, false);
-		TempUpdate.Move(&TempState);
-		TempUpdate.Quantize(&TempState);
+		TempUpdate.AdvanceTick(&TempState, &DummyInput, false);
 	}
 
 	TempUpdate.WriteState(&TempState, pCharacter);
@@ -519,7 +517,7 @@ CMovementUpdate::CInputCount CMovementUpdate::CountInputState(int Prev, int Cur)
 	return c;
 }
 
-int CMovementUpdate::ComputeRequestedWeapon(CMovementInput *pInput, int CurrentWeapon, const bool *pWeaponsGot) const
+int CMovementUpdate::ComputeWeaponRequest(CMovementInput *pInput, int CurrentWeapon, const bool *pWeaponsGot) const
 {
 	int WantedWeapon = CurrentWeapon;
 
@@ -557,13 +555,23 @@ int CMovementUpdate::ComputeRequestedWeapon(CMovementInput *pInput, int CurrentW
 	return -1;
 }
 
-void CMovementUpdate::AdvanceTick(CMovementState *pState, const CMovementInput *pInput, bool UseInput) const
+void CMovementUpdate::AdvanceTickPhase1(CMovementState *pState, const CMovementInput *pInput, bool UseInput) const
 {
 	Tick(pState, pInput, UseInput);
+}
+
+void CMovementUpdate::AdvanceTickPhase2(CMovementState *pState) const
+{
 	AddDragVelocity(pState);
 	ResetDragVelocity(pState);
 	Move(pState);
 	Quantize(pState);
+}
+
+void CMovementUpdate::AdvanceTick(CMovementState *pState, const CMovementInput *pInput, bool UseInput) const
+{
+	AdvanceTickPhase1(pState, pInput, UseInput);
+	AdvanceTickPhase2(pState);
 }
 
 void CMovementUpdate::ApplySnapshot(CMovementState *pState, const CNetObj_CharacterCore *pObjCore) const
@@ -576,16 +584,28 @@ void CMovementUpdate::WriteSnapshot(const CMovementState *pState, CNetObj_Charac
 	WriteState(pState, pObjCore);
 }
 
-int CCharacterCore::ComputeRequestedWeapon(int CurrentWeapon, const bool *pWeaponsGot)
+int CCharacterCore::ComputeWeaponRequest(int CurrentWeapon, const bool *pWeaponsGot)
 {
-	m_InputState.FromPlayerInput(&m_Input);
-	return m_Update.ComputeRequestedWeapon(&m_InputState, CurrentWeapon, pWeaponsGot);
+	m_InputState.UpdateFromPlayerInput(&m_Input);
+	return m_Update.ComputeWeaponRequest(&m_InputState, CurrentWeapon, pWeaponsGot);
+}
+
+void CCharacterCore::AdvanceTickPhase1(bool UseInput)
+{
+	if(UseInput)
+		m_InputState.UpdateFromPlayerInput(&m_Input);
+	m_Update.AdvanceTickPhase1(&m_State, &m_InputState, UseInput);
+}
+
+void CCharacterCore::AdvanceTickPhase2()
+{
+	m_Update.AdvanceTickPhase2(&m_State);
 }
 
 void CCharacterCore::AdvanceTick(bool UseInput)
 {
 	if(UseInput)
-		m_InputState.FromPlayerInput(&m_Input);
+		m_InputState.UpdateFromPlayerInput(&m_Input);
 	m_Update.AdvanceTick(&m_State, &m_InputState, UseInput);
 }
 
