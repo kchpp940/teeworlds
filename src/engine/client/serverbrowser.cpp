@@ -698,22 +698,22 @@ void CServerBrowser::LoadFilters()
 		if(rStart["type"].type == json_integer)
 			Preset = rStart["type"].u.integer;
 
-		const int FilterIndex = CreateFilter(Preset, pName);
+		const int FilterId = CreateFilter(Preset, pName);
 
 		const json_value &rSubStart = rStart["settings"];
 		if(rSubStart.type == json_object)
 		{
 			if(rSubStart["filter_hash"].type == json_integer)
-				SetFilterFlags(FilterIndex, rSubStart["filter_hash"].u.integer);
+				SetFilterFlags(FilterId, rSubStart["filter_hash"].u.integer);
 
 			const json_value &rGametypeEntry = rSubStart["filter_gametype"];
-			ClearGametypeFilters(FilterIndex);
+			ClearGametypeFilters(FilterId);
 			if(rGametypeEntry.type == json_array) // legacy: all inclusive
 			{
 				for(unsigned j = 0; j < rGametypeEntry.u.array.length; ++j)
 				{
 					if(rGametypeEntry[j].type == json_string)
-						AddGametypeFilter(FilterIndex, rGametypeEntry[j].u.string.ptr, false);
+						AddGametypeFilter(FilterId, rGametypeEntry[j].u.string.ptr, false);
 				}
 			}
 			else if(rGametypeEntry.type == json_object)
@@ -722,24 +722,24 @@ void CServerBrowser::LoadFilters()
 				{
 					const json_value &rValue = *(rGametypeEntry.u.object.values[j].value);
 					if(rValue.type == json_boolean)
-						AddGametypeFilter(FilterIndex, rGametypeEntry.u.object.values[j].name, rValue.u.boolean);
+						AddGametypeFilter(FilterId, rGametypeEntry.u.object.values[j].name, rValue.u.boolean);
 				}
 			}
 
 			if(rSubStart["filter_ping"].type == json_integer)
-				SetFilterPing(FilterIndex, rSubStart["filter_ping"].u.integer);
+				SetFilterPing(FilterId, rSubStart["filter_ping"].u.integer);
 			if(rSubStart["filter_serverlevel"].type == json_integer)
-				SetFilterLevelMask(FilterIndex, rSubStart["filter_serverlevel"].u.integer);
+				SetFilterLevelMask(FilterId, rSubStart["filter_serverlevel"].u.integer);
 			if(rSubStart["filter_address"].type == json_string)
-				SetFilterAddress(FilterIndex, rSubStart["filter_address"].u.string.ptr);
+				SetFilterAddress(FilterId, rSubStart["filter_address"].u.string.ptr);
 			if(rSubStart["filter_country"].type == json_integer)
-				SetFilterCountry(FilterIndex, rSubStart["filter_country"].u.integer);
+				SetFilterCountry(FilterId, rSubStart["filter_country"].u.integer);
 		}
 
 		if(Preset == PRESET_STANDARD)
-			SetFilterFlag(FilterIndex, FILTER_PURE, true);
+			SetFilterFlag(FilterId, FILTER_PURE, true);
 		else if(Preset == PRESET_RACE)
-			AddGametypeFilter(FilterIndex, "Race", false);
+			AddGametypeFilter(FilterId, "Race", false);
 	}
 
 	EnsureDefaultFilters();
@@ -755,7 +755,7 @@ void CServerBrowser::SaveFilters()
 
 	Writer.BeginObject(); // root
 
-	// per-type active filter selection
+	// per-type active filter selection (stores stable FilterIds)
 	Writer.WriteAttribute("active_filters");
 	Writer.BeginArray();
 	for(int i = 0; i < NUM_TYPES; ++i)
@@ -768,30 +768,31 @@ void CServerBrowser::SaveFilters()
 	const int Count = NumFilters();
 	for(int i = 0; i < Count; ++i)
 	{
+		const int FilterId = GetFilterId(i);
 		char aName[64];
-		GetFilterName(i, aName, sizeof(aName));
+		GetFilterName(FilterId, aName, sizeof(aName));
 
 		Writer.BeginObject();
 		Writer.WriteAttribute(aName);
 		Writer.BeginObject();
 		{
 			Writer.WriteAttribute("type");
-			Writer.WriteIntValue(GetFilterPreset(i));
+			Writer.WriteIntValue(GetFilterPreset(FilterId));
 
 			Writer.WriteAttribute("settings");
 			Writer.BeginObject();
 			{
 				Writer.WriteAttribute("filter_hash");
-				Writer.WriteIntValue(GetFilterFlags(i));
+				Writer.WriteIntValue(GetFilterFlags(FilterId));
 
 				Writer.WriteAttribute("filter_gametype");
 				Writer.BeginObject();
-				const int NumGt = GetNumGametypeFilters(i);
+				const int NumGt = GetNumGametypeFilters(FilterId);
 				for(int j = 0; j < NumGt; ++j)
 				{
 					char aGtName[16];
 					bool Exclusive;
-					GetGametypeFilter(i, j, aGtName, sizeof(aGtName), &Exclusive);
+					GetGametypeFilter(FilterId, j, aGtName, sizeof(aGtName), &Exclusive);
 					if(aGtName[0])
 					{
 						Writer.WriteAttribute(aGtName);
@@ -801,18 +802,18 @@ void CServerBrowser::SaveFilters()
 				Writer.EndObject();
 
 				Writer.WriteAttribute("filter_ping");
-				Writer.WriteIntValue(GetFilterPing(i));
+				Writer.WriteIntValue(GetFilterPing(FilterId));
 
 				Writer.WriteAttribute("filter_serverlevel");
-				Writer.WriteIntValue(GetFilterLevelMask(i));
+				Writer.WriteIntValue(GetFilterLevelMask(FilterId));
 
 				char aAddress[NETADDR_MAXSTRSIZE];
-				GetFilterAddress(i, aAddress, sizeof(aAddress));
+				GetFilterAddress(FilterId, aAddress, sizeof(aAddress));
 				Writer.WriteAttribute("filter_address");
 				Writer.WriteStrValue(aAddress);
 
 				Writer.WriteAttribute("filter_country");
-				Writer.WriteIntValue(GetFilterCountry(i));
+				Writer.WriteIntValue(GetFilterCountry(FilterId));
 			}
 			Writer.EndObject();
 		}

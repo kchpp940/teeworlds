@@ -44,6 +44,7 @@ CMenus::CMenus()
 	m_ShowServerDetails = true;
 	m_LastBrowserType = -1;
 	m_AddressSelection = 0;
+	m_RemoveFilterId = -1;
 	for(int Type = 0; Type < IServerBrowser::NUM_TYPES; Type++)
 	{
 		m_aSelectedServers[Type] = -1;

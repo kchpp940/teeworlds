@@ -359,7 +359,7 @@ private:
 	{
 		bool m_Extended;
 		char m_aName[64]; // cached copy of engine-side name, needed for const char* return
-		int m_Filter;
+		int m_FilterId; // stable engine filter id (never reused, never invalidated by Delete/Move)
 		IServerBrowser *m_pServerBrowser;
 
 	public:
@@ -377,12 +377,12 @@ private:
 		CButtonContainer m_UpButtonContainer;
 		CButtonContainer m_DownButtonContainer;
 
-		CBrowserFilter() {}
-		CBrowserFilter(int EngineFilterIndex, IServerBrowser *pServerBrowser);
+		CBrowserFilter() { m_FilterId = -1; }
+		CBrowserFilter(int EngineFilterId, IServerBrowser *pServerBrowser);
 		void Switch();
 		bool Extended() const;
 		int Custom() const;
-		int Filter() const;
+		int FilterId() const { return m_FilterId; }
 		const char* Name() const;
 
 		void SetFilterNum(int Num);
@@ -396,28 +396,28 @@ private:
 		bool IsClientHidden(int Index, int ClientIndex) const;
 
 		// ---- Semantic filter state API ----
-		bool GetFilterFlag(int Flag) const { return m_pServerBrowser->GetFilterFlag(m_Filter, Flag); }
-		void SetFilterFlag(int Flag, bool Enabled) { m_pServerBrowser->SetFilterFlag(m_Filter, Flag, Enabled); }
+		bool GetFilterFlag(int Flag) const { return m_pServerBrowser->GetFilterFlag(m_FilterId, Flag); }
+		void SetFilterFlag(int Flag, bool Enabled) { m_pServerBrowser->SetFilterFlag(m_FilterId, Flag, Enabled); }
 
-		int GetFilterPing() const { return m_pServerBrowser->GetFilterPing(m_Filter); }
-		void SetFilterPing(int Ping) { m_pServerBrowser->SetFilterPing(m_Filter, Ping); }
+		int GetFilterPing() const { return m_pServerBrowser->GetFilterPing(m_FilterId); }
+		void SetFilterPing(int Ping) { m_pServerBrowser->SetFilterPing(m_FilterId, Ping); }
 
-		void GetFilterAddress(char *pBuf, int Size) const { m_pServerBrowser->GetFilterAddress(m_Filter, pBuf, Size); }
-		void SetFilterAddress(const char *pAddress) { m_pServerBrowser->SetFilterAddress(m_Filter, pAddress); }
+		void GetFilterAddress(char *pBuf, int Size) const { m_pServerBrowser->GetFilterAddress(m_FilterId, pBuf, Size); }
+		void SetFilterAddress(const char *pAddress) { m_pServerBrowser->SetFilterAddress(m_FilterId, pAddress); }
 
-		bool GetFilterCountryEnabled() const { return m_pServerBrowser->GetFilterCountryEnabled(m_Filter); }
-		void SetFilterCountryEnabled(bool Enabled) { m_pServerBrowser->SetFilterCountryEnabled(m_Filter, Enabled); }
-		int GetFilterCountry() const { return m_pServerBrowser->GetFilterCountry(m_Filter); }
-		void SetFilterCountry(int Country) { m_pServerBrowser->SetFilterCountry(m_Filter, Country); }
+		bool GetFilterCountryEnabled() const { return m_pServerBrowser->GetFilterCountryEnabled(m_FilterId); }
+		void SetFilterCountryEnabled(bool Enabled) { m_pServerBrowser->SetFilterCountryEnabled(m_FilterId, Enabled); }
+		int GetFilterCountry() const { return m_pServerBrowser->GetFilterCountry(m_FilterId); }
+		void SetFilterCountry(int Country) { m_pServerBrowser->SetFilterCountry(m_FilterId, Country); }
 
-		bool IsLevelFiltered(int Level) const { return m_pServerBrowser->IsLevelFiltered(m_Filter, Level); }
-		void ToggleLevelFilter(int Level) { m_pServerBrowser->ToggleLevelFilter(m_Filter, Level); }
+		bool IsLevelFiltered(int Level) const { return m_pServerBrowser->IsLevelFiltered(m_FilterId, Level); }
+		void ToggleLevelFilter(int Level) { m_pServerBrowser->ToggleLevelFilter(m_FilterId, Level); }
 
-		int GetNumGametypeFilters() const { return m_pServerBrowser->GetNumGametypeFilters(m_Filter); }
-		void GetGametypeFilter(int Idx, char *pName, int NameSize, bool *pExclusive) const { m_pServerBrowser->GetGametypeFilter(m_Filter, Idx, pName, NameSize, pExclusive); }
-		void AddGametypeFilter(const char *pName, bool Exclusive) { m_pServerBrowser->AddGametypeFilter(m_Filter, pName, Exclusive); }
-		void RemoveGametypeFilter(int Idx) { m_pServerBrowser->RemoveGametypeFilter(m_Filter, Idx); }
-		void ClearGametypeFilters() { m_pServerBrowser->ClearGametypeFilters(m_Filter); }
+		int GetNumGametypeFilters() const { return m_pServerBrowser->GetNumGametypeFilters(m_FilterId); }
+		void GetGametypeFilter(int Idx, char *pName, int NameSize, bool *pExclusive) const { m_pServerBrowser->GetGametypeFilter(m_FilterId, Idx, pName, NameSize, pExclusive); }
+		void AddGametypeFilter(const char *pName, bool Exclusive) { m_pServerBrowser->AddGametypeFilter(m_FilterId, pName, Exclusive); }
+		void RemoveGametypeFilter(int Idx) { m_pServerBrowser->RemoveGametypeFilter(m_FilterId, Idx); }
+		void ClearGametypeFilters() { m_pServerBrowser->ClearGametypeFilters(m_FilterId); }
 
 		void Reset();
 		void GetFilter(CServerFilterInfo *pFilterInfo) const;
@@ -426,12 +426,12 @@ private:
 
 	array<CBrowserFilter> m_lFilters;
 
-	int m_RemoveFilterIndex;
+	int m_RemoveFilterId; // stores stable id of filter queued for deletion
 
 	void LoadFilters();
 	void SaveFilters();
-	void RemoveFilter(int FilterIndex);
-	void MoveFilter(bool Up, int Filter);
+	void RemoveFilter(int FilterId);
+	void MoveFilter(bool Up, int FilterId);
 
 	struct CColumn
 	{
@@ -483,10 +483,13 @@ private:
 	CBrowserFilter *GetSelectedBrowserFilter()
 	{
 		const int Tab = ServerBrowser()->GetType();
-		const int Idx = ServerBrowser()->GetActiveFilter(Tab);
-		if(Idx < 0 || Idx >= m_lFilters.size())
-			return 0;
-		return &m_lFilters[Idx];
+		const int ActiveFilterId = ServerBrowser()->GetActiveFilter(Tab);
+		for(int i = 0; i < m_lFilters.size(); ++i)
+		{
+			if(m_lFilters[i].FilterId() == ActiveFilterId)
+				return &m_lFilters[i];
+		}
+		return 0;
 	}
 
 	const CServerInfo *GetSelectedServerInfo()

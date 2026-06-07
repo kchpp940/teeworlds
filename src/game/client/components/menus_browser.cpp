@@ -45,18 +45,18 @@ static int s_aDifficultySpriteIds[] = {
 vec3 TextHighlightColor = vec3(0.4f, 0.4f, 1.0f);
 
 // filters
-CMenus::CBrowserFilter::CBrowserFilter(int EngineFilterIndex, IServerBrowser *pServerBrowser)
+CMenus::CBrowserFilter::CBrowserFilter(int EngineFilterId, IServerBrowser *pServerBrowser)
 	: m_DeleteButtonContainer(true), m_UpButtonContainer(true), m_DownButtonContainer(true)
 {
 	m_Extended = false;
 	m_pServerBrowser = pServerBrowser;
-	m_Filter = EngineFilterIndex;
-	m_pServerBrowser->GetFilterName(m_Filter, m_aName, sizeof(m_aName));
+	m_FilterId = EngineFilterId;
+	m_pServerBrowser->GetFilterName(m_FilterId, m_aName, sizeof(m_aName));
 }
 
 void CMenus::CBrowserFilter::Reset()
 {
-	m_pServerBrowser->ResetFilterToPreset(m_Filter);
+	m_pServerBrowser->ResetFilterToPreset(m_FilterId);
 }
 
 void CMenus::CBrowserFilter::Switch()
@@ -71,12 +71,7 @@ bool CMenus::CBrowserFilter::Extended() const
 
 int CMenus::CBrowserFilter::Custom() const
 {
-	return m_pServerBrowser->GetFilterPreset(m_Filter);
-}
-
-int CMenus::CBrowserFilter::Filter() const
-{
-	return m_Filter;
+	return m_pServerBrowser->GetFilterPreset(m_FilterId);
 }
 
 const char* CMenus::CBrowserFilter::Name() const
@@ -86,49 +81,49 @@ const char* CMenus::CBrowserFilter::Name() const
 
 const void *CMenus::CBrowserFilter::ID(int Index) const
 {
-	return m_pServerBrowser->GetID(m_Filter, Index);
+	return m_pServerBrowser->GetID(m_FilterId, Index);
 }
 
 int CMenus::CBrowserFilter::NumSortedServers() const
 {
-	return m_pServerBrowser->NumSortedServers(m_Filter);
+	return m_pServerBrowser->NumSortedServers(m_FilterId);
 }
 
 int CMenus::CBrowserFilter::NumPlayers() const
 {
-	return m_pServerBrowser->NumSortedPlayers(m_Filter);
+	return m_pServerBrowser->NumSortedPlayers(m_FilterId);
 }
 
 const CServerInfo* CMenus::CBrowserFilter::SortedGet(int Index) const
 {
-	if(Index < 0 || Index >= m_pServerBrowser->NumSortedServers(m_Filter))
+	if(Index < 0 || Index >= m_pServerBrowser->NumSortedServers(m_FilterId))
 		return 0;
-	return m_pServerBrowser->SortedGet(m_Filter, Index);
+	return m_pServerBrowser->SortedGet(m_FilterId, Index);
 }
 
 void CMenus::CBrowserFilter::GetDisplayCounts(int Index, int *pNum, int *pMax) const
 {
-	m_pServerBrowser->GetDisplayCounts(m_Filter, Index, pNum, pMax);
+	m_pServerBrowser->GetDisplayCounts(m_FilterId, Index, pNum, pMax);
 }
 
 bool CMenus::CBrowserFilter::IsClientHidden(int Index, int ClientIndex) const
 {
-	return m_pServerBrowser->IsClientHidden(m_Filter, Index, ClientIndex);
+	return m_pServerBrowser->IsClientHidden(m_FilterId, Index, ClientIndex);
 }
 
 void CMenus::CBrowserFilter::SetFilterNum(int Num)
 {
-	m_Filter = Num;
+	m_FilterId = Num;
 }
 
 void CMenus::CBrowserFilter::GetFilter(CServerFilterInfo *pFilterInfo) const
 {
-	m_pServerBrowser->GetFilter(m_Filter, pFilterInfo);
+	m_pServerBrowser->GetFilter(m_pServerBrowser->GetFilterIndex(m_FilterId), pFilterInfo);
 }
 
 void CMenus::CBrowserFilter::SetFilter(const CServerFilterInfo *pFilterInfo)
 {
-	m_pServerBrowser->SetFilter(m_Filter, pFilterInfo);
+	m_pServerBrowser->SetFilter(m_pServerBrowser->GetFilterIndex(m_FilterId), pFilterInfo);
 }
 
 void CMenus::LoadFilters()
@@ -154,7 +149,7 @@ void CMenus::LoadFilters()
 	m_lFilters.clear();
 	const int Count = ServerBrowser()->NumFilters();
 	for(int i = 0; i < Count; ++i)
-		m_lFilters.add(CBrowserFilter(i, ServerBrowser()));
+		m_lFilters.add(CBrowserFilter(ServerBrowser()->GetFilterId(i), ServerBrowser()));
 
 	CBrowserFilter *pSelectedFilter = GetSelectedBrowserFilter();
 	if(pSelectedFilter)
@@ -189,39 +184,56 @@ void CMenus::SaveFilters()
 	ServerBrowser()->SaveFilters();
 }
 
-void CMenus::RemoveFilter(int FilterIndex)
+void CMenus::RemoveFilter(int FilterId)
 {
-	ServerBrowser()->DeleteFilter(FilterIndex);
-	m_lFilters.remove_index(FilterIndex);
-
-	// sync engine filter indexes in UI wrappers
+	ServerBrowser()->DeleteFilter(FilterId);
+	// find wrapper by stable id and remove it; other wrappers keep their ids
 	for(int i = 0; i < m_lFilters.size(); ++i)
 	{
-		if(m_lFilters[i].Filter() > FilterIndex)
-			m_lFilters[i].SetFilterNum(m_lFilters[i].Filter() - 1);
+		if(m_lFilters[i].FilterId() == FilterId)
+		{
+			m_lFilters.remove_index(i);
+			break;
+		}
 	}
 }
 
-void CMenus::MoveFilter(bool Up, int Filter)
+void CMenus::MoveFilter(bool Up, int FilterId)
 {
-	ServerBrowser()->MoveFilter(Filter, Up);
-	CBrowserFilter Temp = m_lFilters[Filter];
+	// reorder in engine (stores the canonical order)
+	ServerBrowser()->MoveFilter(FilterId, Up);
+
+	// reorder the UI-side wrappers so display order matches engine
+	int Idx = -1;
+	for(int i = 0; i < m_lFilters.size(); ++i)
+	{
+		if(m_lFilters[i].FilterId() == FilterId)
+		{
+			Idx = i;
+			break;
+		}
+	}
+	if(Idx < 0)
+		return;
+
+	CBrowserFilter Temp = m_lFilters[Idx];
 	if(Up)
 	{
-		if(Filter > 0)
+		if(Idx > 0)
 		{
-			m_lFilters[Filter] = m_lFilters[Filter - 1];
-			m_lFilters[Filter - 1] = Temp;
+			m_lFilters[Idx] = m_lFilters[Idx - 1];
+			m_lFilters[Idx - 1] = Temp;
 		}
 	}
 	else
 	{
-		if(Filter < m_lFilters.size() - 1)
+		if(Idx < m_lFilters.size() - 1)
 		{
-			m_lFilters[Filter] = m_lFilters[Filter + 1];
-			m_lFilters[Filter + 1] = Temp;
+			m_lFilters[Idx] = m_lFilters[Idx + 1];
+			m_lFilters[Idx + 1] = Temp;
 		}
 	}
+	// wrappers store stable ids; no need to patch any of them after reordering
 }
 
 // 1 = browser entry click, 2 = server info click
@@ -487,7 +499,7 @@ void CMenus::RenderFilterHeader(CUIRect View, int FilterIndex)
 	{
 		if(DoButton_SpriteID(&pFilter->m_DeleteButtonContainer, IMAGE_TOOLICONS, SPRITE_TOOL_X_A, false, &Button))
 		{
-			m_RemoveFilterIndex = FilterIndex;
+			m_RemoveFilterId = pFilter->FilterId();
 			str_format(aBuf, sizeof(aBuf), Localize("Are you sure that you want to remove the filter '%s' from the server browser?"), pFilter->Name());
 			PopupConfirm(Localize("Remove filter"), aBuf, Localize("Yes"), Localize("No"), &CMenus::PopupConfirmRemoveFilter);
 		}
@@ -502,7 +514,7 @@ void CMenus::RenderFilterHeader(CUIRect View, int FilterIndex)
 	{
 		if(DoButton_SpriteID(&pFilter->m_UpButtonContainer, IMAGE_TOOLICONS, SPRITE_TOOL_UP_A, false, &Button))
 		{
-			MoveFilter(true, FilterIndex);
+			MoveFilter(true, pFilter->FilterId());
 			Switch = false;
 		}
 	}
@@ -516,7 +528,7 @@ void CMenus::RenderFilterHeader(CUIRect View, int FilterIndex)
 	{
 		if(DoButton_SpriteID(&pFilter->m_DownButtonContainer, IMAGE_TOOLICONS, SPRITE_TOOL_DOWN_A, false, &Button))
 		{
-			MoveFilter(false, FilterIndex);
+			MoveFilter(false, pFilter->FilterId());
 			Switch = false;
 		}
 	}
@@ -541,9 +553,10 @@ void CMenus::RenderFilterHeader(CUIRect View, int FilterIndex)
 void CMenus::PopupConfirmRemoveFilter()
 {
 	// remove filter
-	if(m_RemoveFilterIndex)
+	if(m_RemoveFilterId != -1)
 	{
-		RemoveFilter(m_RemoveFilterIndex);
+		RemoveFilter(m_RemoveFilterId);
+		m_RemoveFilterId = -1;
 	}
 }
 
@@ -665,13 +678,13 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 		m_AddressSelection |= ADDR_SELECTION_CHANGE;
 
 	const int BrowserType = ServerBrowser()->GetType();
-	int ToBeSelectedFilter = -2; // -2 to not restore, -1 to restore all filters closed
+	int ToBeSelectedFilterId = -2; // -2 to not restore, -1 to restore all filters closed
 	if(m_LastBrowserType == -1 || BrowserType != m_LastBrowserType)
 	{
 		// restore selected filter and server when changing browser page
 		m_LastBrowserType = BrowserType;
-		ToBeSelectedFilter = ServerBrowser()->GetActiveFilter(BrowserType);
-		if(ToBeSelectedFilter != -1)
+		ToBeSelectedFilterId = ServerBrowser()->GetActiveFilter(BrowserType);
+		if(ToBeSelectedFilterId != -1)
 		{
 			if(m_aSelectedServers[BrowserType] == -1)
 				m_AddressSelection |= ADDR_SELECTION_CHANGE;
@@ -682,33 +695,35 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 
 	// count all the servers and update selected filter based on UI state
 	int NumServers = 0;
-	int SelectedFilter = -1;
+	int SelectedFilterIdx = -1; // UI-layer index into m_lFilters
 	for(int i = 0; i < m_lFilters.size(); i++)
 	{
 		// restore selected filter from browser page
-		if(ToBeSelectedFilter != -2 && (ToBeSelectedFilter == i) != m_lFilters[i].Extended())
+		if(ToBeSelectedFilterId != -2 && (m_lFilters[i].FilterId() == ToBeSelectedFilterId) != m_lFilters[i].Extended())
 		{
 			m_lFilters[i].Switch();
 		}
 
 		if(m_lFilters[i].Extended())
 		{
-			if(SelectedFilter == -1)
+			if(SelectedFilterIdx == -1)
 			{
-				SelectedFilter = i;
+				SelectedFilterIdx = i;
 			}
 			NumServers += m_lFilters[i].NumSortedServers();
 		}
 	}
 
+	const int SelectedFilterId = SelectedFilterIdx >= 0 ? m_lFilters[SelectedFilterIdx].FilterId() : -1;
+
 	if(ServerBrowser()->GetActiveFilter(BrowserType) == -2)
-		ServerBrowser()->SetActiveFilter(BrowserType, SelectedFilter);
-	else if(SelectedFilter != ServerBrowser()->GetActiveFilter(BrowserType))
+		ServerBrowser()->SetActiveFilter(BrowserType, SelectedFilterId);
+	else if(SelectedFilterId != ServerBrowser()->GetActiveFilter(BrowserType))
 	{
 		// update stored state based on updated state of UI
-		ServerBrowser()->SetActiveFilter(BrowserType, SelectedFilter);
+		ServerBrowser()->SetActiveFilter(BrowserType, SelectedFilterId);
 		m_aSelectedServers[BrowserType] = -1;
-		if(SelectedFilter != -1)
+		if(SelectedFilterId != -1)
 		{
 			m_AddressSelection |= ADDR_SELECTION_CHANGE;
 		}
@@ -717,11 +732,11 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 	const bool CtrlPressed = Input()->KeyIsPressed(KEY_LCTRL) || Input()->KeyIsPressed(KEY_RCTRL);
 
 	// handle arrow hotkeys
-	const int LastSelectedFilter = ServerBrowser()->GetActiveFilter(BrowserType);
+	const int LastSelectedFilterId = ServerBrowser()->GetActiveFilter(BrowserType);
 	const int LastSelectedServer = m_aSelectedServers[BrowserType];
-	if(SelectedFilter > -1)
+	if(SelectedFilterIdx > -1)
 	{
-		int NewFilter = SelectedFilter;
+		int NewFilterIdx = SelectedFilterIdx;
 		int ToBeSelectedServer = -1;
 
 		if(UI()->ConsumeHotkey(CUI::HOTKEY_DOWN))
@@ -729,13 +744,13 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 			if(!CtrlPressed)
 			{
 				ToBeSelectedServer = m_aSelectedServers[BrowserType] < 0 ? 0 : (m_aSelectedServers[BrowserType] + 1);
-				if(ToBeSelectedServer >= m_lFilters[SelectedFilter].NumSortedServers())
-					ToBeSelectedServer = m_lFilters[SelectedFilter].NumSortedServers() - 1;
+				if(ToBeSelectedServer >= m_lFilters[SelectedFilterIdx].NumSortedServers())
+					ToBeSelectedServer = m_lFilters[SelectedFilterIdx].NumSortedServers() - 1;
 			}
-			else if(SelectedFilter + 1 < m_lFilters.size())
+			else if(SelectedFilterIdx + 1 < m_lFilters.size())
 			{
 				// move to next filter
-				NewFilter = SelectedFilter + 1;
+				NewFilterIdx = SelectedFilterIdx + 1;
 			}
 		}
 		else if(UI()->ConsumeHotkey(CUI::HOTKEY_UP))
@@ -746,24 +761,24 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 				if(ToBeSelectedServer < 0)
 					ToBeSelectedServer = 0;
 			}
-			else if(SelectedFilter - 1 >= 0)
+			else if(SelectedFilterIdx - 1 >= 0)
 			{
 				// move to previous filter
-				NewFilter = SelectedFilter - 1;
+				NewFilterIdx = SelectedFilterIdx - 1;
 			}
 		}
 
-		if(NewFilter != SelectedFilter)
+		if(NewFilterIdx != SelectedFilterIdx)
 		{
-			m_lFilters[NewFilter].Switch();
-			m_lFilters[SelectedFilter].Switch();
+			m_lFilters[NewFilterIdx].Switch();
+			m_lFilters[SelectedFilterIdx].Switch();
 			m_aSelectedServers[BrowserType] = -1;
 			m_AddressSelection |= ADDR_SELECTION_CHANGE;
 		}
 
-		if(ToBeSelectedServer > -1 && ToBeSelectedServer < m_lFilters[NewFilter].NumSortedServers())
+		if(ToBeSelectedServer > -1 && ToBeSelectedServer < m_lFilters[NewFilterIdx].NumSortedServers())
 		{
-			ServerBrowser()->SetActiveFilter(BrowserType, NewFilter);
+			ServerBrowser()->SetActiveFilter(BrowserType, m_lFilters[NewFilterIdx].FilterId());
 			if(m_aSelectedServers[BrowserType] != ToBeSelectedServer)
 			{
 				m_aSelectedServers[BrowserType] = ToBeSelectedServer;
@@ -807,7 +822,7 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 				const CServerInfo *pItem = pFilter->SortedGet(ServerIndex);
 
 				// select server if address changed and match found
-				bool IsSelected = ServerBrowser()->GetActiveFilter(BrowserType) == FilterIndex && m_aSelectedServers[BrowserType] == ServerIndex;
+				bool IsSelected = ServerBrowser()->GetActiveFilter(BrowserType) == pFilter->FilterId() && m_aSelectedServers[BrowserType] == ServerIndex;
 				if(m_AddressSelection&ADDR_SELECTION_CHANGE)
 				{
 					if (!str_comp(pItem->m_aAddress, pAddress))
@@ -815,7 +830,7 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 						if(!IsSelected)
 						{
 							m_ShowServerDetails = true;
-							ServerBrowser()->SetActiveFilter(BrowserType, FilterIndex);
+							ServerBrowser()->SetActiveFilter(BrowserType, pFilter->FilterId());
 							m_aSelectedServers[BrowserType] = ServerIndex;
 							IsSelected = true;
 						}
@@ -846,11 +861,11 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 				}
 
 				// Prevent flickering entry background and text by drawing it as selected for one more frame after the selection has changed
-				const bool WasSelected = LastSelectedFilter >= 0 && LastSelectedServer >= 0 && FilterIndex == LastSelectedFilter && ServerIndex == LastSelectedServer;
+				const bool WasSelected = LastSelectedFilterId >= 0 && LastSelectedServer >= 0 && pFilter->FilterId() == LastSelectedFilterId && ServerIndex == LastSelectedServer;
 				if(int ReturnValue = DoBrowserEntry(pFilter->ID(ServerIndex), Row, pItem, pFilter, ServerIndex, IsSelected || WasSelected, ShowServerInfo, &s_ScrollRegion))
 				{
 					m_ShowServerDetails = !m_ShowServerDetails || ReturnValue == 2 || m_aSelectedServers[BrowserType] != ServerIndex; // click twice on line => fold server details
-					ServerBrowser()->SetActiveFilter(BrowserType, FilterIndex);
+					ServerBrowser()->SetActiveFilter(BrowserType, pFilter->FilterId());
 					m_aSelectedServers[BrowserType] = ServerIndex;
 					m_AddressSelection &= ~(ADDR_SELECTION_CHANGE|ADDR_SELECTION_RESET_SERVER_IF_NOT_FOUND);
 					if(Config()->m_UiAutoswitchInfotab)
@@ -895,7 +910,7 @@ void CMenus::RenderServerbrowserServerList(CUIRect View)
 			const char *pImportantMessage = 0;
 			if(m_ActivePage == PAGE_INTERNET && ServerBrowser()->IsRefreshingMasters())
 				pImportantMessage = Localize("Refreshing master servers");
-			else if(SelectedFilter == -1)
+			else if(SelectedFilterId == -1)
 				pImportantMessage = Localize("No filter category is selected");
 			else if(ServerBrowser()->IsRefreshing())
 				pImportantMessage = Localize("Fetching server info");
@@ -1337,8 +1352,8 @@ void CMenus::RenderServerbrowserFilterTab(CUIRect View)
 			CBrowserFilter *pSelectedFilter = GetSelectedBrowserFilter();
 			if(pSelectedFilter)
 				pSelectedFilter->Switch();
-			const int NewFilterIdx = ServerBrowser()->CreateFilter(CBrowserFilter::FILTER_CUSTOM, s_FilterInput.GetString());
-			m_lFilters.add(CBrowserFilter(NewFilterIdx, ServerBrowser()));
+			const int NewFilterId = ServerBrowser()->CreateFilter(CBrowserFilter::FILTER_CUSTOM, s_FilterInput.GetString());
+			m_lFilters.add(CBrowserFilter(NewFilterId, ServerBrowser()));
 			m_lFilters[m_lFilters.size()-1].Switch();
 			s_FilterInput.Clear();
 		}
