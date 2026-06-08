@@ -9,7 +9,7 @@ import tarfile
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-from release_manifest import ReleaseManifest, ManifestError
+from release_manifest import ReleaseManifest, ManifestError, ManifestSchemaError
 
 
 def detect_platform_from_system():
@@ -107,6 +107,19 @@ def do_stage(args):
     except ManifestError as e:
         print(f"\nFATAL [ManifestError]: {e}")
         print("Aborted: required files are missing.")
+        sys.exit(1)
+
+    contract_errors = manifest.validate_collected_contract(
+        collected,
+        args.platform,
+        include_optional=args.include_optional,
+        include_tools=args.include_tools
+    )
+    if contract_errors:
+        print(f"\nFATAL [Data Contract Violation]: {len(contract_errors)} error(s):")
+        for e in contract_errors:
+            print(f"  - {e}")
+        print("\nAborted: release manifest data contract violation.")
         sys.exit(1)
 
     total = sum(len(v) for v in collected["items"].values()) + len(collected["data_files"])

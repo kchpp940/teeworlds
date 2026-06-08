@@ -9,6 +9,11 @@ class ManifestError(Exception):
     pass
 
 
+class ManifestSchemaError(ManifestError):
+    """Raised when release_manifest.json itself violates the data contract schema."""
+    pass
+
+
 class ReleaseManifest:
     def __init__(self, manifest_path: str = None):
         if manifest_path is None:
@@ -25,6 +30,7 @@ class ReleaseManifest:
     def _load(self):
         with open(self.manifest_path, 'r', encoding='utf-8') as f:
             self.data = json.load(f)
+        self.validate_manifest_schema()
 
     def get_version(self) -> str:
         version_source = self.data.get("version_source", {})
@@ -520,6 +526,256 @@ class ReleaseManifest:
                     cmake_vars["CPACK_FILES"].append(rel_source)
 
         return cmake_vars
+
+    # ------------------------------------------------------------------
+    # Strong schema validation — release manifest data contract
+    # ------------------------------------------------------------------
+
+    VALID_ITEM_TYPES = {"binary", "file", "directory", "directory_list", "file_list"}
+    REQUIRED_TOP_FIELDS = {"manifest_version", "version_source", "data_manifest", "categories", "package_formats"}
+    REQUIRED_CATEGORIES = {"required", "platform_dependencies", "optional_debug"}
+    REQUIRED_ITEM_FIELDS = {"name", "type", "platforms"}
+    CATEGORIES_ALLOW_DEFAULT_INCLUDE = {"optional_debug"}
+    CATEGORIES_ALLOW_EXCLUDE_FROM_ALL = {"tools"}
+
+    def validate_manifest_schema(self):
+        """Validate the manifest JSON itself against the data contract.
+        Raises ManifestSchemaError on any violation. This runs BEFORE any
+        staging / collection happens — it validates the contract definition.
+        """
+        errors = []
+        data = self.data
+
+        missing_top = self.REQUIRED_TOP_FIELDS - set(data.keys())
+        if missing_top:
+            errors.append(f"Missing required top-level fields: {sorted(missing_top)}")
+
+        if not isinstance(data.get("manifest_version"), str):
+            errors.append("'manifest_version' must be a string")
+        elif not re.match(r'^\d+\.\d+$', data["manifest_version"]):
+            errors.append(f"'manifest_version' must be X.Y format, got {data['manifest_version']!r}")
+
+        vs = data.get("version_source", {})
+        if not isinstance(vs, dict):
+            errors.append("'version_source' must be an object")
+        else:
+            missing_vs = {"type", "file", "macro"} - set(vs.keys())
+            if missing_vs:
+                errors.append(f"'version_source' missing fields: {sorted(missing_vs)}")
+            else:
+                header_path = os.path.join(self.project_root, vs["file"])
+                if not os.path.isfile(header_path):
+                    errors.append(f"version_source header not found: {header_path}")
+                else:
+                    try:
+                        v = self.get_version()
+                        if not re.match(r'^\d+\.\d+\.\d+$', v):
+                            errors.append(f"version_source resolved to invalid version: {v!r}")
+                    except ManifestError as e:
+                        errors.append(f"version_source could not read version: {e}")
+
+        dm = data.get("data_manifest", {})
+        if not isinstance(dm, dict):
+            errors.append("'data_manifest' must be an object")
+        else:
+            missing_dm = {"type", "file", "base_dir"} - set(dm.keys())
+            if missing_dm:
+                errors.append(f"'data_manifest' missing fields: {sorted(missing_dm)}")
+            else:
+                dm_path = os.path.join(self.project_root, dm["file"])
+                if not os.path.isfile(dm_path):
+                    errors.append(f"data_manifest file not found: {dm_path}")
+
+        cats = data.get("categories", {})
+        if not isinstance(cats, dict):
+            errors.append("'categories' must be an object")
+        else:
+            missing_cats = self.REQUIRED_CATEGORIES - set(cats.keys())
+            if missing_cats:
+                errors.append(f"Missing required categories: {sorted(missing_cats)}")
+
+            known_categories = {"required", "platform_dependencies", "optional_debug",
+                                "tools", "macos_bundle", "source_package"}
+            unknown_cats = set(cats.keys()) - known_categories
+            if unknown_cats:
+                errors.append(f"Unknown categories (not in data contract): {sorted(unknown_cats)}")
+
+            for cat_name, cat_data in cats.items():
+                if not isinstance(cat_data, dict):
+                    errors.append(f"categories.{cat_name} must be an object")
+                    continue
+                if "items" not in cat_data:
+                    errors.append(f"categories.{cat_name} missing 'items' list")
+                    continue
+                if not isinstance(cat_data["items"], list):
+                    errors.append(f"categories.{cat_name}.items must be a list")
+                    continue
+
+                item_names = set()
+                for idx, item in enumerate(cat_data["items"]):
+                    prefix = f"categories.{cat_name}.items[{idx}]"
+                    if not isinstance(item, dict):
+                        errors.append(f"{prefix} must be an object")
+                        continue
+                    missing = self.REQUIRED_ITEM_FIELDS - set(item.keys())
+                    if missing:
+                        errors.append(f"{prefix} missing required fields: {sorted(missing)}")
+                        continue
+
+                    if item["name"] in item_names:
+                        errors.append(f"{prefix} duplicate item name: {item['name']!r}")
+                    item_names.add(item["name"])
+                    if not isinstance(item["name"], str) or not re.match(r'^[a-z][a-z0-9_]*$', item["name"]):
+                        errors.append(f"{prefix}.name must be snake_case identifier, got {item['name']!r}")
+
+                    if item["type"] not in self.VALID_ITEM_TYPES:
+                        errors.append(f"{prefix}.type={item['type']!r} not in {sorted(self.VALID_ITEM_TYPES)}")
+
+                    valid_platforms = set(self.get_valid_platforms())
+                    platforms = item.get("platforms", [])
+                    if not isinstance(platforms, list) or not platforms:
+                        errors.append(f"{prefix}.platforms must be a non-empty list")
+                    else:
+                        bad = set(platforms) - valid_platforms
+                        if bad:
+                            errors.append(f"{prefix}.platforms has invalid values {sorted(bad)} (valid: {sorted(valid_platforms)})")
+
+                    source_build = bool(item.get("source_build"))
+                    system_path = bool(item.get("system_path"))
+                    has_path = "path" in item
+                    has_paths = "paths" in item
+
+                    if source_build and system_path:
+                        errors.append(
+                            f"{prefix}: source_build and system_path are mutually exclusive (both True)"
+                        )
+
+                    if not item.get("external") and not item.get("template"):
+                        if not source_build and not system_path and not has_path and not has_paths:
+                            errors.append(
+                                f"{prefix} has no source defined. Must set exactly one of: "
+                                "source_build, system_path, path/paths, or mark external=True"
+                            )
+
+                    if system_path and not has_path:
+                        errors.append(f"{prefix}: system_path=True requires absolute 'path' to system library")
+
+                    if item["type"] in ("directory_list", "file_list") and not has_paths:
+                        errors.append(f"{prefix} is type={item['type']!r} but missing 'paths' list")
+                    if item["type"] in ("binary", "file", "directory") and has_paths and not has_path:
+                        errors.append(f"{prefix} is type={item['type']!r} but uses 'paths' (should use 'path')")
+
+                    if "default_include" in item and cat_name not in self.CATEGORIES_ALLOW_DEFAULT_INCLUDE:
+                        errors.append(
+                            f"{prefix} sets 'default_include' but category '{cat_name}' does not allow it. "
+                            f"Only {sorted(self.CATEGORIES_ALLOW_DEFAULT_INCLUDE)} may use default_include."
+                        )
+                    if "default_include" in item and not isinstance(item["default_include"], bool):
+                        errors.append(f"{prefix}.default_include must be boolean")
+
+                    if "exclude_from_all" in item and cat_name not in self.CATEGORIES_ALLOW_EXCLUDE_FROM_ALL:
+                        errors.append(
+                            f"{prefix} sets 'exclude_from_all' but category '{cat_name}' does not allow it. "
+                            f"Only {sorted(self.CATEGORIES_ALLOW_EXCLUDE_FROM_ALL)} may use exclude_from_all."
+                        )
+
+                    if "dest_bundle" in item and "macos" not in platforms:
+                        errors.append(f"{prefix}.dest_bundle set but 'macos' not in platforms")
+
+                    if item.get("template") and not has_path:
+                        errors.append(f"{prefix} is template=True but missing 'path' to .in template file")
+                    if item.get("template") and cat_name != "macos_bundle":
+                        errors.append(f"{prefix} is template=True but only macos_bundle category supports templates")
+
+                    if "platform_names" in item:
+                        pn = item["platform_names"]
+                        if not isinstance(pn, dict):
+                            errors.append(f"{prefix}.platform_names must be an object")
+                        else:
+                            bad_plat = set(pn.keys()) - set(platforms)
+                            if bad_plat:
+                                errors.append(f"{prefix}.platform_names keys {sorted(bad_plat)} not in item.platforms {sorted(platforms)}")
+
+        pf = data.get("package_formats", {})
+        if not isinstance(pf, dict):
+            errors.append("'package_formats' must be an object")
+        else:
+            for plat_name, plat_fmt in pf.items():
+                if not isinstance(plat_fmt, dict):
+                    errors.append(f"package_formats.{plat_name} must be an object")
+                    continue
+                if "format" not in plat_fmt:
+                    errors.append(f"package_formats.{plat_name} missing 'format' field")
+
+        if errors:
+            raise ManifestSchemaError(
+                f"release_manifest.json failed schema validation — {len(errors)} error(s):\n  "
+                + "\n  ".join(errors)
+            )
+
+    def validate_collected_contract(
+        self,
+        collected: Dict,
+        platform: str,
+        include_optional: bool = False,
+        include_tools: bool = False
+    ) -> List[str]:
+        """After collect_files(), validate the contract per-category:
+        - Every required category item resolved to a source
+        - No extra / undeclared entries per category
+        - Category counts match expected per the manifest for this platform
+        Returns list of errors (empty if clean).
+        """
+        errors = []
+
+        expected = self.get_items_for_platform(platform, include_optional, include_tools)
+
+        for cat_name, expected_items in expected.items():
+            actual_items = collected["items"].get(cat_name, [])
+
+            expected_names = {
+                it["name"] for it in expected_items
+                if not it.get("external")
+            }
+            actual_names = set()
+            has_expanded_data = False
+            for it in actual_items:
+                if it.get("expanded"):
+                    if it["name"] == "data_directory":
+                        has_expanded_data = True
+                    continue
+                actual_names.add(it["name"])
+
+            if has_expanded_data and "data_directory" in expected_names:
+                expected_names.discard("data_directory")
+
+            missing = expected_names - actual_names
+            extra = actual_names - expected_names
+
+            if cat_name == "required" and missing:
+                errors.append(f"REQUIRED category missing items: {sorted(missing)}")
+            elif missing and cat_name != "optional_debug":
+                errors.append(f"Category '{cat_name}' missing declared items: {sorted(missing)}")
+
+            if extra:
+                errors.append(f"Category '{cat_name}' has UNDECLARED items not in manifest: {sorted(extra)}")
+
+        for cat_name in collected["items"]:
+            if cat_name not in expected and cat_name != "data_files":
+                errors.append(f"Collected category '{cat_name}' is NOT declared in manifest categories")
+
+        if collected.get("missing_required"):
+            errors.append(f"Missing required files on disk: {collected['missing_required']}")
+
+        if collected.get("data_files"):
+            expected_count = len(self.get_data_files())
+            actual_count = len(collected["data_files"])
+            if actual_count != expected_count:
+                errors.append(
+                    f"data_manifest declared {expected_count} files but only {actual_count} resolved"
+                )
+
+        return errors
 
 
 def main():
