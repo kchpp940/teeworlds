@@ -28,6 +28,19 @@
 #include "countryflags.h"
 #include "menus.h"
 
+[[maybe_unused]] static const char *CategoryLabel(int Cat)
+{
+	switch(Cat)
+	{
+	case IConfigManager::CAT_GENERAL: return "General";
+	case IConfigManager::CAT_PLAYER: return "Player";
+	case IConfigManager::CAT_CONTROLS: return "Controls";
+	case IConfigManager::CAT_GRAPHICS: return "Graphics";
+	case IConfigManager::CAT_SOUND: return "Sound";
+	default: return 0;
+	}
+}
+
 CMenusKeyBinder::CMenusKeyBinder()
 {
 	m_TakeKey = false;
@@ -800,6 +813,103 @@ void CMenus::RenderThemeSelection(CUIRect MainView, bool Header)
 		ConfigManager()->SetStr("cl_menu_map", m_lThemes[SelectedTheme].m_Name);
 		ConfigManager()->SetInt("cl_show_menu_map", m_lThemes[SelectedTheme].m_Name[0] ? 1 : 0);
 		m_pClient->m_pMapLayersBackGround->BackgroundMapUpdate();
+	}
+}
+
+void CMenus::RenderSettingsPageByMetadata(CUIRect MainView, int Category)
+{
+	struct CSortedMeta
+	{
+		int m_Index;
+		int m_SortOrder;
+		const char *m_pScriptName;
+		int m_Type;
+		int m_ControlType;
+		int m_Min;
+		int m_Max;
+		const char *m_pDesc;
+
+		bool operator<(const CSortedMeta &Other) const { return m_SortOrder < Other.m_SortOrder; }
+	};
+
+	sorted_array<CSortedMeta> lMeta;
+
+	for(int i = 0; i < ConfigManager()->NumMeta(); i++)
+	{
+		const char *pScriptName = 0;
+		int Type = 0;
+		int Cat = 0;
+		int ControlType = 0;
+		int Min = 0;
+		int Max = 0;
+		const char *pDesc = 0;
+		int Flags = 0;
+		int SortOrder = 0;
+
+		if(!ConfigManager()->GetMeta(i, &pScriptName, &Type, &Cat, &ControlType, &Min, &Max, &pDesc, &Flags, &SortOrder))
+			continue;
+
+		if(Cat != Category)
+			continue;
+		if(!(Flags & CFGFLAG_SAVE))
+			continue;
+		if(!(Flags & CFGFLAG_CLIENT))
+			continue;
+		if(ControlType == IConfigManager::CTRL_NONE)
+			continue;
+
+		CSortedMeta M;
+		M.m_Index = i;
+		M.m_SortOrder = SortOrder;
+		M.m_pScriptName = pScriptName;
+		M.m_Type = Type;
+		M.m_ControlType = ControlType;
+		M.m_Min = Min;
+		M.m_Max = Max;
+		M.m_pDesc = pDesc;
+		lMeta.add(M);
+	}
+
+	const float ButtonHeight = 20.0f;
+	const float Spacing = 2.0f;
+
+	CUIRect Button;
+	for(sorted_array<CSortedMeta>::range r = lMeta.all(); !r.empty(); r.pop_front())
+	{
+		const CSortedMeta &Meta = r.front();
+		MainView.HSplitTop(ButtonHeight, &Button, &MainView);
+
+		const void *pID = Meta.m_pScriptName;
+
+		if(Meta.m_ControlType == IConfigManager::CTRL_CHECKBOX)
+		{
+			int CurValue = 0;
+			ConfigManager()->GetInt(Meta.m_pScriptName, &CurValue);
+			if(DoButton_CheckBox(pID, Localize(Meta.m_pDesc), CurValue != 0, &Button))
+			{
+				ConfigManager()->SetInt(Meta.m_pScriptName, !CurValue);
+			}
+		}
+		else if(Meta.m_ControlType == IConfigManager::CTRL_SLIDER ||
+				Meta.m_ControlType == IConfigManager::CTRL_ENUM)
+		{
+			int CurValue = 0;
+			ConfigManager()->GetInt(Meta.m_pScriptName, &CurValue);
+			int TmpValue = CurValue;
+			UI()->DoScrollbarOption(pID, &TmpValue, &Button, Localize(Meta.m_pDesc), Meta.m_Min, Meta.m_Max);
+			if(TmpValue != CurValue)
+			{
+				ConfigManager()->SetInt(Meta.m_pScriptName, TmpValue);
+			}
+		}
+		else if(Meta.m_ControlType == IConfigManager::CTRL_EDITBOX)
+		{
+		}
+		else if(Meta.m_ControlType == IConfigManager::CTRL_COLORPICKER)
+		{
+		}
+
+		MainView.HSplitTop(Spacing, 0, &MainView);
 	}
 }
 

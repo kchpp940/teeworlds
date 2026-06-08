@@ -564,6 +564,7 @@ private:
 	void RenderSkinSelection(CUIRect MainView);
 	void RenderSkinPartSelection(CUIRect MainView);
 	void RenderSkinPartPalette(CUIRect MainView);
+	void RenderSettingsPageByMetadata(CUIRect MainView, int Category);
 	void RenderSettingsGeneral(CUIRect MainView);
 	void RenderSettingsPlayer(CUIRect MainView);
 	// void RenderSettingsTBD(CUIRect MainView); // TODO: change removed tee page to something else

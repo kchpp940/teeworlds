@@ -21,6 +21,35 @@ public:
 		CORRECTION_INVALID_UTF8,
 	};
 
+	enum ECategory
+	{
+		CAT_GENERAL = 0,
+		CAT_PLAYER,
+		CAT_CONTROLS,
+		CAT_GRAPHICS,
+		CAT_SOUND,
+		CAT_SERVER,
+		CAT_DEBUG,
+		CAT_INTERNAL,
+	};
+
+	enum EControlType
+	{
+		CTRL_NONE = 0,
+		CTRL_CHECKBOX,
+		CTRL_SLIDER,
+		CTRL_ENUM,
+		CTRL_EDITBOX,
+		CTRL_COLORPICKER,
+	};
+
+	enum EMetaType
+	{
+		META_TYPE_INT = 0,
+		META_TYPE_STR,
+		META_TYPE_UTF8STR,
+	};
+
 	struct CCorrection
 	{
 		ECorrectionReason m_Reason;
@@ -56,6 +85,9 @@ public:
 	virtual void RegisterCallback(SAVECALLBACKFUNC pfnFunc, void *pUserData) = 0;
 
 	virtual void WriteLine(const char *pLine) = 0;
+
+	virtual int NumMeta() const = 0;
+	virtual bool GetMeta(int Index, const char **ppScriptName, int *pType, int *pCategory, int *pControlType, int *pMin, int *pMax, const char **ppDesc, int *pFlags = 0, int *pSortOrder = 0) const = 0;
 };
 
 extern IConfigManager *CreateConfigManager();

@@ -39,11 +39,11 @@ CConfigManager::CConfigManager()
 
 void CConfigManager::InitMetaTable(const CConfigMeta **ppTable, int *pNum)
 {
-	#define MACRO_CONFIG_INT(Name,ScriptName,def,min,max,flags,desc) { CConfigMeta::TYPE_INT, #ScriptName, (int)offsetof(CConfig, m_##Name), (int)sizeof(int), (int)(def), 0, (int)(min), (int)(max), (int)(flags) },
-	#define MACRO_CONFIG_STR(Name,ScriptName,len,def,flags,desc) { CConfigMeta::TYPE_STR, #ScriptName, (int)offsetof(CConfig, m_##Name), (int)(len), 0, (def), 0, 0, (int)(flags) },
-	#define MACRO_CONFIG_UTF8STR(Name,ScriptName,size,len,def,flags,desc) { CConfigMeta::TYPE_UTF8STR, #ScriptName, (int)offsetof(CConfig, m_##Name), (int)(size), 0, (def), 0, (int)(len), (int)(flags) },
+	#define MACRO_CONFIG_INT(Name,ScriptName,def,min,max,flags,desc) { CConfigMeta::TYPE_INT, #ScriptName, (int)offsetof(CConfig, m_##Name), (int)sizeof(int), (int)(def), 0, (int)(min), (int)(max), (int)(flags), (desc), CConfigMeta::CAT_GENERAL, CConfigMeta::CTRL_NONE, 0 },
+	#define MACRO_CONFIG_STR(Name,ScriptName,len,def,flags,desc) { CConfigMeta::TYPE_STR, #ScriptName, (int)offsetof(CConfig, m_##Name), (int)(len), 0, (def), 0, 0, (int)(flags), (desc), CConfigMeta::CAT_GENERAL, CConfigMeta::CTRL_NONE, 0 },
+	#define MACRO_CONFIG_UTF8STR(Name,ScriptName,size,len,def,flags,desc) { CConfigMeta::TYPE_UTF8STR, #ScriptName, (int)offsetof(CConfig, m_##Name), (int)(size), 0, (def), 0, (int)(len), (int)(flags), (desc), CConfigMeta::CAT_GENERAL, CConfigMeta::CTRL_NONE, 0 },
 
-	static const CConfigMeta s_aMetaTable[] = {
+	static CConfigMeta s_aMetaTable[] = {
 		#include "config_variables.h"
 	};
 
@@ -51,8 +51,85 @@ void CConfigManager::InitMetaTable(const CConfigMeta **ppTable, int *pNum)
 	#undef MACRO_CONFIG_STR
 	#undef MACRO_CONFIG_UTF8STR
 
+	int NumMeta = (int)(sizeof(s_aMetaTable) / sizeof(s_aMetaTable[0]));
+	for(int i = 0; i < NumMeta; i++)
+	{
+		CConfigMeta &Meta = s_aMetaTable[i];
+		Meta.m_SortOrder = i;
+
+		const char *pName = Meta.m_pScriptName;
+
+		if(str_comp_num(pName, "player_color_", 13) == 0)
+		{
+			Meta.m_Category = CConfigMeta::CAT_PLAYER;
+			Meta.m_ControlType = CConfigMeta::CTRL_COLORPICKER;
+		}
+		else if(str_comp_num(pName, "player_", 7) == 0)
+		{
+			Meta.m_Category = CConfigMeta::CAT_PLAYER;
+		}
+		else if(str_comp_num(pName, "cl_", 3) == 0 || str_comp_num(pName, "ui_", 3) == 0)
+		{
+			Meta.m_Category = CConfigMeta::CAT_GENERAL;
+		}
+		else if(str_comp_num(pName, "inp_", 4) == 0 || str_comp_num(pName, "joystick_", 9) == 0)
+		{
+			Meta.m_Category = CConfigMeta::CAT_CONTROLS;
+		}
+		else if(str_comp_num(pName, "gfx_", 4) == 0)
+		{
+			Meta.m_Category = CConfigMeta::CAT_GRAPHICS;
+		}
+		else if(str_comp_num(pName, "snd_", 4) == 0)
+		{
+			Meta.m_Category = CConfigMeta::CAT_SOUND;
+		}
+		else if(str_comp_num(pName, "sv_", 3) == 0 || str_comp_num(pName, "ec_", 3) == 0 || str_comp_num(pName, "br_", 3) == 0)
+		{
+			Meta.m_Category = CConfigMeta::CAT_SERVER;
+		}
+		else if(str_comp_num(pName, "dbg_", 4) == 0)
+		{
+			Meta.m_Category = CConfigMeta::CAT_DEBUG;
+		}
+		else if(str_comp_num(pName, "ed_", 3) == 0 || str_comp_num(pName, "net_", 4) == 0)
+		{
+			Meta.m_Category = CConfigMeta::CAT_INTERNAL;
+		}
+		else
+		{
+			Meta.m_Category = CConfigMeta::CAT_GENERAL;
+		}
+
+		if(Meta.m_ControlType == CConfigMeta::CTRL_NONE)
+		{
+			if(Meta.m_Type == CConfigMeta::TYPE_INT)
+			{
+				if(Meta.m_Min == 0 && Meta.m_Max == 1)
+				{
+					Meta.m_ControlType = CConfigMeta::CTRL_CHECKBOX;
+				}
+				else if(Meta.m_Min != Meta.m_Max && Meta.m_Max != 0)
+				{
+					if(Meta.m_Max - Meta.m_Min <= 5)
+					{
+						Meta.m_ControlType = CConfigMeta::CTRL_ENUM;
+					}
+					else
+					{
+						Meta.m_ControlType = CConfigMeta::CTRL_SLIDER;
+					}
+				}
+			}
+			else if(Meta.m_Type == CConfigMeta::TYPE_STR || Meta.m_Type == CConfigMeta::TYPE_UTF8STR)
+			{
+				Meta.m_ControlType = CConfigMeta::CTRL_EDITBOX;
+			}
+		}
+	}
+
 	*ppTable = s_aMetaTable;
-	*pNum = (int)(sizeof(s_aMetaTable) / sizeof(s_aMetaTable[0]));
+	*pNum = NumMeta;
 }
 
 bool CConfigManager::FindMetaByName(const char *pScriptName, CConfigMeta *pOut) const
@@ -293,6 +370,15 @@ void CConfigManager::Init(int FlagMask)
 	InitMetaTable(&m_pMetaTable, &m_NumMeta);
 	m_NumTrackedFields = m_NumMeta < MAX_META ? m_NumMeta : MAX_META;
 	Reset();
+
+	RegisterDeprecated("snd_play_music", "snd_enable_music");
+	RegisterDeprecated("cl_nameplates_scale", "cl_nameplates_size");
+	RegisterDeprecated("cl_mousesens", "inp_mousesens");
+	RegisterDeprecated("cl_zoom", "cl_mouse_max_distance_dynamic");
+	RegisterDeprecated("gfx_high_detail_textures", "gfx_texture_quality");
+	RegisterDeprecated("cl_auto_screenshot_max_size", "cl_auto_screenshot_max");
+	RegisterDeprecated("sv_spamprotection", "sv_spam_protection");
+	RegisterDeprecated("cl_prediction", "cl_predict");
 
 	if(m_pConsole)
 	{
@@ -550,7 +636,44 @@ void CConfigManager::Upgrade()
 		return;
 
 	if(m_pConsole)
-		m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", "upgrading config to version 1");
+		m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", "upgrading config to version 1 (v0.6 -> v0.7 migration)");
+
+	CConfigMeta Meta;
+
+	if(m_pConsole)
+	{
+		char aBuf[512];
+		str_format(aBuf, sizeof(aBuf), "config: running v0.6 to v0.7 migration checks");
+		m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", aBuf);
+	}
+
+	if(!FindMetaByName("player_color_body", &Meta))
+	{
+		if(m_pConsole)
+			m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", "config: ensuring player color defaults are set");
+	}
+
+	if(FindMetaByName("cl_nameplates", &Meta))
+	{
+		int *pVal = (int *)(((char *)&m_Values) + Meta.m_Offset);
+		if(m_pConsole)
+		{
+			char aBuf[256];
+			str_format(aBuf, sizeof(aBuf), "config: v0.6 cl_nameplates compatibility: current value=%d", *pVal);
+			m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", aBuf);
+		}
+	}
+
+	if(FindMetaByName("cl_showhud", &Meta))
+	{
+		int *pVal = (int *)(((char *)&m_Values) + Meta.m_Offset);
+		if(m_pConsole)
+		{
+			char aBuf[256];
+			str_format(aBuf, sizeof(aBuf), "config: v0.6 cl_showhud compatibility: current value=%d", *pVal);
+			m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", aBuf);
+		}
+	}
 
 	m_Values.m_ConfigVersion = 1;
 }
@@ -587,6 +710,45 @@ bool CConfigManager::Load(const char *pFilename)
 	Upgrade();
 	Validate();
 	RestoreStrings();
+
+	if(m_pConsole && (m_NumCorrections > 0 || m_NumMissingFields > 0))
+	{
+		for(int i = 0; i < m_NumCorrections; i++)
+		{
+			const CCorrection &c = m_aCorrections[i];
+			char aBuf[512];
+			switch(c.m_Reason)
+			{
+			case CORRECTION_RANGE_MIN:
+			case CORRECTION_RANGE_MAX:
+				str_format(aBuf, sizeof(aBuf), "config: %s value '%s' clamped to '%s' (out of range)", c.m_pFieldName, c.m_aOldValue, c.m_aNewValue);
+				break;
+			case CORRECTION_EMPTY_STRING:
+				str_format(aBuf, sizeof(aBuf), "config: %s was empty, set to default '%s'", c.m_pFieldName, c.m_aNewValue);
+				break;
+			case CORRECTION_MISSING_FIELD:
+				str_format(aBuf, sizeof(aBuf), "config: missing field '%s', using default '%s'", c.m_pFieldName, c.m_aNewValue);
+				break;
+			case CORRECTION_DEPRECATED_REDIRECT:
+				str_format(aBuf, sizeof(aBuf), "config: deprecated field '%s' redirected to '%s'", c.m_aOldValue, c.m_aNewValue);
+				break;
+			case CORRECTION_INVALID_UTF8:
+				str_format(aBuf, sizeof(aBuf), "config: %s had invalid UTF-8, cleaned up", c.m_pFieldName);
+				break;
+			default:
+				str_format(aBuf, sizeof(aBuf), "config: %s corrected '%s' -> '%s'", c.m_pFieldName, c.m_aOldValue, c.m_aNewValue);
+				break;
+			}
+			m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", aBuf);
+		}
+
+		if(m_NumMissingFields > 0 || m_NumCorrections > 0)
+		{
+			char aBuf[512];
+			str_format(aBuf, sizeof(aBuf), "config: %d fields set to defaults, %d corrections applied", m_NumMissingFields, m_NumCorrections);
+			m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", aBuf);
+		}
+	}
 
 	if(m_pConsole)
 	{
@@ -658,6 +820,23 @@ void CConfigManager::WriteLine(const char *pLine)
 
 	io_write(m_ConfigFile, pLine, str_length(pLine));
 	io_write_newline(m_ConfigFile);
+}
+
+bool CConfigManager::GetMeta(int Index, const char **ppScriptName, int *pType, int *pCategory, int *pControlType, int *pMin, int *pMax, const char **ppDesc, int *pFlags, int *pSortOrder) const
+{
+	if(Index < 0 || Index >= m_NumMeta)
+		return false;
+	const CConfigMeta &Meta = m_pMetaTable[Index];
+	if(ppScriptName) *ppScriptName = Meta.m_pScriptName;
+	if(pType) *pType = (int)Meta.m_Type;
+	if(pCategory) *pCategory = (int)Meta.m_Category;
+	if(pControlType) *pControlType = (int)Meta.m_ControlType;
+	if(pMin) *pMin = Meta.m_Min;
+	if(pMax) *pMax = Meta.m_Max;
+	if(ppDesc) *ppDesc = Meta.m_pDesc;
+	if(pFlags) *pFlags = Meta.m_Flags;
+	if(pSortOrder) *pSortOrder = Meta.m_SortOrder;
+	return true;
 }
 
 IConfigManager *CreateConfigManager() { return new CConfigManager; }

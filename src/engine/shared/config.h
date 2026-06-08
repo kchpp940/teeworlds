@@ -43,22 +43,45 @@ class CConfigManager : public IConfigManager
 		MAX_MISSING = 256,
 	};
 
-	struct CCallback
-	{
-		SAVECALLBACKFUNC m_pfnFunc;
-		void *m_pUserData;
-	};
-
+public:
 	struct CConfigMeta
 	{
+		// Use IConfigManager::EMetaType, ECategory, EControlType for external access
+		typedef IConfigManager::EMetaType EMetaType;
+		typedef IConfigManager::ECategory ECategory;
+		typedef IConfigManager::EControlType EControlType;
+
+		// Legacy local aliases for backward compat with existing code
 		enum EType
 		{
-			TYPE_INT = 0,
-			TYPE_STR,
-			TYPE_UTF8STR
+			TYPE_INT = IConfigManager::META_TYPE_INT,
+			TYPE_STR = IConfigManager::META_TYPE_STR,
+			TYPE_UTF8STR = IConfigManager::META_TYPE_UTF8STR,
 		};
 
-		EType m_Type;
+		enum
+		{
+			CAT_GENERAL = IConfigManager::CAT_GENERAL,
+			CAT_PLAYER = IConfigManager::CAT_PLAYER,
+			CAT_CONTROLS = IConfigManager::CAT_CONTROLS,
+			CAT_GRAPHICS = IConfigManager::CAT_GRAPHICS,
+			CAT_SOUND = IConfigManager::CAT_SOUND,
+			CAT_SERVER = IConfigManager::CAT_SERVER,
+			CAT_DEBUG = IConfigManager::CAT_DEBUG,
+			CAT_INTERNAL = IConfigManager::CAT_INTERNAL,
+		};
+
+		enum
+		{
+			CTRL_NONE = IConfigManager::CTRL_NONE,
+			CTRL_CHECKBOX = IConfigManager::CTRL_CHECKBOX,
+			CTRL_SLIDER = IConfigManager::CTRL_SLIDER,
+			CTRL_ENUM = IConfigManager::CTRL_ENUM,
+			CTRL_EDITBOX = IConfigManager::CTRL_EDITBOX,
+			CTRL_COLORPICKER = IConfigManager::CTRL_COLORPICKER,
+		};
+
+		int m_Type;           // EType / IConfigManager::EMetaType
 		const char *m_pScriptName;
 		int m_Offset;
 		int m_Size;
@@ -67,6 +90,17 @@ class CConfigManager : public IConfigManager
 		int m_Min;
 		int m_Max;
 		int m_Flags;
+		const char *m_pDesc;
+		int m_Category;       // IConfigManager::ECategory
+		int m_ControlType;    // IConfigManager::EControlType
+		int m_SortOrder;
+	};
+
+private:
+	struct CCallback
+	{
+		SAVECALLBACKFUNC m_pfnFunc;
+		void *m_pUserData;
 	};
 
 	struct CDeprecatedMapping
@@ -142,6 +176,9 @@ public:
 	virtual void RegisterCallback(SAVECALLBACKFUNC pfnFunc, void *pUserData);
 
 	virtual void WriteLine(const char *pLine);
+
+	virtual int NumMeta() const { return m_NumMeta; }
+	virtual bool GetMeta(int Index, const char **ppScriptName, int *pType, int *pCategory, int *pControlType, int *pMin, int *pMax, const char **ppDesc, int *pFlags = 0, int *pSortOrder = 0) const;
 };
 
 #endif
