@@ -1401,6 +1401,7 @@ if(CLIENT)
     input.cpp
     input.h
     keynames.h
+    preflight_sdl.cpp
     serverbrowser.cpp
     serverbrowser.h
     serverbrowser_entry.h
@@ -1671,12 +1672,24 @@ set(TARGET_PREFLIGHT preflight)
 set(PREFLIGHT_SRC
   src/preflight/preflight.cpp
 )
+set(PREFLIGHT_LIBS ${LIBS})
+set(PREFLIGHT_INCLUDES)
+
+if(SDL2_FOUND)
+  list(APPEND PREFLIGHT_SRC src/engine/client/preflight_sdl.cpp)
+  list(APPEND PREFLIGHT_LIBS ${SDL2_LIBRARIES})
+  list(APPEND PREFLIGHT_INCLUDES ${SDL2_INCLUDE_DIRS})
+endif()
+
 add_executable(${TARGET_PREFLIGHT} EXCLUDE_FROM_ALL
   ${DEPS}
   ${PREFLIGHT_SRC}
   $<TARGET_OBJECTS:engine-shared>
 )
-target_link_libraries(${TARGET_PREFLIGHT} ${LIBS})
+target_link_libraries(${TARGET_PREFLIGHT} ${PREFLIGHT_LIBS})
+if(PREFLIGHT_INCLUDES)
+  target_include_directories(${TARGET_PREFLIGHT} PRIVATE ${PREFLIGHT_INCLUDES})
+endif()
 list(APPEND TARGETS_OWN ${TARGET_PREFLIGHT})
 list(APPEND TARGETS_LINK ${TARGET_PREFLIGHT})
 

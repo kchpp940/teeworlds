@@ -918,6 +918,9 @@ IPreflight *CreatePreflight()
 	return new CPreflight;
 }
 
+FPreflightCustomCheck g_pfnPreflightSDLGraphicsCheck __attribute__((weak)) = 0;
+FPreflightCustomCheck g_pfnPreflightSDLAudioCheck __attribute__((weak)) = 0;
+
 bool PreflightShouldSkip(int argc, const char **argv)
 {
 	for(int i = 1; i < argc; i++)
@@ -947,6 +950,10 @@ void PreflightConfigure(IPreflight *pPreflight, EPreflightMode Mode, const char 
 	{
 	case PREMODE_CLIENT:
 		pPreflight->DisableCheck(PRECHECK_SERVER_PORT);
+		if(g_pfnPreflightSDLGraphicsCheck)
+			pPreflight->RegisterCustomCheck(g_pfnPreflightSDLGraphicsCheck, 0);
+		if(g_pfnPreflightSDLAudioCheck)
+			pPreflight->RegisterCustomCheck(g_pfnPreflightSDLAudioCheck, 0);
 		break;
 	case PREMODE_SERVER:
 		pPreflight->DisableCheck(PRECHECK_GRAPHICS);

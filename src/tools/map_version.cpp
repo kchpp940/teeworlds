@@ -1,77 +1,109 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include <base/system.h>
-#include <base/math.h>
 
-#include <engine/kernel.h>
-#include <engine/map.h>
+#include <engine/preflight.h>
 #include <engine/storage.h>
+#include <engine/shared/datafile.h>
 
-
-static IOHANDLE s_File = 0;
-static IStorage *s_pStorage = 0;
-static IEngineMap *s_pEngineMap = 0;
-
-int MaplistCallback(const char *pName, int IsDir, int DirType, void *pUser)
+static void PrintUsage(const char *pProgName)
 {
-	int l = str_length(pName);
-	if(l < 4 || IsDir || str_comp(pName+l-4, ".map") != 0)
-		return 0;
-
-	char aBuf[512];
-	str_format(aBuf, sizeof(aBuf), "maps/%s", pName);
-	if(!s_pEngineMap->Load(aBuf))
-		return 0;
-
-	unsigned MapCrc = s_pEngineMap->Crc();
-	SHA256_DIGEST MapSha256 = s_pEngineMap->Sha256();
-	s_pEngineMap->Unload();
-
-	IOHANDLE MapFile = s_pStorage->OpenFile(aBuf, IOFLAG_READ, DirType);
-	unsigned MapSize = io_length(MapFile);
-	io_close(MapFile);
-
-	char aMapName[8];
-	str_copy(aMapName, pName, minimum((int)sizeof(aMapName),l-3));
-
-	str_format(aBuf, sizeof(aBuf),
-		"\t{\"%s\", {0x%02x, 0x%02x, 0x%02x, 0x%02x}, {0x%02x, 0x%02x, 0x%02x, 0x%02x}, {0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x}},\n",
-		aMapName,
-		(MapCrc>>24)&0xff, (MapCrc>>16)&0xff, (MapCrc>>8)&0xff, MapCrc&0xff,
-		(MapSize>>24)&0xff, (MapSize>>16)&0xff, (MapSize>>8)&0xff, MapSize&0xff,
-		MapSha256.data[0], MapSha256.data[1], MapSha256.data[2], MapSha256.data[3], MapSha256.data[4], MapSha256.data[5], MapSha256.data[6], MapSha256.data[7],
-		MapSha256.data[8], MapSha256.data[9], MapSha256.data[10], MapSha256.data[11], MapSha256.data[12], MapSha256.data[13], MapSha256.data[14], MapSha256.data[15],
-		MapSha256.data[16], MapSha256.data[17], MapSha256.data[18], MapSha256.data[19], MapSha256.data[20], MapSha256.data[21], MapSha256.data[22], MapSha256.data[23],
-		MapSha256.data[24], MapSha256.data[25], MapSha256.data[26], MapSha256.data[27], MapSha256.data[28], MapSha256.data[29], MapSha256.data[30], MapSha256.data[31]);
-	io_write(s_File, aBuf, str_length(aBuf));
-
-	return 0;
+	dbg_msg("map_version", "usage: %s <mapfile.map> [--no-preflight]", pProgName);
+	dbg_msg("map_version", "");
+	dbg_msg("map_version", "Prints version information and metadata for a Teeworlds .map file.");
+	dbg_msg("map_version", "");
+	dbg_msg("map_version", "Examples:");
+	dbg_msg("map_version", "  %s dm1.map", pProgName);
+	dbg_msg("map_version", "  %s /path/to/custom.map --no-preflight", pProgName);
 }
 
 int main(int argc, const char **argv)
 {
 	cmdline_fix(&argc, &argv);
 
-	IKernel *pKernel = IKernel::Create();
-	s_pStorage = CreateStorage("Teeworlds", IStorage::STORAGETYPE_BASIC, argc, argv);
-	s_pEngineMap = CreateEngineMap();
-
-	bool RegisterFail = !pKernel->RegisterInterface(s_pStorage);
-	RegisterFail |= !pKernel->RegisterInterface(s_pEngineMap);
-
-	if(RegisterFail)
-		return -1;
-
-	const int StorageType = 1; // this tools assumes that the data-dir is the second storage path
-	s_File = s_pStorage->OpenFile("map_version.txt", IOFLAG_WRITE, StorageType);
-	if(s_File)
+	if(argc < 2)
 	{
-		io_write(s_File, "static CMapVersion s_aMapVersionList[] = {\n", str_length("static const CMapVersion s_aMapVersionList[] = {\n"));
-		s_pStorage->ListDirectory(StorageType, "maps", MaplistCallback, 0x0);
-		io_write(s_File, "};\n", str_length("};\n"));
-		io_close(s_File);
+		PrintUsage(argv[0]);
+		cmdline_free(argc, argv);
+		return 2;
 	}
 
+	if(str_comp(argv[1], "--help") == 0 || str_comp(argv[1], "-h") == 0)
+	{
+		PrintUsage(argv[0]);
+		cmdline_free(argc, argv);
+		return 0;
+	}
+
+	const char *pMapPath = argv[1];
+
+	if(!PreflightShouldSkip(argc, argv))
+	{
+		SPreflightPathCheck aChecks[2];
+		aChecks[0].m_pPath = pMapPath;
+		aChecks[0].m_IsDir = false;
+		aChecks[0].m_RequireWrite = false;
+		aChecks[0].m_pDescription = "input map file";
+
+		SPreflightContext Ctx;
+		int Errors = PreflightInitAndRun("Teeworlds", PREMODE_TOOL, argc, argv,
+			&Ctx, 0, 0, 0, 0, aChecks, 1);
+
+		if(Ctx.m_pPreflight && Ctx.m_pPreflight->HasErrors())
+		{
+			dbg_msg("map_version", "preflight checks failed with %d error(s). aborting.", Errors);
+			dbg_msg("map_version", "use --no-preflight to skip checks (not recommended)");
+			PreflightShutdown(&Ctx);
+			cmdline_free(argc, argv);
+			return 1;
+		}
+		PreflightShutdown(&Ctx);
+	}
+
+	dbg_msg("map_version", "loading map: %s", pMapPath);
+
+	IStorage *pStorage = CreateStorage("Teeworlds", IStorage::STORAGETYPE_BASIC, argc, argv);
+	if(!pStorage)
+	{
+		dbg_msg("map_version", "error: failed to create storage");
+		cmdline_free(argc, argv);
+		return 1;
+	}
+
+	CDataFileReader Reader;
+	if(!Reader.Open(pStorage, pMapPath, IStorage::TYPE_ALL))
+	{
+		dbg_msg("map_version", "error: failed to open map file '%s'", pMapPath);
+		delete pStorage;
+		cmdline_free(argc, argv);
+		return 1;
+	}
+
+	dbg_msg("map_version", "map info:");
+	dbg_msg("map_version", "  items: %d", Reader.NumItems());
+	dbg_msg("map_version", "  data blocks: %d", Reader.NumData());
+	dbg_msg("map_version", "  crc: %u", Reader.Crc());
+
+	char aSha256Str[SHA256_MAXSTRSIZE];
+	sha256_str(Reader.Sha256(), aSha256Str, sizeof(aSha256Str));
+	dbg_msg("map_version", "  sha256: %s", aSha256Str);
+
+	int Start, Num;
+	Reader.GetType(0, &Start, &Num);
+	if(Num > 0)
+	{
+		int Type, ID;
+		void *pItem = Reader.GetItem(Start, &Type, &ID);
+		if(pItem)
+		{
+			dbg_msg("map_version", "  map version item found (type=0, count=%d, id=%d)", Num, ID);
+		}
+	}
+
+	Reader.Close();
+	delete pStorage;
+
+	dbg_msg("map_version", "done.");
 	cmdline_free(argc, argv);
 	return 0;
 }

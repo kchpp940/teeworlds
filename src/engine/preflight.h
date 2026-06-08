@@ -103,6 +103,9 @@ public:
 
 extern IPreflight *CreatePreflight();
 
+extern FPreflightCustomCheck g_pfnPreflightSDLGraphicsCheck;
+extern FPreflightCustomCheck g_pfnPreflightSDLAudioCheck;
+
 bool PreflightShouldSkip(int argc, const char **argv);
 
 void PreflightConfigure(IPreflight *pPreflight, EPreflightMode Mode, const char *pAppName,
