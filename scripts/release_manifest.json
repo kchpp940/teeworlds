@@ -1,0 +1,388 @@
+{
+  "manifest_version": "1.0",
+  "description": "Teeworlds unified release manifest - defines all files to be included in release packages",
+  "version_source": {
+    "type": "header",
+    "file": "src/game/version.h",
+    "macro": "GAME_RELEASE_VERSION"
+  },
+  "data_manifest": {
+    "type": "external",
+    "file": "data_manifest.txt",
+    "base_dir": "data"
+  },
+  "categories": {
+    "required": {
+      "description": "Essential files required for the game to run",
+      "items": [
+        {
+          "name": "client_binary",
+          "description": "Teeworlds client executable",
+          "type": "binary",
+          "source_build": true,
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64"],
+          "platform_names": {
+            "win32": "teeworlds.exe",
+            "win64": "teeworlds.exe",
+            "macos": "teeworlds",
+            "linux_x86": "teeworlds",
+            "linux_x86_64": "teeworlds"
+          }
+        },
+        {
+          "name": "server_binary",
+          "description": "Teeworlds dedicated server executable",
+          "type": "binary",
+          "source_build": true,
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64"],
+          "platform_names": {
+            "win32": "teeworlds_srv.exe",
+            "win64": "teeworlds_srv.exe",
+            "macos": "teeworlds_srv",
+            "linux_x86": "teeworlds_srv",
+            "linux_x86_64": "teeworlds_srv"
+          }
+        },
+        {
+          "name": "serverlauncher_binary",
+          "description": "macOS server launcher (renamed to teeworlds_server in bundle)",
+          "type": "binary",
+          "source_build": true,
+          "platforms": ["macos"],
+          "platform_names": {
+            "macos": "serverlaunch"
+          }
+        },
+        {
+          "name": "data_directory",
+          "description": "All game data resources (audio, skins, maps, UI, etc.)",
+          "type": "directory",
+          "path": "data",
+          "source_build": true,
+          "source_subdir": "data",
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64", "src"]
+        },
+        {
+          "name": "languages",
+          "description": "Translation files (downloaded separately)",
+          "type": "directory",
+          "path": "data/languages",
+          "external": true,
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64", "src"]
+        },
+        {
+          "name": "maps",
+          "description": "Official game maps (downloaded separately)",
+          "type": "directory",
+          "path": "data/maps",
+          "external": true,
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64", "src"]
+        },
+        {
+          "name": "default_config",
+          "description": "Default storage configuration",
+          "type": "file",
+          "path": "storage.cfg",
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64", "src"]
+        },
+        {
+          "name": "license",
+          "description": "Software license file",
+          "type": "file",
+          "path": "license.txt",
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64", "src"]
+        },
+        {
+          "name": "readme",
+          "description": "README documentation",
+          "type": "file",
+          "path": "readme.md",
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64", "src"]
+        },
+        {
+          "name": "windows_config_helper",
+          "description": "Windows batch file to open config directory",
+          "type": "file",
+          "path": "other/config_directory.bat",
+          "dest": "config_directory.bat",
+          "platforms": ["win32", "win64"]
+        }
+      ]
+    },
+    "platform_dependencies": {
+      "description": "Platform-specific shared libraries and dependencies",
+      "items": [
+        {
+          "name": "windows_sdl2",
+          "description": "SDL2 runtime library for Windows",
+          "type": "file",
+          "source_build": true,
+          "path": "SDL2.dll",
+          "platforms": ["win32", "win64"]
+        },
+        {
+          "name": "windows_freetype",
+          "description": "FreeType runtime library for Windows",
+          "type": "file",
+          "source_build": true,
+          "path": "freetype.dll",
+          "platforms": ["win32", "win64"]
+        },
+        {
+          "name": "macos_sdl2",
+          "description": "SDL2 framework for macOS",
+          "type": "file",
+          "system_path": true,
+          "path": "/usr/local/opt/sdl2/lib/libSDL2-2.0.0.dylib",
+          "dest_bundle": "Teeworlds.app/Contents/Frameworks/libSDL2-2.0.0.dylib",
+          "platforms": ["macos"]
+        },
+        {
+          "name": "macos_freetype",
+          "description": "FreeType library for macOS",
+          "type": "file",
+          "system_path": true,
+          "path": "/usr/local/opt/freetype/lib/libfreetype.6.dylib",
+          "dest_bundle": "Teeworlds.app/Contents/Frameworks/libfreetype.6.dylib",
+          "platforms": ["macos"]
+        },
+        {
+          "name": "macos_libpng",
+          "description": "libpng dependency for FreeType on macOS",
+          "type": "file",
+          "system_path": true,
+          "path": "/usr/local/opt/libpng/lib/libpng16.16.dylib",
+          "dest_bundle": "Teeworlds.app/Contents/Frameworks/libpng16.16.dylib",
+          "platforms": ["macos"]
+        }
+      ]
+    },
+    "optional_debug": {
+      "description": "Optional debug symbols and diagnostic files (not included by default)",
+      "items": [
+        {
+          "name": "client_pdb",
+          "description": "Client debug symbols (Windows MSVC)",
+          "type": "file",
+          "source_build": true,
+          "path": "teeworlds.pdb",
+          "platforms": ["win32", "win64"],
+          "default_include": false
+        },
+        {
+          "name": "server_pdb",
+          "description": "Server debug symbols (Windows MSVC)",
+          "type": "file",
+          "source_build": true,
+          "path": "teeworlds_srv.pdb",
+          "platforms": ["win32", "win64"],
+          "default_include": false
+        },
+        {
+          "name": "client_dsym",
+          "description": "Client debug symbols (macOS dSYM bundle)",
+          "type": "directory",
+          "source_build": true,
+          "path": "teeworlds.dSYM",
+          "platforms": ["macos"],
+          "default_include": false
+        },
+        {
+          "name": "server_dsym",
+          "description": "Server debug symbols (macOS dSYM bundle)",
+          "type": "directory",
+          "source_build": true,
+          "path": "teeworlds_srv.dSYM",
+          "platforms": ["macos"],
+          "default_include": false
+        }
+      ]
+    },
+    "tools": {
+      "description": "Development and utility tools (EXCLUDE_FROM_ALL in CMake)",
+      "items": [
+        {
+          "name": "mastersrv",
+          "description": "Master server",
+          "type": "binary",
+          "source_build": true,
+          "exclude_from_all": true,
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64"],
+          "platform_names": {
+            "win32": "mastersrv.exe",
+            "win64": "mastersrv.exe",
+            "macos": "mastersrv",
+            "linux_x86": "mastersrv",
+            "linux_x86_64": "mastersrv"
+          }
+        },
+        {
+          "name": "versionsrv",
+          "description": "Version server",
+          "type": "binary",
+          "source_build": true,
+          "exclude_from_all": true,
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64"],
+          "platform_names": {
+            "win32": "versionsrv.exe",
+            "win64": "versionsrv.exe",
+            "macos": "versionsrv",
+            "linux_x86": "versionsrv",
+            "linux_x86_64": "versionsrv"
+          }
+        },
+        {
+          "name": "crapnet",
+          "description": "Network simulation tool",
+          "type": "binary",
+          "source_build": true,
+          "exclude_from_all": true,
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64"]
+        },
+        {
+          "name": "fake_server",
+          "description": "Fake server for testing",
+          "type": "binary",
+          "source_build": true,
+          "exclude_from_all": true,
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64"]
+        },
+        {
+          "name": "map_resave",
+          "description": "Map resave utility",
+          "type": "binary",
+          "source_build": true,
+          "exclude_from_all": true,
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64"]
+        },
+        {
+          "name": "map_version",
+          "description": "Map version utility",
+          "type": "binary",
+          "source_build": true,
+          "exclude_from_all": true,
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64"]
+        },
+        {
+          "name": "packetgen",
+          "description": "Network packet generator for testing",
+          "type": "binary",
+          "source_build": true,
+          "exclude_from_all": true,
+          "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64"]
+        }
+      ]
+    },
+    "macos_bundle": {
+      "description": "macOS application bundle specific files",
+      "items": [
+        {
+          "name": "client_icon",
+          "description": "Client application icon",
+          "type": "file",
+          "path": "other/icons/teeworlds.icns",
+          "dest_bundle": "Teeworlds.app/Contents/Resources/Teeworlds.icns",
+          "platforms": ["macos"]
+        },
+        {
+          "name": "server_icon",
+          "description": "Server application icon",
+          "type": "file",
+          "path": "other/icons/teeworlds_srv.icns",
+          "dest_bundle": "Teeworlds Server.app/Contents/Resources/Teeworlds_srv.icns",
+          "platforms": ["macos"]
+        },
+        {
+          "name": "client_info_plist_template",
+          "description": "Client bundle Info.plist template",
+          "type": "file",
+          "path": "other/bundle/client/Info.plist.in",
+          "template": true,
+          "platforms": ["macos"]
+        },
+        {
+          "name": "server_info_plist_template",
+          "description": "Server bundle Info.plist template",
+          "type": "file",
+          "path": "other/bundle/server/Info.plist.in",
+          "template": true,
+          "platforms": ["macos"]
+        },
+        {
+          "name": "client_pkginfo",
+          "description": "Client bundle PkgInfo",
+          "type": "file",
+          "path": "other/bundle/client/PkgInfo",
+          "dest_bundle": "Teeworlds.app/Contents/PkgInfo",
+          "platforms": ["macos"]
+        },
+        {
+          "name": "server_pkginfo",
+          "description": "Server bundle PkgInfo",
+          "type": "file",
+          "path": "other/bundle/server/PkgInfo",
+          "dest_bundle": "Teeworlds Server.app/Contents/PkgInfo",
+          "platforms": ["macos"]
+        }
+      ]
+    },
+    "source_package": {
+      "description": "Files included in the source code release",
+      "items": [
+        {
+          "name": "source_root",
+          "description": "All source directories",
+          "type": "directory_list",
+          "paths": ["src", "scripts", "datasrc", "other", "cmake"],
+          "platforms": ["src"]
+        },
+        {
+          "name": "build_scripts",
+          "description": "Build system files",
+          "type": "file_list",
+          "paths": ["CMakeLists.txt", "bam.lua", "configure.lua"],
+          "platforms": ["src"]
+        },
+        {
+          "name": "bash_completion",
+          "description": "Bash completion scripts",
+          "type": "directory",
+          "path": "other/bash-completion",
+          "platforms": ["src", "linux_x86", "linux_x86_64", "macos"]
+        }
+      ]
+    }
+  },
+  "package_formats": {
+    "win32": {
+      "format": "zip",
+      "name_pattern": "{name}-{version}-win32.zip"
+    },
+    "win64": {
+      "format": "zip",
+      "name_pattern": "{name}-{version}-win64.zip"
+    },
+    "macos": {
+      "format": "dmg",
+      "name_pattern": "{name}-{version}-macos.dmg",
+      "use_bundle": true
+    },
+    "linux_x86": {
+      "format": "tar.gz",
+      "name_pattern": "{name}-{version}-linux_x86.tar.gz"
+    },
+    "linux_x86_64": {
+      "format": "tar.gz",
+      "name_pattern": "{name}-{version}-linux_x86_64.tar.gz"
+    },
+    "src": {
+      "format": "zip",
+      "name_pattern": "{name}-{version}-src.zip"
+    }
+  },
+  "build_output_dirs": {
+    "x86_release": "build/x86/release",
+    "x86_64_release": "build/x86_64/release",
+    "cmake_build": "."
+  }
+}

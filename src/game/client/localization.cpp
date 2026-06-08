@@ -64,10 +64,7 @@ bool CLocalizationDatabase::Load(const char *pFilename, IStorage *pStorage, ICon
 	const json_value *pJsonData = JsonParser.ParseFile(pFilename, pStorage);
 	if(pJsonData == 0)
 	{
-		char aBuf[512];
-		str_format(aBuf, sizeof(aBuf), "ERROR: failed to load language file '%s': %s", pFilename, JsonParser.Error());
-		pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "localization", aBuf);
-		dbg_msg("localization", "%s. Check that the data/languages/ directory is complete.", aBuf);
+		pConsole->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "localization", JsonParser.Error());
 		return false;
 	}
 

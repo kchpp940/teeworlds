@@ -2,11 +2,15 @@ import shutil, optparse, os, re, sys, zipfile
 os.chdir(os.path.dirname(os.path.realpath(sys.argv[0])) + "/..")
 import twlib
 from twlib import copy_tree
+from release_manifest import ReleaseManifest
 
 arguments = optparse.OptionParser(usage="usage: %prog VERSION PLATFORM [options]\n\nVERSION  - Version number\nPLATFORM - Target platform (f.e. linux_x86, linux_x86_64, macos, src, win32, win64)")
 arguments.add_option("-l", "--url-languages", default = "http://github.com/teeworlds/teeworlds-translation/archive/master.zip", help = "URL from which the teeworlds language files will be downloaded")
 arguments.add_option("-m", "--url-maps", default = "http://github.com/teeworlds/teeworlds-maps/archive/master.zip", help = "URL from which the teeworlds maps files will be downloaded")
 arguments.add_option("-s", "--source-dir", help = "Source directory which is used for building the package")
+arguments.add_option("--include-optional", action="store_true", default=False, help = "Include optional debug symbols and files")
+arguments.add_option("--include-tools", action="store_true", default=False, help = "Include development tools in the package")
+arguments.add_option("--use-manifest", action="store_true", default=True, help = "Use the unified release manifest system (default: True)")
 (options, arguments) = arguments.parse_args()
 if len(arguments) != 2:
 	print("wrong number of arguments")
@@ -18,7 +22,8 @@ if options.source_dir != None:
 		exit(1)
 	os.chdir(options.source_dir)
 
-valid_platforms = ["win32", "win64", "macos", "linux_x86", "linux_x86_64", "src"]
+manifest = ReleaseManifest()
+valid_platforms = manifest.get_valid_platforms()
 
 name = "teeworlds"
 version = sys.argv[1]
@@ -37,18 +42,24 @@ if not platform in valid_platforms:
 	print(valid_platforms)
 	sys.exit(-1)
 
+pkg_format = manifest.get_package_format(platform)
+if pkg_format.get("format") == "zip":
+	use_zip = 1
+	use_gz = 0
+elif pkg_format.get("format") == "tar.gz":
+	use_zip = 0
+	use_gz = 1
+elif pkg_format.get("format") == "dmg":
+	use_dmg = 1
+	use_gz = 0
+	use_bundle = pkg_format.get("use_bundle", True)
+
 if platform == "src":
 	include_exe = False
 	include_src = True
 	use_zip = 1
 elif platform == 'win32' or platform == 'win64':
 	exe_ext = ".exe"
-	use_zip = 1
-	use_gz = 0
-elif platform == 'macos':
-	use_dmg = 1
-	use_gz = 0
-	use_bundle = 1
 
 def unzip(filename, where):
 	try:
@@ -95,11 +106,7 @@ def shell(cmd):
 package = "%s-%s-%s" %(name, version, platform)
 package_dir = package
 
-source_package_dir = "build/"
-if platform == 'win32' or platform == 'linux_x86':
-	source_package_dir += "x86/release/"
-else:
-	source_package_dir += "x86_64/release/"
+source_package_dir = manifest.get_build_output_dir(platform, cmake_build=False)
 
 print("cleaning target")
 shutil.rmtree(package_dir, True)
@@ -125,44 +132,77 @@ if not maps_dir:
 	print("couldn't unzip maps")
 	sys.exit(-1)
 
-print("adding files")
-shutil.copy("readme.md", package_dir)
-shutil.copy("license.txt", package_dir)
-shutil.copy("storage.cfg", package_dir)
+if options.use_manifest:
+	print("*** Using unified release manifest system ***")
 
-if include_data and not use_bundle:
-	copy_tree(source_package_dir+"data", package_dir+"/data")
-	copy_tree(languages_dir, package_dir+"/data/languages")
-	copy_tree(maps_dir, package_dir+"/data/maps")
-	if platform[:3] == "win":
-		shutil.copy("other/config_directory.bat", package_dir)
-		shutil.copy(source_package_dir+"SDL2.dll", package_dir)
-		shutil.copy(source_package_dir+"freetype.dll", package_dir)
+	collected = manifest.collect_files(
+		platform,
+		build_dir=source_package_dir,
+		include_optional=options.include_optional,
+		include_tools=options.include_tools,
+		verify_exists=False
+	)
 
-if include_exe and not use_bundle:
-	shutil.copy(source_package_dir+name+exe_ext, package_dir)
-	shutil.copy(source_package_dir+name+"_srv"+exe_ext, package_dir)
+	print("adding files from manifest")
+	manifest.copy_files_to_package(collected, package_dir, platform, use_bundle=False)
 
-if include_src:
-	for p in ["src", "scripts", "datasrc", "other", "objs"]:
-		os.mkdir(os.path.join(package_dir, p))
-		copydir(p, package_dir)
-	shutil.copy("bam.lua", package_dir)
-	shutil.copy("configure.lua", package_dir)
+	if include_data and not use_bundle:
+		languages_dest = os.path.join(package_dir, "data", "languages")
+		maps_dest = os.path.join(package_dir, "data", "maps")
+		if os.path.exists(languages_dir):
+			if os.path.exists(languages_dest):
+				shutil.rmtree(languages_dest)
+			copy_tree(languages_dir, languages_dest)
+		if os.path.exists(maps_dir):
+			if os.path.exists(maps_dest):
+				shutil.rmtree(maps_dest)
+			copy_tree(maps_dir, maps_dest)
+
+	if include_src:
+		for p in ["src", "scripts", "datasrc", "other", "objs"]:
+			if os.path.exists(p):
+				os.mkdir(os.path.join(package_dir, p))
+				copydir(p, package_dir)
+		shutil.copy("bam.lua", package_dir)
+		shutil.copy("configure.lua", package_dir)
+else:
+	print("adding files (legacy mode)")
+	shutil.copy("readme.md", package_dir)
+	shutil.copy("license.txt", package_dir)
+	shutil.copy("storage.cfg", package_dir)
+
+	if include_data and not use_bundle:
+		copy_tree(source_package_dir+"data", package_dir+"/data")
+		copy_tree(languages_dir, package_dir+"/data/languages")
+		copy_tree(maps_dir, package_dir+"/data/maps")
+		if platform[:3] == "win":
+			shutil.copy("other/config_directory.bat", package_dir)
+			shutil.copy(source_package_dir+"SDL2.dll", package_dir)
+			shutil.copy(source_package_dir+"freetype.dll", package_dir)
+
+	if include_exe and not use_bundle:
+		shutil.copy(source_package_dir+name+exe_ext, package_dir)
+		shutil.copy(source_package_dir+name+"_srv"+exe_ext, package_dir)
+
+	if include_src:
+		for p in ["src", "scripts", "datasrc", "other", "objs"]:
+			os.mkdir(os.path.join(package_dir, p))
+			copydir(p, package_dir)
+		shutil.copy("bam.lua", package_dir)
+		shutil.copy("configure.lua", package_dir)
 
 if use_bundle:
 	bins = [name, name+'_srv', 'serverlaunch']
-	platforms = ('x86_64')
+	platforms_list = ('x86_64',)
 	for bin in bins:
 		to_lipo = []
-		for p in platforms:
+		for p in platforms_list:
 			fname = bin+'_'+p
 			if os.path.isfile(fname):
 				to_lipo.append(fname)
 		if to_lipo:
 			shell("lipo -create -output "+bin+" "+" ".join(to_lipo))
 
-	# create Teeworlds appfolder
 	clientbundle_content_dir = os.path.join(package_dir, "Teeworlds.app/Contents")
 	clientbundle_bin_dir = os.path.join(clientbundle_content_dir, "MacOS")
 	clientbundle_resource_dir = os.path.join(clientbundle_content_dir, "Resources")
@@ -213,7 +253,6 @@ if use_bundle:
 	""" % (version))
 	open(os.path.join(clientbundle_content_dir, "PkgInfo"), "w").write("APPL????")
 
-	# create Teeworlds Server appfolder
 	serverbundle_content_dir = os.path.join(package_dir, "Teeworlds Server.app/Contents")
 	serverbundle_bin_dir = os.path.join(serverbundle_content_dir, "MacOS")
 	serverbundle_resource_dir = os.path.join(serverbundle_content_dir, "Resources")
@@ -255,12 +294,11 @@ if use_bundle:
 if use_zip:
 	print("making zip archive")
 	zf = zipfile.ZipFile("%s.zip" % package, 'w', zipfile.ZIP_DEFLATED)
-	
+
 	for root, dirs, files in os.walk(package_dir, topdown=True):
 		for name in files:
 			n = os.path.join(root, name)
 			zf.write(n, n)
-	#zf.printdir()
 	zf.close()
 
 if use_gz:
@@ -277,3 +315,4 @@ if use_dmg:
 clean()
 
 print("done")
+print("Package created: %s" % package)

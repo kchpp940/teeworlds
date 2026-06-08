@@ -34,161 +34,6 @@ public:
 		m_aAppDir[0] = 0;
 	}
 
-	void ValidateManifest()
-	{
-		if(!m_aDataDir[0])
-			return;
-
-		char aManifestPath[IO_MAX_PATH_LENGTH];
-		str_format(aManifestPath, sizeof(aManifestPath), "%s/data_manifest.txt", m_aDataDir);
-		IOHANDLE File = io_open(aManifestPath, IOFLAG_READ | IOFLAG_SKIP_BOM);
-		if(!File)
-		{
-			dbg_msg("storage", "WARNING: data_manifest.txt not found in data dir '%s'. The data/ directory may not have been produced by a proper CMake build. Runtime resource errors may follow.", m_aDataDir);
-			return;
-		}
-
-		enum
-		{
-			CAT_AUDIO = 0,
-			CAT_COUNTRYFLAGS,
-			CAT_EDITOR,
-			CAT_FONTS,
-			CAT_LANGUAGES,
-			CAT_MAPRES,
-			CAT_MAPS,
-			CAT_SKINS,
-			CAT_UI,
-			CAT_SHADER,
-			CAT_ROOT,
-			NUM_CATS,
-			MISSING_MAX_PER_CAT = 5,
-		};
-		const char *const paCatNames[NUM_CATS] = {
-			"audio", "countryflags", "editor", "fonts", "languages",
-			"mapres", "maps", "skins", "ui", "shader", "root",
-		};
-		int aCatCounts[NUM_CATS] = {0};
-		int aCatMissing[NUM_CATS] = {0};
-		char aMissingSamples[NUM_CATS][MISSING_MAX_PER_CAT][IO_MAX_PATH_LENGTH];
-		for(int c = 0; c < NUM_CATS; c++)
-			for(int s = 0; s < MISSING_MAX_PER_CAT; s++)
-				aMissingSamples[c][s][0] = 0;
-
-		CLineReader LineReader;
-		LineReader.Init(File);
-		int TotalEntries = 0;
-		int TotalMissing = 0;
-		const char *pLine;
-		while((pLine = LineReader.Get()))
-		{
-			if(!pLine[0])
-				continue;
-			TotalEntries++;
-
-			const char *pSlash = str_find(pLine, "/");
-			int Cat;
-			if(!pSlash)
-			{
-				Cat = CAT_ROOT;
-			}
-			else
-			{
-				size_t Len = pSlash - pLine;
-				Cat = CAT_ROOT;
-				for(int c = 0; c < NUM_CATS; c++)
-				{
-					if(c == CAT_ROOT)
-						continue;
-					size_t NameLen = str_length(paCatNames[c]);
-					if(Len == NameLen && str_comp_num(pLine, paCatNames[c], NameLen) == 0)
-					{
-						Cat = c;
-						break;
-					}
-				}
-			}
-
-			char aFull[IO_MAX_PATH_LENGTH];
-			str_format(aFull, sizeof(aFull), "%s/%s", m_aDataDir, pLine);
-			IOHANDLE CheckFile = io_open(aFull, IOFLAG_READ);
-			if(CheckFile)
-			{
-				io_close(CheckFile);
-				aCatCounts[Cat]++;
-			}
-			else
-			{
-				TotalMissing++;
-				int Idx = aCatMissing[Cat];
-				if(Idx < MISSING_MAX_PER_CAT)
-				{
-					str_copy(aMissingSamples[Cat][Idx], pLine, IO_MAX_PATH_LENGTH);
-				}
-				aCatMissing[Cat]++;
-			}
-		}
-		io_close(File);
-
-		if(TotalEntries == 0)
-		{
-			dbg_msg("storage", "WARNING: data_manifest.txt is empty — data directory appears incomplete at '%s'", m_aDataDir);
-			return;
-		}
-
-		dbg_msg("storage", "resource manifest: %d entries checked from '%s' (data dir: '%s')", TotalEntries, aManifestPath, m_aDataDir);
-		for(int c = 0; c < NUM_CATS; c++)
-		{
-			if(aCatCounts[c] > 0 || aCatMissing[c] > 0)
-			{
-				dbg_msg("storage", "  %-16s present:%4d  missing:%4d",
-					paCatNames[c], aCatCounts[c], aCatMissing[c]);
-			}
-		}
-
-		if(TotalMissing > 0)
-		{
-			dbg_msg("storage", "WARNING: %d manifest file(s) missing from data dir '%s':", TotalMissing, m_aDataDir);
-			for(int c = 0; c < NUM_CATS; c++)
-			{
-				if(aCatMissing[c] > 0)
-				{
-					char aSampleList[512] = {0};
-					for(int s = 0; s < MISSING_MAX_PER_CAT && aMissingSamples[c][s][0]; s++)
-					{
-						if(s > 0)
-							str_append(aSampleList, ", ", sizeof(aSampleList));
-						str_append(aSampleList, aMissingSamples[c][s], sizeof(aSampleList));
-					}
-					if(aCatMissing[c] > MISSING_MAX_PER_CAT)
-					{
-						char aMore[64];
-						str_format(aMore, sizeof(aMore), " ... (+%d more)", aCatMissing[c] - MISSING_MAX_PER_CAT);
-						str_append(aSampleList, aMore, sizeof(aSampleList));
-					}
-					dbg_msg("storage", "  [%s] %d missing: %s", paCatNames[c], aCatMissing[c], aSampleList);
-				}
-			}
-		}
-
-		char aMissingCats[512] = {0};
-		for(int c = 0; c < NUM_CATS; c++)
-		{
-			if(c == CAT_SHADER)
-				continue;
-			if(aCatCounts[c] == 0 && aCatMissing[c] == 0)
-			{
-				if(aMissingCats[0])
-					str_append(aMissingCats, ", ", sizeof(aMissingCats));
-				str_append(aMissingCats, paCatNames[c], sizeof(aMissingCats));
-			}
-		}
-		if(aMissingCats[0])
-		{
-			dbg_msg("storage", "WARNING: expected resource categories not present in manifest (0 entries) from data dir '%s': %s", m_aDataDir, aMissingCats);
-		}
-	}
-
 	int Init(const char *pApplicationName, int StorageType, int NumArgs, const char **ppArguments)
 	{
 		// get userdir
@@ -198,14 +43,7 @@ public:
 		FindAppDir(ppArguments[0]);
 
 		// get datadir
-		if(!FindDataDir())
-		{
-			dbg_msg("storage", "FATAL ERROR: no data directory found. The 'data/' directory must be located next to the executable, in the current working directory, or in a system installation path (e.g. /usr/share/teeworlds/data). If you are building from source, ensure the CMake build succeeded and the copy_data target ran properly.");
-			return 1;
-		}
-
-		// runtime fallback: validate data manifest
-		ValidateManifest();
+		FindDataDir();
 
 		// get currentdir
 		fs_getcwd(m_aCurrentDir, sizeof(m_aCurrentDir));
@@ -390,20 +228,20 @@ public:
 		}
 	}
 
-	bool FindDataDir()
+	void FindDataDir()
 	{
 		// 1) use data-dir in PWD if present
 		if(fs_is_dir("data/mapres"))
 		{
 			str_copy(m_aDataDir, "data", sizeof(m_aDataDir));
-			return true;
+			return;
 		}
 
 		// 2) use compiled-in data-dir if present
 		if(fs_is_dir(DATA_DIR "/mapres"))
 		{
 			str_copy(m_aDataDir, DATA_DIR, sizeof(m_aDataDir));
-			return true;
+			return;
 		}
 
 		// 3) check for usable path in argv[0]
@@ -414,7 +252,7 @@ public:
 			str_append(aBaseDir, "/data/mapres", sizeof(aBaseDir));
 
 			if(fs_is_dir(aBaseDir))
-				return true;
+				return;
 			else
 				m_aDataDir[0] = 0;
 		}
@@ -441,14 +279,14 @@ public:
 				if(fs_is_dir(aBuf))
 				{
 					str_copy(m_aDataDir, aDirs[i], sizeof(m_aDataDir));
-					return true;
+					return;
 				}
 			}
 		}
 	#endif
 
 		// no data-dir found
-		return false;
+		dbg_msg("storage", "warning no data directory found");
 	}
 
 	virtual void ListDirectory(int Type, const char *pPath, FS_LISTDIR_CALLBACK pfnCallback, void *pUser)

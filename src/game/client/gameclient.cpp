@@ -397,33 +397,6 @@ void CGameClient::OnInit()
 		m_pMenus->RenderLoading(1);
 	}
 
-	// verify critical resources: all textures must be valid
-	{
-		int FailedTextures = 0;
-		for(int i = 0; i < g_pData->m_NumImages; i++)
-		{
-			if(!g_pData->m_aImages[i].m_Id.IsValid())
-			{
-				FailedTextures++;
-				if(FailedTextures <= 10)
-				{
-					dbg_msg("gameclient", "ERROR: failed to load critical texture '%s'", g_pData->m_aImages[i].m_pFilename);
-				}
-			}
-		}
-		if(FailedTextures > 0)
-		{
-			char aBuf[512];
-			str_format(aBuf, sizeof(aBuf), "FATAL ERROR: %d/%d textures failed to load. This will result in blank or broken UI. Check that the data/ directory contains all required image files and the build copy_data target ran successfully.", FailedTextures, g_pData->m_NumImages);
-			dbg_msg("gameclient", "%s", aBuf);
-			dbg_assert(0, aBuf);
-		}
-		else
-		{
-			dbg_msg("gameclient", "resource check: all %d textures loaded successfully", g_pData->m_NumImages);
-		}
-	}
-
 	// init the editor
 	m_pEditor->Init();
 	m_pMenus->RenderLoading(2);

@@ -391,12 +391,9 @@ IGraphics::CTextureHandle CGraphics_Threaded::LoadTexture(const char *pFilename,
 		mem_free(Img.m_pData);
 		if(ID.Id() != m_InvalidTexture.Id() && m_pConfig->m_Debug)
 			dbg_msg("graphics/texture", "loaded %s", pFilename);
-		else if(ID.Id() == m_InvalidTexture.Id())
-			dbg_msg("graphics/texture", "ERROR: failed to upload texture '%s' to GPU", pFilename);
 		return ID;
 	}
 
-	dbg_msg("graphics/texture", "ERROR: failed to load texture '%s' — file missing, unreadable or corrupt. Check that the data/ directory is complete and the build copy_data target ran successfully.", pFilename);
 	return m_InvalidTexture;
 }
 

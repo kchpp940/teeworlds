@@ -27,6 +27,12 @@ endif()
 
 project(teeworlds VERSION ${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH})
 
+set(RELEASE_MANIFEST "${PROJECT_SOURCE_DIR}/scripts/release_manifest.json")
+set(RELEASE_MANIFEST_TOOL "${PROJECT_SOURCE_DIR}/scripts/release_manifest.py")
+if(EXISTS ${RELEASE_MANIFEST})
+  message(STATUS "Release manifest: ${RELEASE_MANIFEST}")
+endif()
+
 set(ORIGINAL_CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH})
 set(ORIGINAL_CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES})
 set(ORIGINAL_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
@@ -95,6 +101,22 @@ set(CLIENT_EXECUTABLE teeworlds CACHE STRING "Name of the build client executabl
 ########################################################################
 
 find_package(Python3)
+
+if(Python3_EXECUTABLE AND EXISTS ${RELEASE_MANIFEST_TOOL})
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE} ${RELEASE_MANIFEST_TOOL} --version
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    OUTPUT_VARIABLE MANIFEST_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE MANIFEST_VERSION_RESULT
+  )
+  if(MANIFEST_VERSION_RESULT EQUAL 0)
+    message(STATUS "Release manifest version: ${MANIFEST_VERSION}")
+  else()
+    message(WARNING "Failed to read version from release manifest")
+  endif()
+endif()
+
 if(DOWNLOAD_DEPENDENCIES)
   if(Python3_EXECUTABLE AND TARGET_OS STREQUAL "windows" AND TARGET_BITS)
     set(DOWNLOADS)
@@ -479,148 +501,703 @@ if(NOT CRYPTO_FOUND)
 endif()
 
 ########################################################################
-# DATA MANIFEST (single source of truth)
+# DATA
 ########################################################################
-# The manifest is generated from datasrc/content.py + a directory scan.
-# It is the only source used by: copy_data, install/package, runtime preflight.
-# Missing files or stale generated outputs cause CMake configure to FATAL_ERROR.
 
-set(MANIFEST_FILE "${PROJECT_BINARY_DIR}/data_manifest.txt")
-set(MANIFEST_SCRIPT "${PROJECT_SOURCE_DIR}/scripts/manifest_tool.py")
-
-execute_process(
-  COMMAND ${Python3_EXECUTABLE} ${MANIFEST_SCRIPT}
-    --datasrc "${PROJECT_SOURCE_DIR}/datasrc"
-    --manifest "${MANIFEST_FILE}"
-    generate
-  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-  RESULT_VARIABLE MANIFEST_GEN_RESULT
-  OUTPUT_VARIABLE MANIFEST_GEN_OUTPUT
-  ERROR_VARIABLE MANIFEST_GEN_OUTPUT
+set(EXPECTED_DATA
+  audio/foley_body_impact-01.wv
+  audio/foley_body_impact-02.wv
+  audio/foley_body_impact-03.wv
+  audio/foley_body_splat-01.wv
+  audio/foley_body_splat-02.wv
+  audio/foley_body_splat-03.wv
+  audio/foley_body_splat-04.wv
+  audio/foley_dbljump-01.wv
+  audio/foley_dbljump-02.wv
+  audio/foley_dbljump-03.wv
+  audio/foley_foot_left-01.wv
+  audio/foley_foot_left-02.wv
+  audio/foley_foot_left-03.wv
+  audio/foley_foot_left-04.wv
+  audio/foley_foot_right-01.wv
+  audio/foley_foot_right-02.wv
+  audio/foley_foot_right-03.wv
+  audio/foley_foot_right-04.wv
+  audio/foley_land-01.wv
+  audio/foley_land-02.wv
+  audio/foley_land-03.wv
+  audio/foley_land-04.wv
+  audio/hook_attach-01.wv
+  audio/hook_attach-02.wv
+  audio/hook_attach-03.wv
+  audio/hook_loop-01.wv
+  audio/hook_loop-02.wv
+  audio/hook_noattach-01.wv
+  audio/hook_noattach-02.wv
+  audio/hook_noattach-03.wv
+  audio/music_menu.wv
+  audio/sfx_ctf_cap_pl.wv
+  audio/sfx_ctf_drop.wv
+  audio/sfx_ctf_grab_en.wv
+  audio/sfx_ctf_grab_pl.wv
+  audio/sfx_ctf_rtn.wv
+  audio/sfx_hit_strong-01.wv
+  audio/sfx_hit_strong-02.wv
+  audio/sfx_hit_weak-01.wv
+  audio/sfx_hit_weak-02.wv
+  audio/sfx_hit_weak-03.wv
+  audio/sfx_msg-client.wv
+  audio/sfx_msg-highlight.wv
+  audio/sfx_msg-server.wv
+  audio/sfx_pickup_arm-01.wv
+  audio/sfx_pickup_arm-02.wv
+  audio/sfx_pickup_arm-03.wv
+  audio/sfx_pickup_arm-04.wv
+  audio/sfx_pickup_gun.wv
+  audio/sfx_pickup_hrt-01.wv
+  audio/sfx_pickup_hrt-02.wv
+  audio/sfx_pickup_launcher.wv
+  audio/sfx_pickup_ninja.wv
+  audio/sfx_pickup_sg.wv
+  audio/sfx_skid-01.wv
+  audio/sfx_skid-02.wv
+  audio/sfx_skid-03.wv
+  audio/sfx_skid-04.wv
+  audio/sfx_spawn_wpn-01.wv
+  audio/sfx_spawn_wpn-02.wv
+  audio/sfx_spawn_wpn-03.wv
+  audio/vo_teefault_cry-01.wv
+  audio/vo_teefault_cry-02.wv
+  audio/vo_teefault_ninja-01.wv
+  audio/vo_teefault_ninja-02.wv
+  audio/vo_teefault_ninja-03.wv
+  audio/vo_teefault_ninja-04.wv
+  audio/vo_teefault_pain_long-01.wv
+  audio/vo_teefault_pain_long-02.wv
+  audio/vo_teefault_pain_short-01.wv
+  audio/vo_teefault_pain_short-02.wv
+  audio/vo_teefault_pain_short-03.wv
+  audio/vo_teefault_pain_short-04.wv
+  audio/vo_teefault_pain_short-05.wv
+  audio/vo_teefault_pain_short-06.wv
+  audio/vo_teefault_pain_short-07.wv
+  audio/vo_teefault_pain_short-08.wv
+  audio/vo_teefault_pain_short-09.wv
+  audio/vo_teefault_pain_short-10.wv
+  audio/vo_teefault_pain_short-11.wv
+  audio/vo_teefault_pain_short-12.wv
+  audio/vo_teefault_sledge-01.wv
+  audio/vo_teefault_sledge-02.wv
+  audio/vo_teefault_sledge-03.wv
+  audio/vo_teefault_spawn-01.wv
+  audio/vo_teefault_spawn-02.wv
+  audio/vo_teefault_spawn-03.wv
+  audio/vo_teefault_spawn-04.wv
+  audio/vo_teefault_spawn-05.wv
+  audio/vo_teefault_spawn-06.wv
+  audio/vo_teefault_spawn-07.wv
+  audio/wp_flump_explo-01.wv
+  audio/wp_flump_explo-02.wv
+  audio/wp_flump_explo-03.wv
+  audio/wp_flump_launch-01.wv
+  audio/wp_flump_launch-02.wv
+  audio/wp_flump_launch-03.wv
+  audio/wp_gun_fire-01.wv
+  audio/wp_gun_fire-02.wv
+  audio/wp_gun_fire-03.wv
+  audio/wp_hammer_hit-01.wv
+  audio/wp_hammer_hit-02.wv
+  audio/wp_hammer_hit-03.wv
+  audio/wp_hammer_swing-01.wv
+  audio/wp_hammer_swing-02.wv
+  audio/wp_hammer_swing-03.wv
+  audio/wp_laser_bnce-01.wv
+  audio/wp_laser_bnce-02.wv
+  audio/wp_laser_bnce-03.wv
+  audio/wp_laser_fire-01.wv
+  audio/wp_laser_fire-02.wv
+  audio/wp_laser_fire-03.wv
+  audio/wp_ninja_attack-01.wv
+  audio/wp_ninja_attack-02.wv
+  audio/wp_ninja_attack-03.wv
+  audio/wp_ninja_attack-04.wv
+  audio/wp_ninja_hit-01.wv
+  audio/wp_ninja_hit-02.wv
+  audio/wp_ninja_hit-03.wv
+  audio/wp_ninja_hit-04.wv
+  audio/wp_noammo-01.wv
+  audio/wp_noammo-02.wv
+  audio/wp_noammo-03.wv
+  audio/wp_noammo-04.wv
+  audio/wp_noammo-05.wv
+  audio/wp_shotty_fire-01.wv
+  audio/wp_shotty_fire-02.wv
+  audio/wp_shotty_fire-03.wv
+  audio/wp_switch-01.wv
+  audio/wp_switch-02.wv
+  audio/wp_switch-03.wv
+  countryflags/AD.png
+  countryflags/AE.png
+  countryflags/AF.png
+  countryflags/AG.png
+  countryflags/AI.png
+  countryflags/AL.png
+  countryflags/AM.png
+  countryflags/AO.png
+  countryflags/AR.png
+  countryflags/AS.png
+  countryflags/AT.png
+  countryflags/AU.png
+  countryflags/AW.png
+  countryflags/AX.png
+  countryflags/AZ.png
+  countryflags/BA.png
+  countryflags/BB.png
+  countryflags/BD.png
+  countryflags/BE.png
+  countryflags/BF.png
+  countryflags/BG.png
+  countryflags/BH.png
+  countryflags/BI.png
+  countryflags/BJ.png
+  countryflags/BL.png
+  countryflags/BM.png
+  countryflags/BN.png
+  countryflags/BO.png
+  countryflags/BR.png
+  countryflags/BS.png
+  countryflags/BT.png
+  countryflags/BW.png
+  countryflags/BY.png
+  countryflags/BZ.png
+  countryflags/CA.png
+  countryflags/CC.png
+  countryflags/CD.png
+  countryflags/CF.png
+  countryflags/CG.png
+  countryflags/CH.png
+  countryflags/CI.png
+  countryflags/CK.png
+  countryflags/CL.png
+  countryflags/CM.png
+  countryflags/CN.png
+  countryflags/CO.png
+  countryflags/CR.png
+  countryflags/CU.png
+  countryflags/CV.png
+  countryflags/CW.png
+  countryflags/CX.png
+  countryflags/CY.png
+  countryflags/CZ.png
+  countryflags/DE.png
+  countryflags/DJ.png
+  countryflags/DK.png
+  countryflags/DM.png
+  countryflags/DO.png
+  countryflags/DZ.png
+  countryflags/EC.png
+  countryflags/EE.png
+  countryflags/EG.png
+  countryflags/EH.png
+  countryflags/ER.png
+  countryflags/ES.png
+  countryflags/ET.png
+  countryflags/FI.png
+  countryflags/FJ.png
+  countryflags/FK.png
+  countryflags/FM.png
+  countryflags/FO.png
+  countryflags/FR.png
+  countryflags/GA.png
+  countryflags/GB.png
+  countryflags/GD.png
+  countryflags/GE.png
+  countryflags/GF.png
+  countryflags/GG.png
+  countryflags/GH.png
+  countryflags/GI.png
+  countryflags/GL.png
+  countryflags/GM.png
+  countryflags/GN.png
+  countryflags/GP.png
+  countryflags/GQ.png
+  countryflags/GR.png
+  countryflags/GS.png
+  countryflags/GT.png
+  countryflags/GU.png
+  countryflags/GW.png
+  countryflags/GY.png
+  countryflags/HK.png
+  countryflags/HN.png
+  countryflags/HR.png
+  countryflags/HT.png
+  countryflags/HU.png
+  countryflags/ID.png
+  countryflags/IE.png
+  countryflags/IL.png
+  countryflags/IM.png
+  countryflags/IN.png
+  countryflags/IO.png
+  countryflags/IQ.png
+  countryflags/IR.png
+  countryflags/IS.png
+  countryflags/IT.png
+  countryflags/JE.png
+  countryflags/JM.png
+  countryflags/JO.png
+  countryflags/JP.png
+  countryflags/KE.png
+  countryflags/KG.png
+  countryflags/KH.png
+  countryflags/KI.png
+  countryflags/KM.png
+  countryflags/KN.png
+  countryflags/KP.png
+  countryflags/KR.png
+  countryflags/KW.png
+  countryflags/KY.png
+  countryflags/KZ.png
+  countryflags/LA.png
+  countryflags/LB.png
+  countryflags/LC.png
+  countryflags/LI.png
+  countryflags/LK.png
+  countryflags/LR.png
+  countryflags/LS.png
+  countryflags/LT.png
+  countryflags/LU.png
+  countryflags/LV.png
+  countryflags/LY.png
+  countryflags/MA.png
+  countryflags/MC.png
+  countryflags/MD.png
+  countryflags/ME.png
+  countryflags/MF.png
+  countryflags/MG.png
+  countryflags/MH.png
+  countryflags/MK.png
+  countryflags/ML.png
+  countryflags/MM.png
+  countryflags/MN.png
+  countryflags/MO.png
+  countryflags/MP.png
+  countryflags/MQ.png
+  countryflags/MR.png
+  countryflags/MS.png
+  countryflags/MT.png
+  countryflags/MU.png
+  countryflags/MV.png
+  countryflags/MW.png
+  countryflags/MX.png
+  countryflags/MY.png
+  countryflags/MZ.png
+  countryflags/NA.png
+  countryflags/NC.png
+  countryflags/NE.png
+  countryflags/NF.png
+  countryflags/NG.png
+  countryflags/NI.png
+  countryflags/NL.png
+  countryflags/NO.png
+  countryflags/NP.png
+  countryflags/NR.png
+  countryflags/NU.png
+  countryflags/NZ.png
+  countryflags/OM.png
+  countryflags/PA.png
+  countryflags/PE.png
+  countryflags/PF.png
+  countryflags/PG.png
+  countryflags/PH.png
+  countryflags/PK.png
+  countryflags/PL.png
+  countryflags/PM.png
+  countryflags/PN.png
+  countryflags/PR.png
+  countryflags/PS.png
+  countryflags/PT.png
+  countryflags/PW.png
+  countryflags/PY.png
+  countryflags/QA.png
+  countryflags/RE.png
+  countryflags/RO.png
+  countryflags/RS.png
+  countryflags/RU.png
+  countryflags/RW.png
+  countryflags/SA.png
+  countryflags/SB.png
+  countryflags/SC.png
+  countryflags/SD.png
+  countryflags/SE.png
+  countryflags/SG.png
+  countryflags/SH.png
+  countryflags/SI.png
+  countryflags/SK.png
+  countryflags/SL.png
+  countryflags/SM.png
+  countryflags/SN.png
+  countryflags/SO.png
+  countryflags/SR.png
+  countryflags/SS.png
+  countryflags/ST.png
+  countryflags/SV.png
+  countryflags/SX.png
+  countryflags/SY.png
+  countryflags/SZ.png
+  countryflags/TC.png
+  countryflags/TD.png
+  countryflags/TF.png
+  countryflags/TG.png
+  countryflags/TH.png
+  countryflags/TJ.png
+  countryflags/TK.png
+  countryflags/TL.png
+  countryflags/TM.png
+  countryflags/TN.png
+  countryflags/TO.png
+  countryflags/TR.png
+  countryflags/TT.png
+  countryflags/TV.png
+  countryflags/TW.png
+  countryflags/TZ.png
+  countryflags/UA.png
+  countryflags/UG.png
+  countryflags/US.png
+  countryflags/UY.png
+  countryflags/UZ.png
+  countryflags/VA.png
+  countryflags/VC.png
+  countryflags/VE.png
+  countryflags/VG.png
+  countryflags/VI.png
+  countryflags/VN.png
+  countryflags/VU.png
+  countryflags/WF.png
+  countryflags/WS.png
+  countryflags/XBZ.png
+  countryflags/XCA.png
+  countryflags/XEN.png
+  countryflags/XES.png
+  countryflags/XGA.png
+  countryflags/XNI.png
+  countryflags/XSC.png
+  countryflags/XWA.png
+  countryflags/YE.png
+  countryflags/ZA.png
+  countryflags/ZM.png
+  countryflags/ZW.png
+  countryflags/default.png
+  countryflags/index.json
+  deadtee.png
+  editor/automap/desert_main.json
+  editor/automap/grass_doodads.json
+  editor/automap/grass_main.json
+  editor/automap/jungle_deathtiles.json
+  editor/automap/jungle_main.json
+  editor/automap/winter_main.json
+  editor/background.png
+  editor/checker.png
+  editor/cursor.png
+  editor/entities.png
+  emoticons.png
+  fonts/DejaVuSans.ttf
+  fonts/SourceHanSans.ttc
+  fonts/index.json
+  game.png
+  languages/belarusian.json
+  languages/bosnian.json
+  languages/brazilian_portuguese.json
+  languages/breton.json
+  languages/bulgarian.json
+  languages/catalan.json
+  languages/chuvash.json
+  languages/czech.json
+  languages/danish.json
+  languages/dutch.json
+  languages/esperanto.json
+  languages/estonian.json
+  languages/finnish.json
+  languages/french.json
+  languages/gaelic_scottish.json
+  languages/galician.json
+  languages/german.json
+  languages/greek.json
+  languages/hungarian.json
+  languages/index.json
+  languages/irish.json
+  languages/italian.json
+  languages/japanese.json
+  languages/korean.json
+  languages/kyrgyz.json
+  languages/license.txt
+  languages/lithuanian.json
+  languages/norwegian.json
+  languages/polish.json
+  languages/portuguese.json
+  languages/readme.txt
+  languages/romanian.json
+  languages/russian.json
+  languages/serbian.json
+  languages/simplified_chinese.json
+  languages/slovak.json
+  languages/slovenian.json
+  languages/spanish.json
+  languages/swedish.json
+  languages/traditional_chinese.json
+  languages/turkish.json
+  languages/ukrainian.json
+  mapres/bg_cloud1.png
+  mapres/bg_cloud2.png
+  mapres/bg_cloud3.png
+  mapres/desert_doodads.png
+  mapres/desert_main.png
+  mapres/desert_mountains.png
+  mapres/desert_mountains2.png
+  mapres/desert_sun.png
+  mapres/easter.png
+  mapres/generic_deathtiles.png
+  mapres/generic_lamps.png
+  mapres/generic_shadows.png
+  mapres/generic_unhookable.png
+  mapres/grass_doodads.png
+  mapres/grass_main.png
+  mapres/jungle_background.png
+  mapres/jungle_deathtiles.png
+  mapres/jungle_doodads.png
+  mapres/jungle_main.png
+  mapres/jungle_midground.png
+  mapres/jungle_unhookables.png
+  mapres/light.png
+  mapres/moon.png
+  mapres/mountains.png
+  mapres/snow.png
+  mapres/stars.png
+  mapres/sun.png
+  mapres/winter_doodads.png
+  mapres/winter_main.png
+  mapres/winter_mountains.png
+  mapres/winter_mountains2.png
+  mapres/winter_mountains3.png
+  maps/ctf1.map
+  maps/ctf2.map
+  maps/ctf3.map
+  maps/ctf4.map
+  maps/ctf5.map
+  maps/ctf6.map
+  maps/ctf7.map
+  maps/ctf8.map
+  maps/dm1.map
+  maps/dm2.map
+  maps/dm3.map
+  maps/dm6.map
+  maps/dm7.map
+  maps/dm8.map
+  maps/dm9.map
+  maps/license.txt
+  maps/lms1.map
+  maps/readme.txt
+  particles.png
+  race_flag.png
+  skins/beaver.json
+  skins/bluekitty.json
+  skins/bluestripe.json
+  skins/body/bat.png
+  skins/body/bear.png
+  skins/body/beaver.png
+  skins/body/dog.png
+  skins/body/force.png
+  skins/body/fox.png
+  skins/body/hippo.png
+  skins/body/kitty.png
+  skins/body/koala.png
+  skins/body/monkey.png
+  skins/body/mouse.png
+  skins/body/piglet.png
+  skins/body/raccoon.png
+  skins/body/spiky.png
+  skins/body/standard.png
+  skins/body/x_ninja.png
+  skins/bot.png
+  skins/brownbear.json
+  skins/bumbler.json
+  skins/cammo.json
+  skins/cammostripes.json
+  skins/cavebat.json
+  skins/decoration/hair.png
+  skins/decoration/twinbopp.png
+  skins/decoration/twinmello.png
+  skins/decoration/twinpen.png
+  skins/decoration/unibop.png
+  skins/decoration/unimelo.png
+  skins/decoration/unipento.png
+  skins/default.json
+  skins/eyes/colorable.png
+  skins/eyes/negative.png
+  skins/eyes/standard.png
+  skins/eyes/standardreal.png
+  skins/eyes/x_ninja.png
+  skins/feet/standard.png
+  skins/force.json
+  skins/fox.json
+  skins/greycoon.json
+  skins/greyfox.json
+  skins/hands/standard.png
+  skins/hippo.json
+  skins/koala.json
+  skins/limedog.json
+  skins/limekitty.json
+  skins/marking/bear.png
+  skins/marking/belly1.png
+  skins/marking/belly2.png
+  skins/marking/blush.png
+  skins/marking/bug.png
+  skins/marking/cammo1.png
+  skins/marking/cammo2.png
+  skins/marking/cammostripes.png
+  skins/marking/coonfluff.png
+  skins/marking/donny.png
+  skins/marking/downdony.png
+  skins/marking/duodonny.png
+  skins/marking/fox.png
+  skins/marking/hipbel.png
+  skins/marking/lowcross.png
+  skins/marking/lowpaint.png
+  skins/marking/marksman.png
+  skins/marking/mice.png
+  skins/marking/mixture1.png
+  skins/marking/mixture2.png
+  skins/marking/monkey.png
+  skins/marking/panda1.png
+  skins/marking/panda2.png
+  skins/marking/purelove.png
+  skins/marking/saddo.png
+  skins/marking/setisu.png
+  skins/marking/sidemarks.png
+  skins/marking/singu.png
+  skins/marking/stripe.png
+  skins/marking/striped.png
+  skins/marking/stripes.png
+  skins/marking/stripes2.png
+  skins/marking/thunder.png
+  skins/marking/tiger1.png
+  skins/marking/tiger2.png
+  skins/marking/toptri.png
+  skins/marking/triangular.png
+  skins/marking/tricircular.png
+  skins/marking/tripledon.png
+  skins/marking/tritri.png
+  skins/marking/twinbelly.png
+  skins/marking/twincross.png
+  skins/marking/twintri.png
+  skins/marking/uppy.png
+  skins/marking/warpaint.png
+  skins/marking/warstripes.png
+  skins/marking/whisker.png
+  skins/marking/wildpaint.png
+  skins/marking/wildpatch.png
+  skins/marking/yinyang.png
+  skins/monkey.json
+  skins/paintgre.json
+  skins/pandabear.json
+  skins/panther.json
+  skins/pento.json
+  skins/piggy.json
+  skins/pinky.json
+  skins/raccoon.json
+  skins/redbopp.json
+  skins/redstripe.json
+  skins/saddo.json
+  skins/setisu.json
+  skins/snowti.json
+  skins/spiky.json
+  skins/swardy.json
+  skins/tiger.json
+  skins/tooxy.json
+  skins/toptri.json
+  skins/twinbop.json
+  skins/twintri.json
+  skins/warmouse.json
+  skins/warpaint.json
+  skins/x_ninja.json
+  skins/xmas_hat.png
+  ui/blob.png
+  ui/console.png
+  ui/console_bar.png
+  ui/debug_font.png
+  ui/demo_buttons.png
+  ui/file_icons.png
+  ui/gametypes/ctf.png
+  ui/gametypes/dm.png
+  ui/gametypes/lms.png
+  ui/gametypes/lts.png
+  ui/gametypes/mod.png
+  ui/gametypes/race.png
+  ui/gametypes/tdm.png
+  ui/gui_buttons.png
+  ui/gui_cursor.png
+  ui/gui_icons.png
+  ui/gui_logo.png
+  ui/icons/arrows.png
+  ui/icons/browse.png
+  ui/icons/browser.png
+  ui/icons/chat_whisper.png
+  ui/icons/friend.png
+  ui/icons/level.png
+  ui/icons/menu.png
+  ui/icons/network.png
+  ui/icons/sidebar.png
+  ui/icons/timer_clock.png
+  ui/icons/tools.png
+  ui/menuimages/demos.png
+  ui/menuimages/editor.png
+  ui/menuimages/local_server.png
+  ui/menuimages/play_game.png
+  ui/menuimages/settings.png
+  ui/no_skinpart.png
+  ui/sound_icons.png
+  ui/themes/auto.png
+  ui/themes/heavens.png
+  ui/themes/heavens_day.map
+  ui/themes/heavens_night.map
+  ui/themes/jungle.png
+  ui/themes/jungle_day.map
+  ui/themes/jungle_night.map
+  ui/themes/none.png
+  ui/themes/winter.png
+  ui/themes/winter_day.map
+  ui/themes/winter_night.map
 )
-if(NOT MANIFEST_GEN_RESULT EQUAL 0)
-  message(FATAL_ERROR "Failed to generate data manifest:\n${MANIFEST_GEN_OUTPUT}")
-endif()
-message(STATUS "${MANIFEST_GEN_OUTPUT}")
-
-execute_process(
-  COMMAND ${Python3_EXECUTABLE} ${MANIFEST_SCRIPT}
-    --datasrc "${PROJECT_SOURCE_DIR}/datasrc"
-    --manifest "${MANIFEST_FILE}"
-    validate
-  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-  RESULT_VARIABLE MANIFEST_VALIDATE_RESULT
-  OUTPUT_VARIABLE MANIFEST_VALIDATE_OUTPUT
-  ERROR_VARIABLE MANIFEST_VALIDATE_OUTPUT
-)
-if(NOT MANIFEST_VALIDATE_RESULT EQUAL 0)
-  message(FATAL_ERROR "Data manifest validation failed:\n${MANIFEST_VALIDATE_OUTPUT}")
-endif()
-message(STATUS "${MANIFEST_VALIDATE_OUTPUT}")
-
-execute_process(
-  COMMAND ${Python3_EXECUTABLE} ${MANIFEST_SCRIPT}
-    --datasrc "${PROJECT_SOURCE_DIR}/datasrc"
-    --manifest "${MANIFEST_FILE}"
-    validate_content
-  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-  RESULT_VARIABLE MANIFEST_CONTENT_RESULT
-  OUTPUT_VARIABLE MANIFEST_CONTENT_OUTPUT
-  ERROR_VARIABLE MANIFEST_CONTENT_OUTPUT
-)
-if(NOT MANIFEST_CONTENT_RESULT EQUAL 0)
-  message(FATAL_ERROR "content.py reference validation failed:\n${MANIFEST_CONTENT_OUTPUT}")
-endif()
-message(STATUS "${MANIFEST_CONTENT_OUTPUT}")
-
-execute_process(
-  COMMAND ${Python3_EXECUTABLE} ${MANIFEST_SCRIPT}
-    --datasrc "${PROJECT_SOURCE_DIR}/datasrc"
-    --manifest "${MANIFEST_FILE}"
-    check_extra
-  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-  RESULT_VARIABLE MANIFEST_EXTRA_RESULT
-  OUTPUT_VARIABLE MANIFEST_EXTRA_OUTPUT
-  ERROR_VARIABLE MANIFEST_EXTRA_OUTPUT
-)
-if(MANIFEST_EXTRA_OUTPUT)
-  message(STATUS "${MANIFEST_EXTRA_OUTPUT}")
-endif()
-
-file(STRINGS "${MANIFEST_FILE}" DATA_MANIFEST_ENTRIES)
-
-# NOTE: The hardcoded EXPECTED_DATA list has been removed.
-# The single source of truth for the resource list is now the manifest
-# (data_manifest.txt), generated by scripts/manifest_tool.py from:
-#   1. datasrc/content.py  (Image + SoundSet filename references)
-#   2. A directory scan of datasrc/  (countryflags, fonts, languages,
-#      mapres, maps, skins, ui, audio, editor)
-#
-# To add/remove/rename a shipped data file:
-#   - For images/sounds referenced by code: edit datasrc/content.py
-#   - For files in subdirectories (languages, maps, skins, etc.): add/remove
-#     the file on disk under datasrc/
-# Then re-run CMake configure.  The manifest will regenerate automatically.
 
 if(NOT EXISTS ${PROJECT_SOURCE_DIR}/datasrc/languages/index.json)
-  message(FATAL_ERROR "Missing datasrc/languages submodule. Please download a source release or update your git submodules with `git submodule update --init`")
+  message(WARNING "Missing datasrc/languages submodule. Please download a source release or update your git submodules with `git submodule update --init`")
+  foreach(item ${EXPECTED_DATA})
+    if(item MATCHES "^languages/")
+      list(REMOVE_ITEM EXPECTED_DATA ${item})
+    endif()
+  endforeach()
 endif()
 
 if(NOT EXISTS ${PROJECT_SOURCE_DIR}/datasrc/maps/dm1.map)
-  message(FATAL_ERROR "Missing datasrc/maps submodule. Please download a source release or update your git submodules with `git submodule update --init`")
+  message(WARNING "Missing datasrc/maps submodule. Please download a source release or update your git submodules with `git submodule update --init`")
+  foreach(item ${EXPECTED_DATA})
+    if(item MATCHES "^maps/")
+      list(REMOVE_ITEM EXPECTED_DATA ${item})
+    endif()
+  endforeach()
 endif()
 
-# All further validation (file existence, content.py consistency, extra files) is performed
-# by the manifest_tool.py calls above. DATA list is sourced entirely from the manifest.
-set(DATA)
-foreach(entry ${DATA_MANIFEST_ENTRIES})
-  list(APPEND DATA "${PROJECT_SOURCE_DIR}/datasrc/${entry}")
-endforeach()
+set_glob(DATA GLOB_RECURSE "json;map;png;rules;ttc;ttf;txt;wv" datasrc ${EXPECTED_DATA})
 
 ########################################################################
 # COPY DATA AND DLLS
 ########################################################################
 
-set(DATA_OUTPUTS)
 foreach(datafile ${DATA})
-  file(RELATIVE_PATH REL_PATH "${PROJECT_SOURCE_DIR}/datasrc" "${datafile}")
-  set(OUTPUT_PATH "${PROJECT_BINARY_DIR}/data/${REL_PATH}")
-  list(APPEND DATA_OUTPUTS "${OUTPUT_PATH}")
-  get_filename_component(OUTPUT_DIR "${OUTPUT_PATH}" DIRECTORY)
-  add_custom_command(
-    OUTPUT "${OUTPUT_PATH}"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${datafile}" "${OUTPUT_PATH}"
-    DEPENDS "${datafile}"
-    COMMENT "Copying data/${REL_PATH}"
-    VERBATIM
-  )
+  file(RELATIVE_PATH OUT ${PROJECT_SOURCE_DIR}/datasrc ${datafile})
+  get_filename_component(DESTINATION data/${OUT} PATH)
+  file(MAKE_DIRECTORY ${DESTINATION})
+  file(COPY ${datafile} DESTINATION ${DESTINATION})
 endforeach()
-
-# Copy the manifest itself into data/ so runtime preflight can read it
-set(MANIFEST_OUTPUT "${PROJECT_BINARY_DIR}/data/data_manifest.txt")
-list(APPEND DATA_OUTPUTS "${MANIFEST_OUTPUT}")
-add_custom_command(
-  OUTPUT "${MANIFEST_OUTPUT}"
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MANIFEST_FILE}" "${MANIFEST_OUTPUT}"
-  DEPENDS "${MANIFEST_FILE}"
-  COMMENT "Copying data/data_manifest.txt"
-  VERBATIM
-)
-add_custom_target(copy_data ALL DEPENDS ${DATA_OUTPUTS})
-
-# Build-time data directory validation: ensures build/data/ matches manifest
-# exactly (no missing files, no stale/undeclared extras).  All package targets
-# depend on this.
-add_custom_target(validate_data_dir
-  COMMAND ${Python3_EXECUTABLE} ${MANIFEST_SCRIPT}
-    --manifest "${MANIFEST_FILE}"
-    check_install_dir --install-dir "${PROJECT_BINARY_DIR}/data"
-  DEPENDS copy_data
-  COMMENT "Validating build/data/ contents against manifest"
-  VERBATIM
-)
-
 set(COPY_FILES
   ${FREETYPE_COPY_FILES}
   ${SDL2_COPY_FILES}
@@ -689,70 +1266,6 @@ generate_source("src/generated/protocol.cpp" "network_source")
 generate_source("src/generated/protocol.h" "network_header")
 generate_source("src/generated/server_data.cpp" "server_content_source")
 generate_source("src/generated/server_data.h" "server_content_header")
-
-########################################################################
-# GENERATED CODE STALENESS CHECK (runs at CMake configure time)
-########################################################################
-# If the generated C++ files are older than their Python source inputs,
-# regenerate them immediately here.  This ensures the build always starts
-# with fresh generated code and avoids the "生成物过期" problem.
-set(GEN_CODE_INPUTS
-  "${PROJECT_SOURCE_DIR}/datasrc/compile.py"
-  "${PROJECT_SOURCE_DIR}/datasrc/content.py"
-  "${PROJECT_SOURCE_DIR}/datasrc/datatypes.py"
-  "${PROJECT_SOURCE_DIR}/datasrc/network.py"
-)
-set(GEN_CODE_OUTPUTS
-  "${PROJECT_BINARY_DIR}/src/generated/client_data.cpp"
-  "${PROJECT_BINARY_DIR}/src/generated/client_data.h"
-  "${PROJECT_BINARY_DIR}/src/generated/protocol.cpp"
-  "${PROJECT_BINARY_DIR}/src/generated/protocol.h"
-  "${PROJECT_BINARY_DIR}/src/generated/server_data.cpp"
-  "${PROJECT_BINARY_DIR}/src/generated/server_data.h"
-)
-execute_process(
-  COMMAND ${Python3_EXECUTABLE} ${MANIFEST_SCRIPT}
-    check_staleness
-    --inputs ${GEN_CODE_INPUTS}
-    --outputs ${GEN_CODE_OUTPUTS}
-  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-  RESULT_VARIABLE GEN_STALE_RESULT
-  OUTPUT_VARIABLE GEN_STALE_OUTPUT
-  ERROR_VARIABLE GEN_STALE_OUTPUT
-)
-if(GEN_STALE_OUTPUT)
-  message(STATUS "${GEN_STALE_OUTPUT}")
-endif()
-if(NOT GEN_STALE_RESULT EQUAL 0)
-  message(STATUS "Regenerating stale datasrc C++ outputs at configure time...")
-  foreach(_param IN ITEMS "client_content_source" "client_content_header"
-                          "network_source" "network_header"
-                          "server_content_source" "server_content_header")
-    if(_param STREQUAL "client_content_source")
-      set(_out "src/generated/client_data.cpp")
-    elseif(_param STREQUAL "client_content_header")
-      set(_out "src/generated/client_data.h")
-    elseif(_param STREQUAL "network_source")
-      set(_out "src/generated/protocol.cpp")
-    elseif(_param STREQUAL "network_header")
-      set(_out "src/generated/protocol.h")
-    elseif(_param STREQUAL "server_content_source")
-      set(_out "src/generated/server_data.cpp")
-    elseif(_param STREQUAL "server_content_header")
-      set(_out "src/generated/server_data.h")
-    endif()
-    execute_process(
-      COMMAND ${Python3_EXECUTABLE} datasrc/compile.py ${_param}
-      WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-      OUTPUT_FILE "${PROJECT_BINARY_DIR}/${_out}"
-      RESULT_VARIABLE _regen_result
-    )
-    if(NOT _regen_result EQUAL 0)
-      message(FATAL_ERROR "Failed to regenerate ${_out} from datasrc/compile.py ${_param}")
-    endif()
-  endforeach()
-  message(STATUS "Datasrc C++ outputs regenerated successfully.")
-endif()
 
 
 ########################################################################
@@ -1080,8 +1593,6 @@ if(CLIENT)
     target_compile_definitions(${TARGET_CLIENT} PRIVATE CONF_WAVPACK_OPEN_FILE_INPUT_EX)
   endif()
 
-  add_dependencies(${TARGET_CLIENT} copy_data)
-
   list(APPEND TARGETS_OWN ${TARGET_CLIENT})
   list(APPEND TARGETS_LINK ${TARGET_CLIENT})
 endif()
@@ -1159,7 +1670,6 @@ add_executable(${TARGET_SERVER}
   $<TARGET_OBJECTS:game-shared>
 )
 target_link_libraries(${TARGET_SERVER} ${LIBS_SERVER})
-add_dependencies(${TARGET_SERVER} copy_data)
 list(APPEND TARGETS_OWN ${TARGET_SERVER})
 list(APPEND TARGETS_LINK ${TARGET_SERVER})
 
@@ -1393,10 +1903,15 @@ endforeach()
 
 set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME ${PROJECT_NAME})
 
+# NOTE: CPACK variables below are synchronized with scripts/release_manifest.json
+# The manifest is the authoritative source for release package contents.
+# See scripts/release_manifest.py for the manifest parsing tool.
+# Categories in manifest: required, platform_dependencies, optional_debug, tools, macos_bundle, source_package
 set(CPACK_TARGETS
   ${TARGET_CLIENT}
   ${TARGET_SERVER}
 )
+set(CPACK_DIRS ${PROJECT_BINARY_DIR}/data)
 set(CPACK_FILES
   license.txt
   storage.cfg
@@ -1406,18 +1921,8 @@ if(TARGET_OS STREQUAL "windows")
   list(APPEND CPACK_FILES other/config_directory.bat)
 endif()
 
-# INSTALL DATA BY MANIFEST (item-by-item, not whole-directory copy)
-# This guarantees only declared resources reach the install tree.
 if(NOT DEV)
-  foreach(entry ${DATA_MANIFEST_ENTRIES})
-    get_filename_component(_subdir "${entry}" DIRECTORY)
-    install(FILES "${PROJECT_BINARY_DIR}/data/${entry}"
-            DESTINATION "share/${PROJECT_NAME}/data/${_subdir}"
-            COMPONENT data)
-  endforeach()
-  install(FILES "${PROJECT_BINARY_DIR}/data/data_manifest.txt"
-          DESTINATION "share/${PROJECT_NAME}/data"
-          COMPONENT data)
+  install(DIRECTORY ${PROJECT_BINARY_DIR}/data DESTINATION share/${PROJECT_NAME} COMPONENT data)
   install(TARGETS ${TARGET_CLIENT} DESTINATION bin COMPONENT client)
   install(TARGETS ${TARGET_SERVER} DESTINATION bin COMPONENT server)
 endif()
@@ -1429,18 +1934,7 @@ elseif(CMAKE_VERSION VERSION_LESS 3.6 OR CMAKE_VERSION VERSION_EQUAL 3.6)
 else()
   set(EXTRA_ARGS DESTINATION ${CPACK_PACKAGE_FILE_NAME} COMPONENT portable EXCLUDE_FROM_ALL)
   install(TARGETS ${CPACK_TARGETS} ${EXTRA_ARGS})
-  # CPack portable install: also item-by-item from manifest
-  foreach(entry ${DATA_MANIFEST_ENTRIES})
-    get_filename_component(_subdir "${entry}" DIRECTORY)
-    install(FILES "${PROJECT_BINARY_DIR}/data/${entry}"
-            DESTINATION "${CPACK_PACKAGE_FILE_NAME}/data/${_subdir}"
-            COMPONENT portable
-            EXCLUDE_FROM_ALL)
-  endforeach()
-  install(FILES "${PROJECT_BINARY_DIR}/data/data_manifest.txt"
-          DESTINATION "${CPACK_PACKAGE_FILE_NAME}/data"
-          COMPONENT portable
-          EXCLUDE_FROM_ALL)
+  install(DIRECTORY ${CPACK_DIRS} ${EXTRA_ARGS})
   install(FILES ${CPACK_FILES} ${EXTRA_ARGS})
 endif()
 
@@ -1481,10 +1975,7 @@ if(CLIENT AND (DMGTOOLS_FOUND OR HDIUTIL))
     ${DMG_MKDIR_COMMANDS}
 
     # CLIENT
-    COMMAND ${Python3_EXECUTABLE} ${MANIFEST_SCRIPT}
-      --manifest "${MANIFEST_FILE}"
-      stage --source "${PROJECT_BINARY_DIR}/data"
-            --dest "${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/Resources/data"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory data ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/Resources/data
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/other/icons/${TARGET_CLIENT}.icns ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/Resources/
     COMMAND ${CMAKE_COMMAND} -E copy bundle/client/Info.plist ${PROJECT_SOURCE_DIR}/other/bundle/client/PkgInfo ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${TARGET_CLIENT}> ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/MacOS/
@@ -1493,12 +1984,8 @@ if(CLIENT AND (DMGTOOLS_FOUND OR HDIUTIL))
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/darwin_change_dylib.py change --tools ${CMAKE_INSTALL_NAME_TOOL} ${CMAKE_OTOOL} ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/MacOS/${TARGET_CLIENT} SDL2 @executable_path/../Frameworks/libSDL2-2.0.0.dylib
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/darwin_change_dylib.py change --tools ${CMAKE_INSTALL_NAME_TOOL} ${CMAKE_OTOOL} ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/MacOS/${TARGET_CLIENT} libfreetype @executable_path/../Frameworks/libfreetype.6.dylib
 
-    # SERVER — only maps subset staged from manifest
-    COMMAND ${Python3_EXECUTABLE} ${MANIFEST_SCRIPT}
-      --manifest "${MANIFEST_FILE}"
-      stage --source "${PROJECT_BINARY_DIR}/data"
-            --dest "${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/Resources/data"
-            --prefix maps
+    # SERVER
+    COMMAND ${CMAKE_COMMAND} -E copy_directory data/maps ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/Resources/data/maps
     COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/other/icons/${TARGET_SERVER}.icns ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/Resources/
     COMMAND ${CMAKE_COMMAND} -E copy bundle/server/Info.plist ${PROJECT_SOURCE_DIR}/other/bundle/server/PkgInfo ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${TARGET_SERVER}> $<TARGET_FILE:${TARGET_SERVER_LAUNCHER}> ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/MacOS/
@@ -1507,7 +1994,6 @@ if(CLIENT AND (DMGTOOLS_FOUND OR HDIUTIL))
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/dmg.py create ${DMG_PARAMS} ${CPACK_PACKAGE_FILE_NAME}.dmg ${CPACK_PACKAGE_FILE_NAME} ${DMG_TMPDIR}
 
     DEPENDS
-      validate_data_dir
       ${TARGET_CLIENT}
       ${TARGET_SERVER_LAUNCHER}
       ${TARGET_SERVER}
@@ -1537,10 +2023,10 @@ foreach(ext zip tar.gz tar.xz)
   foreach(file ${CPACK_FILES})
     list(APPEND COPY_FILE_COMMANDS COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/${file} ${TMPDIR}/)
   endforeach()
-  # Stage data files item-by-item from manifest (no whole-directory copy)
-  list(APPEND COPY_DIR_COMMANDS COMMAND ${Python3_EXECUTABLE} ${MANIFEST_SCRIPT}
-    --manifest "${MANIFEST_FILE}"
-    stage --source "${PROJECT_BINARY_DIR}/data" --dest "${TMPDIR}/data")
+  foreach(dir ${CPACK_DIRS})
+    get_filename_component(NAME ${dir} NAME)
+    list(APPEND COPY_DIR_COMMANDS COMMAND ${CMAKE_COMMAND} -E copy_directory ${dir} ${TMPDIR}/${NAME})
+  endforeach()
   foreach(target ${CPACK_TARGETS})
     list(APPEND COPY_TARGET_COMMANDS COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${target}> ${TMPDIR}/)
   endforeach()
@@ -1560,7 +2046,7 @@ foreach(ext zip tar.gz tar.xz)
     ${COPY_TARGET_COMMANDS}
     ${STRIP_TARGET_COMMANDS}
     COMMAND ${CMAKE_COMMAND} -E chdir pack_${CPACK_PACKAGE_FILE_NAME}_${EXT_SLUG} ${CMAKE_COMMAND} -E tar ${TAR_MODE} ../${CPACK_PACKAGE_FILE_NAME}.${ext} ${TAR_EXTRA_ARGS} -- ${CPACK_PACKAGE_FILE_NAME}/
-    DEPENDS validate_data_dir ${CPACK_TARGETS}
+    DEPENDS ${CPACK_TARGETS}
   )
   add_custom_target(package_${EXT_SLUG} DEPENDS ${CPACK_PACKAGE_FILE_NAME}.${ext})
   list(APPEND PACKAGE_TARGETS package_${EXT_SLUG})
@@ -1576,10 +2062,21 @@ add_custom_target(package_default DEPENDS package_${PACKAGE_DEFAULT})
 
 add_custom_target(package_all DEPENDS ${PACKAGE_TARGETS})
 
+if(Python3_EXECUTABLE AND EXISTS ${RELEASE_MANIFEST_TOOL})
+  add_custom_target(manifest_check
+    COMMAND ${Python3_EXECUTABLE} ${RELEASE_MANIFEST_TOOL}
+      --platform $<IF:$<STREQUAL:${TARGET_OS},windows>,win${TARGET_BITS},$<IF:$<STREQUAL:${TARGET_OS},mac>,macos,$<IF:$<STREQUAL:${TARGET_BITS},32>,linux_x86,linux_x86_64>>>
+      --summary
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    COMMENT "Checking release manifest consistency"
+  )
+endif()
+
 # Unset these variables, they might do something in the future of CPack.
 unset(CPACK_SOURCE_FILES)
 unset(CPACK_SOURCE_FILES_INVERTED)
 unset(CPACK_TARGETS)
+unset(CPACK_DIRS)
 unset(CPACK_FILES)
 
 include(CPack)
