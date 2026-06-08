@@ -48,24 +48,91 @@ public:
 			return;
 		}
 
+		enum
+		{
+			CAT_AUDIO = 0,
+			CAT_COUNTRYFLAGS,
+			CAT_EDITOR,
+			CAT_FONTS,
+			CAT_LANGUAGES,
+			CAT_MAPRES,
+			CAT_MAPS,
+			CAT_SKINS,
+			CAT_UI,
+			CAT_SHADER,
+			CAT_ROOT,
+			NUM_CATS,
+		};
+		const char *const paCatNames[NUM_CATS] = {
+			"audio", "countryflags", "editor", "fonts", "languages",
+			"mapres", "maps", "skins", "ui", "shader", "root",
+		};
+		int aCatCounts[NUM_CATS] = {0};
+
 		CLineReader LineReader;
 		LineReader.Init(File);
 		int TotalEntries = 0;
 		const char *pLine;
 		while((pLine = LineReader.Get()))
 		{
-			(void)pLine;
+			if(!pLine[0])
+				continue;
 			TotalEntries++;
+			const char *pSlash = str_find(pLine, "/");
+			int Cat;
+			if(!pSlash)
+			{
+				Cat = CAT_ROOT;
+			}
+			else
+			{
+				size_t Len = pSlash - pLine;
+				Cat = CAT_ROOT;
+				for(int c = 0; c < NUM_CATS; c++)
+				{
+					if(c == CAT_ROOT)
+						continue;
+					size_t NameLen = str_length(paCatNames[c]);
+					if(Len == NameLen && str_comp_num(pLine, paCatNames[c], NameLen) == 0)
+					{
+						Cat = c;
+						break;
+					}
+				}
+			}
+			aCatCounts[Cat]++;
 		}
 		io_close(File);
 
 		if(TotalEntries == 0)
 		{
-			dbg_msg("storage", "WARNING: data_manifest.txt is empty — data directory appears incomplete");
+			dbg_msg("storage", "WARNING: data_manifest.txt is empty — data directory appears incomplete at '%s'", m_aDataDir);
 			return;
 		}
 
 		dbg_msg("storage", "resource manifest: %d entries loaded from '%s'", TotalEntries, aManifestPath);
+		for(int c = 0; c < NUM_CATS; c++)
+		{
+			if(aCatCounts[c] > 0)
+				dbg_msg("storage", "  %-16s %4d", paCatNames[c], aCatCounts[c]);
+		}
+
+		char aMissing[512] = {0};
+		for(int c = 0; c < NUM_CATS; c++)
+		{
+			if(c == CAT_SHADER)
+				continue;
+			if(aCatCounts[c] == 0)
+			{
+				if(aMissing[0])
+					str_append(aMissing, ", ", sizeof(aMissing));
+				str_append(aMissing, paCatNames[c], sizeof(aMissing));
+			}
+		}
+		if(aMissing[0])
+		{
+			dbg_msg("storage", "WARNING: expected resource categories missing from data dir '%s': %s", m_aDataDir, aMissing);
+		}
 	}
 
 	int Init(const char *pApplicationName, int StorageType, int NumArgs, const char **ppArguments)

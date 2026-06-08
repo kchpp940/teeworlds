@@ -609,6 +609,18 @@ add_custom_command(
 )
 add_custom_target(copy_data ALL DEPENDS ${DATA_OUTPUTS})
 
+# Build-time data directory validation: ensures build/data/ matches manifest
+# exactly (no missing files, no stale/undeclared extras).  All package targets
+# depend on this.
+add_custom_target(validate_data_dir
+  COMMAND ${Python3_EXECUTABLE} ${MANIFEST_SCRIPT}
+    --manifest "${MANIFEST_FILE}"
+    check_install_dir --install-dir "${PROJECT_BINARY_DIR}/data"
+  DEPENDS copy_data
+  COMMENT "Validating build/data/ contents against manifest"
+  VERBATIM
+)
+
 set(COPY_FILES
   ${FREETYPE_COPY_FILES}
   ${SDL2_COPY_FILES}
@@ -1385,7 +1397,6 @@ set(CPACK_TARGETS
   ${TARGET_CLIENT}
   ${TARGET_SERVER}
 )
-set(CPACK_DIRS ${PROJECT_BINARY_DIR}/data)
 set(CPACK_FILES
   license.txt
   storage.cfg
@@ -1395,8 +1406,18 @@ if(TARGET_OS STREQUAL "windows")
   list(APPEND CPACK_FILES other/config_directory.bat)
 endif()
 
+# INSTALL DATA BY MANIFEST (item-by-item, not whole-directory copy)
+# This guarantees only declared resources reach the install tree.
 if(NOT DEV)
-  install(DIRECTORY ${PROJECT_BINARY_DIR}/data DESTINATION share/${PROJECT_NAME} COMPONENT data)
+  foreach(entry ${DATA_MANIFEST_ENTRIES})
+    get_filename_component(_subdir "${entry}" DIRECTORY)
+    install(FILES "${PROJECT_BINARY_DIR}/data/${entry}"
+            DESTINATION "share/${PROJECT_NAME}/data/${_subdir}"
+            COMPONENT data)
+  endforeach()
+  install(FILES "${PROJECT_BINARY_DIR}/data/data_manifest.txt"
+          DESTINATION "share/${PROJECT_NAME}/data"
+          COMPONENT data)
   install(TARGETS ${TARGET_CLIENT} DESTINATION bin COMPONENT client)
   install(TARGETS ${TARGET_SERVER} DESTINATION bin COMPONENT server)
 endif()
@@ -1408,7 +1429,18 @@ elseif(CMAKE_VERSION VERSION_LESS 3.6 OR CMAKE_VERSION VERSION_EQUAL 3.6)
 else()
   set(EXTRA_ARGS DESTINATION ${CPACK_PACKAGE_FILE_NAME} COMPONENT portable EXCLUDE_FROM_ALL)
   install(TARGETS ${CPACK_TARGETS} ${EXTRA_ARGS})
-  install(DIRECTORY ${CPACK_DIRS} ${EXTRA_ARGS})
+  # CPack portable install: also item-by-item from manifest
+  foreach(entry ${DATA_MANIFEST_ENTRIES})
+    get_filename_component(_subdir "${entry}" DIRECTORY)
+    install(FILES "${PROJECT_BINARY_DIR}/data/${entry}"
+            DESTINATION "${CPACK_PACKAGE_FILE_NAME}/data/${_subdir}"
+            COMPONENT portable
+            EXCLUDE_FROM_ALL)
+  endforeach()
+  install(FILES "${PROJECT_BINARY_DIR}/data/data_manifest.txt"
+          DESTINATION "${CPACK_PACKAGE_FILE_NAME}/data"
+          COMPONENT portable
+          EXCLUDE_FROM_ALL)
   install(FILES ${CPACK_FILES} ${EXTRA_ARGS})
 endif()
 
@@ -1468,6 +1500,7 @@ if(CLIENT AND (DMGTOOLS_FOUND OR HDIUTIL))
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/dmg.py create ${DMG_PARAMS} ${CPACK_PACKAGE_FILE_NAME}.dmg ${CPACK_PACKAGE_FILE_NAME} ${DMG_TMPDIR}
 
     DEPENDS
+      validate_data_dir
       ${TARGET_CLIENT}
       ${TARGET_SERVER_LAUNCHER}
       ${TARGET_SERVER}
@@ -1497,10 +1530,8 @@ foreach(ext zip tar.gz tar.xz)
   foreach(file ${CPACK_FILES})
     list(APPEND COPY_FILE_COMMANDS COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/${file} ${TMPDIR}/)
   endforeach()
-  foreach(dir ${CPACK_DIRS})
-    get_filename_component(NAME ${dir} NAME)
-    list(APPEND COPY_DIR_COMMANDS COMMAND ${CMAKE_COMMAND} -E copy_directory ${dir} ${TMPDIR}/${NAME})
-  endforeach()
+  # Data directory contents are validated by validate_data_dir target; copy_directory is safe here.
+  list(APPEND COPY_DIR_COMMANDS COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_BINARY_DIR}/data ${TMPDIR}/data)
   foreach(target ${CPACK_TARGETS})
     list(APPEND COPY_TARGET_COMMANDS COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${target}> ${TMPDIR}/)
   endforeach()
@@ -1520,7 +1551,7 @@ foreach(ext zip tar.gz tar.xz)
     ${COPY_TARGET_COMMANDS}
     ${STRIP_TARGET_COMMANDS}
     COMMAND ${CMAKE_COMMAND} -E chdir pack_${CPACK_PACKAGE_FILE_NAME}_${EXT_SLUG} ${CMAKE_COMMAND} -E tar ${TAR_MODE} ../${CPACK_PACKAGE_FILE_NAME}.${ext} ${TAR_EXTRA_ARGS} -- ${CPACK_PACKAGE_FILE_NAME}/
-    DEPENDS ${CPACK_TARGETS}
+    DEPENDS validate_data_dir ${CPACK_TARGETS}
   )
   add_custom_target(package_${EXT_SLUG} DEPENDS ${CPACK_PACKAGE_FILE_NAME}.${ext})
   list(APPEND PACKAGE_TARGETS package_${EXT_SLUG})
@@ -1540,7 +1571,6 @@ add_custom_target(package_all DEPENDS ${PACKAGE_TARGETS})
 unset(CPACK_SOURCE_FILES)
 unset(CPACK_SOURCE_FILES_INVERTED)
 unset(CPACK_TARGETS)
-unset(CPACK_DIRS)
 unset(CPACK_FILES)
 
 include(CPack)

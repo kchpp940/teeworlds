@@ -221,6 +221,117 @@ def validate_content_consistency(datasrc_dir, manifest_path):
     return 0
 
 
+CATEGORIES = [
+    "audio",
+    "countryflags",
+    "editor",
+    "fonts",
+    "languages",
+    "mapres",
+    "maps",
+    "skins",
+    "ui",
+    "shader",
+    "root",
+]
+
+
+def categorize_entries(entries):
+    result = {cat: [] for cat in CATEGORIES}
+    for e in entries:
+        if "/" in e:
+            cat = e.split("/", 1)[0]
+        else:
+            cat = "root"
+        if cat not in result:
+            result[cat] = []
+        result[cat].append(e)
+    return result
+
+
+def summarize_manifest(manifest_path):
+    if not os.path.exists(manifest_path):
+        print("ERROR: manifest file '%s' not found." % manifest_path)
+        return 1
+    entries = read_manifest(manifest_path)
+    cats = categorize_entries(entries)
+    print("manifest summary (%d total entries):" % len(entries))
+    for cat in CATEGORIES:
+        items = cats.get(cat, [])
+        if items:
+            print("  %-16s %4d" % (cat + ":", len(items)))
+    empty = [c for c in CATEGORIES if c != "shader" and not cats.get(c)]
+    if empty:
+        print("WARNING: expected categories with ZERO entries: %s" % ", ".join(empty))
+    return 0
+
+
+def check_install_dir(manifest_path, install_dir):
+    if not os.path.exists(manifest_path):
+        print("ERROR: manifest file '%s' not found." % manifest_path)
+        return 1
+    if not os.path.isdir(install_dir):
+        print("ERROR: install data dir '%s' does not exist or is not a directory." % install_dir)
+        return 1
+
+    manifest_entries = set(read_manifest(manifest_path))
+    cats = categorize_entries(manifest_entries)
+
+    missing = []
+    for e in sorted(manifest_entries):
+        full = os.path.join(install_dir, e)
+        if not os.path.isfile(full):
+            missing.append(e)
+
+    disk_files = set()
+    for root, _dirs, fnames in os.walk(install_dir):
+        for f in fnames:
+            full = os.path.join(root, f)
+            rel = os.path.relpath(full, install_dir)
+            rel = rel.replace(os.sep, "/")
+            if rel == "data_manifest.txt":
+                continue
+            disk_files.add(rel)
+
+    extra = sorted(disk_files - manifest_entries)
+
+    ret = 0
+    if missing:
+        ret = 1
+        missing_cats = categorize_entries(missing)
+        print("ERROR: %d file(s) from manifest are MISSING from install dir '%s':" % (len(missing), install_dir))
+        for cat in CATEGORIES:
+            items = missing_cats.get(cat, [])
+            if items:
+                print("  [%s] %d missing:" % (cat, len(items)))
+                for m in items[:5]:
+                    print("    - %s" % m)
+                if len(items) > 5:
+                    print("    ... and %d more" % (len(items) - 5))
+
+    if extra:
+        ret = 1
+        extra_cats = categorize_entries(extra)
+        print("ERROR: %d file(s) in install dir '%s' are NOT in manifest (stale/undeclared):" % (len(extra), install_dir))
+        for cat in sorted(extra_cats.keys()):
+            items = extra_cats[cat]
+            if items:
+                print("  [%s] %d extra:" % (cat, len(items)))
+                for m in items[:5]:
+                    print("    - %s" % m)
+                if len(items) > 5:
+                    print("    ... and %d more" % (len(items) - 5))
+
+    if not ret:
+        print("manifest_tool: install dir '%s' matches manifest exactly (%d files, 0 missing, 0 extra)" % (install_dir, len(manifest_entries)))
+        print("  category breakdown:")
+        for cat in CATEGORIES:
+            items = cats.get(cat, [])
+            if items:
+                print("    %-16s %4d" % (cat + ":", len(items)))
+    return ret
+
+
 def main():
     parser = argparse.ArgumentParser(description="Teeworlds data resource manifest tool")
     parser.add_argument("--datasrc", default=DEFAULT_DATASRC_DIR, help="Path to datasrc directory (default: datasrc)")
@@ -231,10 +342,14 @@ def main():
     sub.add_parser("validate", help="Validate that all manifest entries exist on disk")
     sub.add_parser("validate_content", help="Validate that content.py references are in manifest and on disk")
     sub.add_parser("check_extra", help="Warn about resource files on disk that are not in manifest")
+    sub.add_parser("summarize", help="Print per-category summary of manifest entries")
 
     sp_stale = sub.add_parser("check_staleness", help="Check if generated outputs are stale relative to inputs")
     sp_stale.add_argument("--inputs", nargs="+", required=True, help="Input files (e.g. content.py)")
     sp_stale.add_argument("--outputs", nargs="+", required=True, help="Generated output files (e.g. client_data.cpp)")
+
+    sp_checkdir = sub.add_parser("check_install_dir", help="Verify an install/build data dir matches manifest exactly (no missing, no extra/stale files)")
+    sp_checkdir.add_argument("--install-dir", required=True, help="Path to installed data directory (e.g. build/data)")
 
     args = parser.parse_args()
 
@@ -248,6 +363,10 @@ def main():
         sys.exit(check_extra_files(args.datasrc, args.manifest))
     elif args.command == "check_staleness":
         sys.exit(check_staleness(args.inputs, args.outputs))
+    elif args.command == "summarize":
+        sys.exit(summarize_manifest(args.manifest))
+    elif args.command == "check_install_dir":
+        sys.exit(check_install_dir(args.manifest, args.install_dir))
 
 
 if __name__ == "__main__":
