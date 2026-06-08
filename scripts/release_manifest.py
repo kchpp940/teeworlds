@@ -152,6 +152,15 @@ class ReleaseManifest:
 
         return source_path, dest_path
 
+    def render_cmake_template(self, template_path: str, context: Dict[str, str]) -> str:
+        with open(template_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        import re
+        def repl(m):
+            key = m.group(1)
+            return context.get(key, m.group(0))
+        return re.sub(r'\$\{([A-Za-z0-9_]+)\}', repl, content)
+
     def _check_exists(self, path: str, item_type: str) -> bool:
         if not path:
             return False
@@ -163,18 +172,38 @@ class ReleaseManifest:
         data_base = self.get_data_base_dir()
         data_files = self.get_data_files()
         result = []
-        base_src_dir = None
 
+        build_data_dir = None
         if build_dir:
             candidate = os.path.join(self.project_root, build_dir, data_base)
             if os.path.isdir(candidate):
-                base_src_dir = candidate
+                build_data_dir = candidate
 
-        if base_src_dir is None:
-            base_src_dir = os.path.join(self.project_root, data_base)
+        source_data_dir = os.path.join(self.project_root, "datasrc")
+        plain_data_dir = os.path.join(self.project_root, data_base)
 
         for rel_path in data_files:
-            src = os.path.join(base_src_dir, rel_path)
+            src = None
+            if build_data_dir:
+                candidate = os.path.join(build_data_dir, rel_path)
+                if os.path.isfile(candidate):
+                    src = candidate
+            if src is None and os.path.isdir(source_data_dir):
+                candidate = os.path.join(source_data_dir, rel_path)
+                if os.path.isfile(candidate):
+                    src = candidate
+            if src is None:
+                candidate = os.path.join(plain_data_dir, rel_path)
+                if os.path.isfile(candidate):
+                    src = candidate
+            if src is None:
+                if build_data_dir:
+                    src = os.path.join(build_data_dir, rel_path)
+                elif os.path.isdir(source_data_dir):
+                    src = os.path.join(source_data_dir, rel_path)
+                else:
+                    src = os.path.join(plain_data_dir, rel_path)
+
             dst = os.path.join(data_base, rel_path)
             result.append((src, dst))
 
@@ -197,12 +226,17 @@ class ReleaseManifest:
             "missing_optional": [],
         }
 
+        version = self.get_version()
+        template_context = {
+            "PROJECT_VERSION": version,
+            "TARGET_CLIENT": "teeworlds",
+            "TARGET_SERVER": "teeworlds_srv",
+            "TARGET_SERVER_LAUNCHER": "teeworlds_server",
+        }
+
         for category, items in items_by_category.items():
             collected["items"][category] = []
             for item in items:
-                if item.get("template"):
-                    continue
-
                 if item.get("external"):
                     continue
 
@@ -252,19 +286,25 @@ class ReleaseManifest:
                             "type": item.get("type", "file"),
                         })
                 else:
-                    if verify_exists and not self._check_exists(source, item.get("type")):
+                    entry = {
+                        "name": item["name"],
+                        "source": source,
+                        "dest": dest,
+                        "type": item.get("type", "file"),
+                    }
+                    if item.get("template"):
+                        entry["template"] = True
+                        entry["template_context"] = template_context
+                    if item.get("dest_bundle"):
+                        entry["dest"] = item["dest_bundle"]
+                    if verify_exists and not item.get("template") and not self._check_exists(source, item.get("type")):
                         if category == "required" and strict:
                             raise ManifestError(
                                 f"Required {category} item '{item['name']}' missing at: {source}"
                             )
                         collected["missing_required" if category == "required" else "missing_optional"].append((item["name"], source))
                         continue
-                    collected["items"][category].append({
-                        "name": item["name"],
-                        "source": source,
-                        "dest": dest,
-                        "type": item.get("type", "file"),
-                    })
+                    collected["items"][category].append(entry)
 
         return collected
 
@@ -289,19 +329,20 @@ class ReleaseManifest:
 
                 source = entry["source"]
                 dest = entry["dest"]
-
-                if use_bundle and category == "platform_dependencies" and platform == "macos":
-                    target_path = os.path.join(package_dir, dest)
-                elif use_bundle and category == "macos_bundle":
-                    target_path = os.path.join(package_dir, dest)
-                else:
-                    target_path = os.path.join(package_dir, dest) if dest else package_dir
+                target_path = os.path.join(package_dir, dest) if dest else package_dir
 
                 target_dir = os.path.dirname(target_path)
                 if target_dir and not os.path.exists(target_dir):
                     os.makedirs(target_dir, exist_ok=True)
 
-                if os.path.isdir(source):
+                if entry.get("template"):
+                    ctx = entry.get("template_context", {})
+                    rendered = self.render_cmake_template(source, ctx)
+                    with open(target_path, 'w', encoding='utf-8') as f:
+                        f.write(rendered)
+                    rel = os.path.relpath(os.path.realpath(target_path), os.path.realpath(package_dir))
+                    self._staged_files.add(rel)
+                elif os.path.isdir(source):
                     self._copy_dir_tracked(source, target_path, package_dir)
                 else:
                     self._copy_file_tracked(source, target_path, package_dir)

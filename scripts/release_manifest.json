@@ -50,7 +50,7 @@
           "source_build": true,
           "platforms": ["macos"],
           "platform_names": {
-            "macos": "serverlaunch"
+            "macos": "teeworlds_srv-Launcher"
           }
         },
         {
@@ -96,7 +96,7 @@
           "name": "readme",
           "description": "README documentation",
           "type": "file",
-          "path": "readme.md",
+          "path": "README.md",
           "platforms": ["win32", "win64", "macos", "linux_x86", "linux_x86_64", "src"]
         },
         {
@@ -133,7 +133,7 @@
           "description": "SDL2 framework for macOS",
           "type": "file",
           "system_path": true,
-          "path": "/usr/local/opt/sdl2/lib/libSDL2-2.0.0.dylib",
+          "path": "/opt/homebrew/opt/sdl2/lib/libSDL2-2.0.0.dylib",
           "dest_bundle": "Teeworlds.app/Contents/Frameworks/libSDL2-2.0.0.dylib",
           "platforms": ["macos"]
         },
@@ -142,7 +142,7 @@
           "description": "FreeType library for macOS",
           "type": "file",
           "system_path": true,
-          "path": "/usr/local/opt/freetype/lib/libfreetype.6.dylib",
+          "path": "/opt/homebrew/opt/freetype/lib/libfreetype.6.dylib",
           "dest_bundle": "Teeworlds.app/Contents/Frameworks/libfreetype.6.dylib",
           "platforms": ["macos"]
         },
@@ -151,7 +151,7 @@
           "description": "libpng dependency for FreeType on macOS",
           "type": "file",
           "system_path": true,
-          "path": "/usr/local/opt/libpng/lib/libpng16.16.dylib",
+          "path": "/opt/homebrew/opt/libpng/lib/libpng16.16.dylib",
           "dest_bundle": "Teeworlds.app/Contents/Frameworks/libpng16.16.dylib",
           "platforms": ["macos"]
         }
@@ -297,6 +297,7 @@
           "description": "Client bundle Info.plist template",
           "type": "file",
           "path": "other/bundle/client/Info.plist.in",
+          "dest_bundle": "Teeworlds.app/Contents/Info.plist",
           "template": true,
           "platforms": ["macos"]
         },
@@ -305,6 +306,7 @@
           "description": "Server bundle Info.plist template",
           "type": "file",
           "path": "other/bundle/server/Info.plist.in",
+          "dest_bundle": "Teeworlds Server.app/Contents/Info.plist",
           "template": true,
           "platforms": ["macos"]
         },
