@@ -39,7 +39,6 @@ class CGameClient : public IGameClient
 	class IClient *m_pClient;
 	class ISound *m_pSound;
 	class CConfig *m_pConfig;
-	class IConfigManager *m_pConfigManager;
 	class IConsole *m_pConsole;
 	class IStorage *m_pStorage;
 	class IDemoPlayer *m_pDemoPlayer;
@@ -86,7 +85,6 @@ public:
 	class IInput *Input() const { return m_pInput; }
 	class IStorage *Storage() const { return m_pStorage; }
 	class CConfig *Config() const { return m_pConfig; }
-	class IConfigManager *ConfigManager() const { return m_pConfigManager; }
 	class IConsole *Console() { return m_pConsole; }
 	class ITextRender *TextRender() const { return m_pTextRender; }
 	class IDemoPlayer *DemoPlayer() const { return m_pDemoPlayer; }

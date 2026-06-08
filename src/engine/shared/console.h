@@ -48,7 +48,6 @@ class CConsole : public IConsole
 
 	CExecFile *m_pFirstExec;
 	class CConfig *m_pConfig;
-	class IConfigManager *m_pConfigManager;
 	class IStorage *m_pStorage;
 	int m_AccessLevel;
 

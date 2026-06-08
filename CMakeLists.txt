@@ -1288,6 +1288,7 @@ set_src(ENGINE_INTERFACE GLOB src/engine
   mapchecker.h
   masterserver.h
   message.h
+  preflight.h
   server.h
   serverbrowser.h
   sound.h
@@ -1340,6 +1341,8 @@ set_src(ENGINE_SHARED GLOB src/engine/shared
   network_token.cpp
   packer.cpp
   packer.h
+  preflight.cpp
+  preflight.h
   protocol.h
   ringbuffer.cpp
   ringbuffer.h

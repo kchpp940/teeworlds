@@ -4,7 +4,6 @@
 #define ENGINE_SHARED_CONFIG_H
 
 #include <engine/config.h>
-#include <engine/console.h>
 #include "protocol.h"
 
 class CConfig
@@ -36,91 +35,14 @@ class CConfigManager : public IConfigManager
 {
 	enum
 	{
-		MAX_CALLBACKS = 16,
-		MAX_META = 256,
-		MAX_DEPRECATED = 64,
-		MAX_CORRECTIONS = 256,
-		MAX_MISSING = 256,
+		MAX_CALLBACKS = 16
 	};
 
-public:
-	struct CConfigMeta
-	{
-		// Use IConfigManager::EMetaType, ECategory, EControlType for external access
-		typedef IConfigManager::EMetaType EMetaType;
-		typedef IConfigManager::ECategory ECategory;
-		typedef IConfigManager::EControlType EControlType;
-
-		// Legacy local aliases for backward compat with existing code
-		enum EType
-		{
-			TYPE_INT = IConfigManager::META_TYPE_INT,
-			TYPE_STR = IConfigManager::META_TYPE_STR,
-			TYPE_UTF8STR = IConfigManager::META_TYPE_UTF8STR,
-		};
-
-		enum
-		{
-			CAT_GENERAL = IConfigManager::CAT_GENERAL,
-			CAT_PLAYER = IConfigManager::CAT_PLAYER,
-			CAT_CONTROLS = IConfigManager::CAT_CONTROLS,
-			CAT_GRAPHICS = IConfigManager::CAT_GRAPHICS,
-			CAT_SOUND = IConfigManager::CAT_SOUND,
-			CAT_SERVER = IConfigManager::CAT_SERVER,
-			CAT_DEBUG = IConfigManager::CAT_DEBUG,
-			CAT_INTERNAL = IConfigManager::CAT_INTERNAL,
-		};
-
-		enum
-		{
-			CTRL_NONE = IConfigManager::CTRL_NONE,
-			CTRL_CHECKBOX = IConfigManager::CTRL_CHECKBOX,
-			CTRL_SLIDER = IConfigManager::CTRL_SLIDER,
-			CTRL_ENUM = IConfigManager::CTRL_ENUM,
-			CTRL_EDITBOX = IConfigManager::CTRL_EDITBOX,
-			CTRL_COLORPICKER = IConfigManager::CTRL_COLORPICKER,
-		};
-
-		int m_Type;           // EType / IConfigManager::EMetaType
-		const char *m_pScriptName;
-		int m_Offset;
-		int m_Size;
-		int m_DefaultInt;
-		const char *m_pDefaultStr;
-		int m_Min;
-		int m_Max;
-		int m_Flags;
-		const char *m_pDesc;
-		int m_Category;       // IConfigManager::ECategory
-		int m_ControlType;    // IConfigManager::EControlType
-		int m_SortOrder;
-		int m_CoveredByHandUi; // 1 表示该字段已有手工 UI 覆盖，metadata 渲染时跳过；0 表示需要 metadata 自动渲染
-	};
-
-private:
 	struct CCallback
 	{
 		SAVECALLBACKFUNC m_pfnFunc;
 		void *m_pUserData;
 	};
-
-	struct CDeprecatedMapping
-	{
-		const char *m_pOldName;
-		const char *m_pNewName;
-	};
-
-	CCorrection m_aCorrections[MAX_CORRECTIONS];
-	int m_NumCorrections;
-
-	const char *m_apMissingFields[MAX_MISSING];
-	int m_NumMissingFields;
-
-	CDeprecatedMapping m_aDeprecated[MAX_DEPRECATED];
-	int m_NumDeprecated;
-
-	unsigned char m_aFieldLoaded[MAX_META];
-	int m_NumTrackedFields;
 
 	class IStorage *m_pStorage;
 	class IConsole *m_pConsole;
@@ -129,23 +51,6 @@ private:
 	CCallback m_aCallbacks[MAX_CALLBACKS];
 	int m_NumCallbacks;
 	CConfig m_Values;
-
-	const CConfigMeta *m_pMetaTable;
-	int m_NumMeta;
-
-	static void InitMetaTable(const CConfigMeta **ppTable, int *pNum);
-	bool FindMetaByName(const char *pScriptName, CConfigMeta *pOut) const;
-	bool RedirectDeprecated(const char *pScriptName, char *pRedirectBuffer, int BufferSize) const;
-	void AddCorrection(ECorrectionReason Reason, const char *pFieldName, const char *pOldValue, const char *pNewValue);
-	void MarkFieldLoaded(const char *pScriptName);
-	void DetectMissingFields();
-	int ClampIntValue(const CConfigMeta &Meta, int Value, bool *pCorrected = 0);
-	const char *ClampStrValue(const CConfigMeta &Meta, const char *pValue, char *pBuffer, int BufferSize, bool *pCorrected = 0);
-
-	static void ConSaveConfig(IConsole::IResult *pResult, void *pUserData);
-	static void ConSetConfig(IConsole::IResult *pResult, void *pUserData);
-	static void ConDumpConfig(IConsole::IResult *pResult, void *pUserData);
-	static void ConResetConfig(IConsole::IResult *pResult, void *pUserData);
 
 public:
 	CConfigManager();
@@ -156,30 +61,9 @@ public:
 	virtual void Save(const char *pFilename);
 	virtual CConfig *Values() { return &m_Values; }
 
-	virtual void Validate();
-	virtual void Upgrade();
-	virtual bool Load(const char *pFilename);
-
-	virtual bool SetInt(const char *pScriptName, int Value);
-	virtual bool SetStr(const char *pScriptName, const char *pValue);
-	virtual bool GetInt(const char *pScriptName, int *pOutValue) const;
-	virtual bool GetStr(const char *pScriptName, char *pOutValue, int OutSize) const;
-
-	virtual int NumCorrections() const { return m_NumCorrections; }
-	virtual const CCorrection *GetCorrection(int Index) const;
-	virtual void ClearCorrections() { m_NumCorrections = 0; }
-
-	virtual void RegisterDeprecated(const char *pOldScriptName, const char *pNewScriptName);
-
-	virtual int NumMissingFields() const { return m_NumMissingFields; }
-	virtual const char *GetMissingField(int Index) const;
-
 	virtual void RegisterCallback(SAVECALLBACKFUNC pfnFunc, void *pUserData);
 
 	virtual void WriteLine(const char *pLine);
-
-	virtual int NumMeta() const { return m_NumMeta; }
-	virtual bool GetMeta(int Index, const char **ppScriptName, int *pType, int *pCategory, int *pControlType, int *pMin, int *pMax, const char **ppDesc, int *pFlags = 0, int *pSortOrder = 0, int *pCoveredByHandUi = 0) const;
 };
 
 #endif

@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <base/system.h>
+#include <engine/preflight.h>
 
 CTestInfo::CTestInfo()
 {
@@ -22,6 +23,36 @@ void CTestInfo::Filename(char *pBuffer, int BufferLength, const char *pSuffix)
 int main(int argc, const char **argv)
 {
 	cmdline_fix(&argc, &argv);
+
+	bool SkipPreflight = false;
+	for(int i = 1; i < argc; i++)
+	{
+		if(str_comp("--no-preflight", argv[i]) == 0)
+		{
+			SkipPreflight = true;
+			break;
+		}
+	}
+
+	if(!SkipPreflight)
+	{
+		IPreflight *pPreflight = CreatePreflight();
+		pPreflight->SetAppName("Teeworlds");
+		pPreflight->DisableCheck(PRECHECK_GRAPHICS);
+		pPreflight->DisableCheck(PRECHECK_AUDIO);
+		pPreflight->DisableCheck(PRECHECK_SERVER_PORT);
+		int PreflightErrors = pPreflight->RunAllChecks(argc, argv);
+		bool PreflightHasErrors = pPreflight->HasErrors();
+		delete pPreflight;
+
+		if(PreflightHasErrors)
+		{
+			dbg_msg("test", "preflight checks failed with %d error(s). aborting.", PreflightErrors);
+			dbg_msg("test", "use --no-preflight to skip checks (not recommended)");
+			return -1;
+		}
+	}
+
 	::testing::InitGoogleTest(&argc, const_cast<char **>(argv));
 	net_init();
 	int Result = RUN_ALL_TESTS();

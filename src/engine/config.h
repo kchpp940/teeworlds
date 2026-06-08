@@ -11,83 +11,15 @@ class IConfigManager : public IInterface
 public:
 	typedef void (*SAVECALLBACKFUNC)(IConfigManager *pConfigManager, void *pUserData);
 
-	enum ECorrectionReason
-	{
-		CORRECTION_RANGE_MIN = 0,
-		CORRECTION_RANGE_MAX,
-		CORRECTION_EMPTY_STRING,
-		CORRECTION_MISSING_FIELD,
-		CORRECTION_DEPRECATED_REDIRECT,
-		CORRECTION_INVALID_UTF8,
-	};
-
-	enum ECategory
-	{
-		CAT_GENERAL = 0,
-		CAT_PLAYER,
-		CAT_CONTROLS,
-		CAT_GRAPHICS,
-		CAT_SOUND,
-		CAT_SERVER,
-		CAT_DEBUG,
-		CAT_INTERNAL,
-	};
-
-	enum EControlType
-	{
-		CTRL_NONE = 0,
-		CTRL_CHECKBOX,
-		CTRL_SLIDER,
-		CTRL_ENUM,
-		CTRL_EDITBOX,
-		CTRL_COLORPICKER,
-	};
-
-	enum EMetaType
-	{
-		META_TYPE_INT = 0,
-		META_TYPE_STR,
-		META_TYPE_UTF8STR,
-	};
-
-	struct CCorrection
-	{
-		ECorrectionReason m_Reason;
-		const char *m_pFieldName;
-		char m_aOldValue[128];
-		char m_aNewValue[128];
-	};
-
 	virtual void Init(int FlagMask) = 0;
 	virtual void Reset() = 0;
 	virtual void RestoreStrings() = 0;
 	virtual void Save(const char *pFilename=0) = 0;
 	virtual class CConfig *Values() = 0;
 
-	virtual void Validate() = 0;
-	virtual void Upgrade() = 0;
-	virtual bool Load(const char *pFilename=0) = 0;
-
-	virtual bool SetInt(const char *pScriptName, int Value) = 0;
-	virtual bool SetStr(const char *pScriptName, const char *pValue) = 0;
-	virtual bool GetInt(const char *pScriptName, int *pOutValue) const = 0;
-	virtual bool GetStr(const char *pScriptName, char *pOutValue, int OutSize) const = 0;
-
-	virtual int NumCorrections() const = 0;
-	virtual const CCorrection *GetCorrection(int Index) const = 0;
-	virtual void ClearCorrections() = 0;
-
-	virtual void RegisterDeprecated(const char *pOldScriptName, const char *pNewScriptName) = 0;
-
-	virtual int NumMissingFields() const = 0;
-	virtual const char *GetMissingField(int Index) const = 0;
-
 	virtual void RegisterCallback(SAVECALLBACKFUNC pfnFunc, void *pUserData) = 0;
 
 	virtual void WriteLine(const char *pLine) = 0;
-
-	virtual int NumMeta() const = 0;
-	virtual bool GetMeta(int Index, const char **ppScriptName, int *pType, int *pCategory, int *pControlType, int *pMin, int *pMax, const char **ppDesc, int *pFlags = 0, int *pSortOrder = 0, int *pCoveredByHandUi = 0) const = 0;
 };
 
 extern IConfigManager *CreateConfigManager();

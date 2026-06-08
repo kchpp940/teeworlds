@@ -24,7 +24,6 @@ protected:
 	class ISound *Sound() const { return m_pClient->Sound(); }
 	class CRenderTools *RenderTools() const { return m_pClient->RenderTools(); }
 	class CConfig *Config() const { return m_pClient->Config(); }
-	class IConfigManager *ConfigManager() const { return m_pClient->ConfigManager(); }
 	class IConsole *Console() const { return m_pClient->Console(); }
 	class IDemoPlayer *DemoPlayer() const { return m_pClient->DemoPlayer(); }
 	class IDemoRecorder *DemoRecorder() const { return m_pClient->DemoRecorder(); }
