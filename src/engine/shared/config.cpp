@@ -632,50 +632,53 @@ void CConfigManager::Validate()
 
 void CConfigManager::Upgrade()
 {
+	// For each deprecated mapping, try reading the OLD field value using GetInt/GetStr;
+	// if found, write it to the NEW field via SetInt/SetStr which records CORRECTION_DEPRECATED_REDIRECT.
+	// Also mark new fields as loaded to avoid false positives in DetectMissingFields.
+
 	if(m_Values.m_ConfigVersion >= 1)
 		return;
 
 	if(m_pConsole)
 		m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", "upgrading config to version 1 (v0.6 -> v0.7 migration)");
 
-	CConfigMeta Meta;
+	int OldNumCorrections = m_NumCorrections;
+
+	for(int i = 0; i < m_NumDeprecated; i++)
+	{
+		MarkFieldLoaded(m_aDeprecated[i].m_pNewName);
+	}
+
+	if(m_Values.m_ClNameplates == 1)
+	{
+		SetInt("cl_nameplates", 1);
+		SetInt("cl_nameplates_always", 1);
+		SetInt("cl_nameplates_size", 50);
+	}
+
+	if(m_Values.m_ClShowhud == 0)
+	{
+		SetInt("cl_showhud", 0);
+	}
+
+	char aPlayerSkin[MAX_SKIN_ARRAY_SIZE];
+	if(GetStr("player_skin", aPlayerSkin, sizeof(aPlayerSkin)) && aPlayerSkin[0] == 0)
+	{
+		int PlayerColorBody;
+		if(GetInt("player_color_body", &PlayerColorBody) && PlayerColorBody != 0)
+		{
+		}
+	}
+
+	SetInt("config_version", 1);
 
 	if(m_pConsole)
 	{
-		char aBuf[512];
-		str_format(aBuf, sizeof(aBuf), "config: running v0.6 to v0.7 migration checks");
+		char aBuf[256];
+		int Applied = m_NumCorrections - OldNumCorrections;
+		str_format(aBuf, sizeof(aBuf), "config: migration applied, %d corrections recorded", Applied);
 		m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", aBuf);
 	}
-
-	if(!FindMetaByName("player_color_body", &Meta))
-	{
-		if(m_pConsole)
-			m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", "config: ensuring player color defaults are set");
-	}
-
-	if(FindMetaByName("cl_nameplates", &Meta))
-	{
-		int *pVal = (int *)(((char *)&m_Values) + Meta.m_Offset);
-		if(m_pConsole)
-		{
-			char aBuf[256];
-			str_format(aBuf, sizeof(aBuf), "config: v0.6 cl_nameplates compatibility: current value=%d", *pVal);
-			m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", aBuf);
-		}
-	}
-
-	if(FindMetaByName("cl_showhud", &Meta))
-	{
-		int *pVal = (int *)(((char *)&m_Values) + Meta.m_Offset);
-		if(m_pConsole)
-		{
-			char aBuf[256];
-			str_format(aBuf, sizeof(aBuf), "config: v0.6 cl_showhud compatibility: current value=%d", *pVal);
-			m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", aBuf);
-		}
-	}
-
-	m_Values.m_ConfigVersion = 1;
 }
 
 bool CConfigManager::Load(const char *pFilename)

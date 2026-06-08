@@ -420,9 +420,22 @@ void CConsole::ExecuteLineStroked(int Stroke, const char *pStr)
 		}
 		else if(Stroke)
 		{
-			char aBuf[256];
-			str_format(aBuf, sizeof(aBuf), "No such command: %s.", Result.m_pCommand);
-			Print(OUTPUT_LEVEL_STANDARD, "console", aBuf);
+			bool Handled = false;
+			if(m_pConfigManager && Result.NumArguments() > 0)
+			{
+				const char *pCmd = Result.m_pCommand;
+				if(m_pConfigManager->SetInt(pCmd, Result.GetInteger(0)))
+					Handled = true;
+				else if(m_pConfigManager->SetStr(pCmd, Result.GetString(0)))
+					Handled = true;
+			}
+
+			if(!Handled)
+			{
+				char aBuf[256];
+				str_format(aBuf, sizeof(aBuf), "No such command: %s.", Result.m_pCommand);
+				Print(OUTPUT_LEVEL_STANDARD, "console", aBuf);
+			}
 		}
 
 		pStr = pNextPart;

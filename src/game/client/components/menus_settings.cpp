@@ -816,6 +816,58 @@ void CMenus::RenderThemeSelection(CUIRect MainView, bool Header)
 	}
 }
 
+struct CEditBoxEntry
+{
+	const char *m_pScriptName;
+	CLineInputBuffered<512> m_Input;
+
+	bool operator<(const CEditBoxEntry &Other) const { return str_comp(m_pScriptName, Other.m_pScriptName) < 0; }
+};
+
+struct CColorButtonEntry
+{
+	const char *m_pScriptName;
+	CButtonContainer m_Button;
+
+	bool operator<(const CColorButtonEntry &Other) const { return str_comp(m_pScriptName, Other.m_pScriptName) < 0; }
+};
+
+static CEditBoxEntry *FindOrAddEditBox(sorted_array<CEditBoxEntry> &l, const char *pScriptName)
+{
+	for(sorted_array<CEditBoxEntry>::range r = l.all(); !r.empty(); r.pop_front())
+	{
+		if(str_comp(r.front().m_pScriptName, pScriptName) == 0)
+			return &r.front();
+	}
+	CEditBoxEntry NewEntry;
+	NewEntry.m_pScriptName = pScriptName;
+	l.add(NewEntry);
+	for(sorted_array<CEditBoxEntry>::range r = l.all(); !r.empty(); r.pop_front())
+	{
+		if(str_comp(r.front().m_pScriptName, pScriptName) == 0)
+			return &r.front();
+	}
+	return 0;
+}
+
+static CColorButtonEntry *FindOrAddColorButton(sorted_array<CColorButtonEntry> &l, const char *pScriptName)
+{
+	for(sorted_array<CColorButtonEntry>::range r = l.all(); !r.empty(); r.pop_front())
+	{
+		if(str_comp(r.front().m_pScriptName, pScriptName) == 0)
+			return &r.front();
+	}
+	CColorButtonEntry NewEntry;
+	NewEntry.m_pScriptName = pScriptName;
+	l.add(NewEntry);
+	for(sorted_array<CColorButtonEntry>::range r = l.all(); !r.empty(); r.pop_front())
+	{
+		if(str_comp(r.front().m_pScriptName, pScriptName) == 0)
+			return &r.front();
+	}
+	return 0;
+}
+
 void CMenus::RenderSettingsPageByMetadata(CUIRect MainView, int Category)
 {
 	struct CSortedMeta
@@ -832,6 +884,8 @@ void CMenus::RenderSettingsPageByMetadata(CUIRect MainView, int Category)
 		bool operator<(const CSortedMeta &Other) const { return m_SortOrder < Other.m_SortOrder; }
 	};
 
+	static sorted_array<CEditBoxEntry> s_lEditBoxes;
+	static sorted_array<CColorButtonEntry> s_lColorButtons;
 	sorted_array<CSortedMeta> lMeta;
 
 	for(int i = 0; i < ConfigManager()->NumMeta(); i++)
@@ -872,8 +926,21 @@ void CMenus::RenderSettingsPageByMetadata(CUIRect MainView, int Category)
 
 	const float ButtonHeight = 20.0f;
 	const float Spacing = 2.0f;
+	const float TitleHeight = 20.0f;
 
 	CUIRect Button;
+
+	const char *pCatLabel = CategoryLabel(Category);
+	if(pCatLabel)
+	{
+		char aBuf[64];
+		str_format(aBuf, sizeof(aBuf), "Auto: %s", pCatLabel);
+		CUIRect Label;
+		MainView.HSplitTop(TitleHeight, &Label, &MainView);
+		UI()->DoLabel(&Label, aBuf, TitleHeight * CUI::ms_FontmodHeight * 0.8f, TEXTALIGN_CENTER);
+		MainView.HSplitTop(Spacing, 0, &MainView);
+	}
+
 	for(sorted_array<CSortedMeta>::range r = lMeta.all(); !r.empty(); r.pop_front())
 	{
 		const CSortedMeta &Meta = r.front();
@@ -904,9 +971,73 @@ void CMenus::RenderSettingsPageByMetadata(CUIRect MainView, int Category)
 		}
 		else if(Meta.m_ControlType == IConfigManager::CTRL_EDITBOX)
 		{
+			CEditBoxEntry *pEntry = FindOrAddEditBox(s_lEditBoxes, Meta.m_pScriptName);
+			if(pEntry)
+			{
+				char aOriginal[512];
+				aOriginal[0] = 0;
+				ConfigManager()->GetStr(Meta.m_pScriptName, aOriginal, sizeof(aOriginal));
+				if(!pEntry->m_Input.GetString() || pEntry->m_Input.GetString()[0] == 0)
+					pEntry->m_Input.Set(aOriginal);
+
+				UI()->DoEditBoxOption(&pEntry->m_Input, &Button, Localize(Meta.m_pDesc), 150.0f);
+
+				if(str_comp(aOriginal, pEntry->m_Input.GetString()) != 0)
+				{
+					ConfigManager()->SetStr(Meta.m_pScriptName, pEntry->m_Input.GetString());
+				}
+			}
 		}
 		else if(Meta.m_ControlType == IConfigManager::CTRL_COLORPICKER)
 		{
+			static const int s_aPresetColors[] = {
+				0xFF0000, 0x00FF00, 0x0000FF, 0xFFFF00,
+				0xFF00FF, 0x00FFFF, 0xFFFFFF, 0x1B6F74,
+				0xFFA500, 0x800080
+			};
+			const int NumPresetColors = sizeof(s_aPresetColors) / sizeof(int);
+
+			int CurValue = 0;
+			ConfigManager()->GetInt(Meta.m_pScriptName, &CurValue);
+			int ColorRGB = CurValue & 0xFFFFFF;
+
+			CUIRect Label, ColorButton;
+			Button.VSplitLeft(150.0f, &Label, &ColorButton);
+
+			const float FontSize = Button.h*CUI::ms_FontmodHeight*0.8f;
+			char aBuf[64];
+			str_format(aBuf, sizeof(aBuf), "%s:", Localize(Meta.m_pDesc));
+			UI()->DoLabel(&Label, aBuf, FontSize, TEXTALIGN_MC);
+
+			CUIRect ColorSwatch;
+			ColorButton.VSplitLeft(ColorButton.h, &ColorSwatch, &ColorButton);
+			ColorSwatch.Margin(2.0f, &ColorSwatch);
+
+			vec4 ColorVec(
+				((ColorRGB >> 16) & 0xFF) / 255.0f,
+				((ColorRGB >> 8) & 0xFF) / 255.0f,
+				(ColorRGB & 0xFF) / 255.0f,
+				1.0f
+			);
+			ColorSwatch.Draw(ColorVec, 3.0f);
+
+			CColorButtonEntry *pColorBtnEntry = FindOrAddColorButton(s_lColorButtons, Meta.m_pScriptName);
+			if(pColorBtnEntry && DoButton_Menu(&pColorBtnEntry->m_Button, "", 0, &ColorButton))
+			{
+				int NextIndex = 0;
+				for(int i = 0; i < NumPresetColors; i++)
+				{
+					if(s_aPresetColors[i] == ColorRGB)
+					{
+						NextIndex = (i + 1) % NumPresetColors;
+						break;
+					}
+				}
+				int NewColor = s_aPresetColors[NextIndex];
+				if(str_comp(Meta.m_pScriptName, "player_color_marking") == 0)
+					NewColor |= CurValue & 0xFF000000;
+				ConfigManager()->SetInt(Meta.m_pScriptName, NewColor);
+			}
 		}
 
 		MainView.HSplitTop(Spacing, 0, &MainView);
@@ -2172,17 +2303,34 @@ void CMenus::RenderSettings(CUIRect MainView)
 {
 	// handle which page should be rendered
 	if(Config()->m_UiSettingsPage == SETTINGS_GENERAL)
+	{
 		RenderSettingsGeneral(MainView);
+		RenderSettingsPageByMetadata(MainView, IConfigManager::CAT_GENERAL);
+	}
 	else if(Config()->m_UiSettingsPage == SETTINGS_PLAYER)
+	{
 		RenderSettingsPlayer(MainView);
-	else if(Config()->m_UiSettingsPage == SETTINGS_TBD) // TODO: replace removed tee page to something else	
+		RenderSettingsPageByMetadata(MainView, IConfigManager::CAT_PLAYER);
+	}
+	else if(Config()->m_UiSettingsPage == SETTINGS_TBD) // TODO: replace removed tee page to something else
+	{
 		ConfigManager()->SetInt("ui_settings_page", SETTINGS_PLAYER); // TODO: remove this
+	}
 	else if(Config()->m_UiSettingsPage == SETTINGS_CONTROLS)
+	{
 		RenderSettingsControls(MainView);
+		RenderSettingsPageByMetadata(MainView, IConfigManager::CAT_CONTROLS);
+	}
 	else if(Config()->m_UiSettingsPage == SETTINGS_GRAPHICS)
+	{
 		RenderSettingsGraphics(MainView);
+		RenderSettingsPageByMetadata(MainView, IConfigManager::CAT_GRAPHICS);
+	}
 	else if(Config()->m_UiSettingsPage == SETTINGS_SOUND)
+	{
 		RenderSettingsSound(MainView);
+		RenderSettingsPageByMetadata(MainView, IConfigManager::CAT_SOUND);
+	}
 
 	MainView.HSplitBottom(32.0f, 0, &MainView);
 
