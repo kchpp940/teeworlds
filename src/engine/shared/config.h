@@ -94,6 +94,7 @@ public:
 		int m_Category;       // IConfigManager::ECategory
 		int m_ControlType;    // IConfigManager::EControlType
 		int m_SortOrder;
+		int m_CoveredByHandUi; // 1 表示该字段已有手工 UI 覆盖，metadata 渲染时跳过；0 表示需要 metadata 自动渲染
 	};
 
 private:
@@ -178,7 +179,7 @@ public:
 	virtual void WriteLine(const char *pLine);
 
 	virtual int NumMeta() const { return m_NumMeta; }
-	virtual bool GetMeta(int Index, const char **ppScriptName, int *pType, int *pCategory, int *pControlType, int *pMin, int *pMax, const char **ppDesc, int *pFlags = 0, int *pSortOrder = 0) const;
+	virtual bool GetMeta(int Index, const char **ppScriptName, int *pType, int *pCategory, int *pControlType, int *pMin, int *pMax, const char **ppDesc, int *pFlags = 0, int *pSortOrder = 0, int *pCoveredByHandUi = 0) const;
 };
 
 #endif

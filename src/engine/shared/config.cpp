@@ -39,9 +39,9 @@ CConfigManager::CConfigManager()
 
 void CConfigManager::InitMetaTable(const CConfigMeta **ppTable, int *pNum)
 {
-	#define MACRO_CONFIG_INT(Name,ScriptName,def,min,max,flags,desc) { CConfigMeta::TYPE_INT, #ScriptName, (int)offsetof(CConfig, m_##Name), (int)sizeof(int), (int)(def), 0, (int)(min), (int)(max), (int)(flags), (desc), CConfigMeta::CAT_GENERAL, CConfigMeta::CTRL_NONE, 0 },
-	#define MACRO_CONFIG_STR(Name,ScriptName,len,def,flags,desc) { CConfigMeta::TYPE_STR, #ScriptName, (int)offsetof(CConfig, m_##Name), (int)(len), 0, (def), 0, 0, (int)(flags), (desc), CConfigMeta::CAT_GENERAL, CConfigMeta::CTRL_NONE, 0 },
-	#define MACRO_CONFIG_UTF8STR(Name,ScriptName,size,len,def,flags,desc) { CConfigMeta::TYPE_UTF8STR, #ScriptName, (int)offsetof(CConfig, m_##Name), (int)(size), 0, (def), 0, (int)(len), (int)(flags), (desc), CConfigMeta::CAT_GENERAL, CConfigMeta::CTRL_NONE, 0 },
+	#define MACRO_CONFIG_INT(Name,ScriptName,def,min,max,flags,desc) { CConfigMeta::TYPE_INT, #ScriptName, (int)offsetof(CConfig, m_##Name), (int)sizeof(int), (int)(def), 0, (int)(min), (int)(max), (int)(flags), (desc), CConfigMeta::CAT_GENERAL, CConfigMeta::CTRL_NONE, 0, 0 },
+	#define MACRO_CONFIG_STR(Name,ScriptName,len,def,flags,desc) { CConfigMeta::TYPE_STR, #ScriptName, (int)offsetof(CConfig, m_##Name), (int)(len), 0, (def), 0, 0, (int)(flags), (desc), CConfigMeta::CAT_GENERAL, CConfigMeta::CTRL_NONE, 0, 0 },
+	#define MACRO_CONFIG_UTF8STR(Name,ScriptName,size,len,def,flags,desc) { CConfigMeta::TYPE_UTF8STR, #ScriptName, (int)offsetof(CConfig, m_##Name), (int)(size), 0, (def), 0, (int)(len), (int)(flags), (desc), CConfigMeta::CAT_GENERAL, CConfigMeta::CTRL_NONE, 0, 0 },
 
 	static CConfigMeta s_aMetaTable[] = {
 		#include "config_variables.h"
@@ -124,6 +124,36 @@ void CConfigManager::InitMetaTable(const CConfigMeta **ppTable, int *pNum)
 			else if(Meta.m_Type == CConfigMeta::TYPE_STR || Meta.m_Type == CConfigMeta::TYPE_UTF8STR)
 			{
 				Meta.m_ControlType = CConfigMeta::CTRL_EDITBOX;
+			}
+		}
+	}
+
+	const char *apCoveredByHandUi[] = {
+		"player_name", "player_clan", "player_country", "player_skin",
+		"player_color_body", "player_color_marking", "player_color_feet", "player_color_hands", "player_color_eyes", "player_use_custom_color",
+		"cl_dynamic_camera", "cl_camera_smoothness", "cl_mouse_max_distance_static", "cl_mouse_max_distance_dynamic",
+		"cl_mouse_followfactor", "cl_mouse_deadzone", "cl_autoswitch_weapons", "cl_nameplates", "cl_nameplates_always",
+		"cl_nameplates_size", "cl_nameplates_teamcolors", "cl_showhud", "cl_hide_self_score", "cl_show_user_id",
+		"cl_showsocial", "cl_filterchat", "cl_colored_broadcast", "cl_disable_whisper", "cl_skip_start_menu",
+		"ui_wideview", "cl_menu_alpha", "cl_languagefile", "cl_auto_demo_record", "cl_auto_demo_max",
+		"cl_auto_screenshot", "cl_auto_screenshot_max", "cl_statboard_infos", "cl_menu_map", "cl_show_menu_map",
+		"inp_mousesens", "joystick_enable", "joystick_guid", "joystick_absolute", "joystick_sens",
+		"joystick_x", "joystick_y", "joystick_tolerance", "ui_joystick_sens",
+		"gfx_screen", "gfx_screen_width", "gfx_screen_height", "gfx_display_all_modes", "gfx_borderless",
+		"gfx_fullscreen", "gfx_vsync", "gfx_fsaa_samples", "gfx_limit_fps", "gfx_max_fps",
+		"gfx_texture_quality", "gfx_texture_compression", "gfx_high_detail",
+		"snd_enable", "snd_init", "snd_rate", "snd_volume", "snd_music", "snd_nonactive_mute",
+		0
+	};
+	for(int i = 0; i < NumMeta; i++)
+	{
+		CConfigMeta &Meta = s_aMetaTable[i];
+		for(int j = 0; apCoveredByHandUi[j]; j++)
+		{
+			if(str_comp(Meta.m_pScriptName, apCoveredByHandUi[j]) == 0)
+			{
+				Meta.m_CoveredByHandUi = 1;
+				break;
 			}
 		}
 	}
@@ -632,10 +662,6 @@ void CConfigManager::Validate()
 
 void CConfigManager::Upgrade()
 {
-	// For each deprecated mapping, try reading the OLD field value using GetInt/GetStr;
-	// if found, write it to the NEW field via SetInt/SetStr which records CORRECTION_DEPRECATED_REDIRECT.
-	// Also mark new fields as loaded to avoid false positives in DetectMissingFields.
-
 	if(m_Values.m_ConfigVersion >= 1)
 		return;
 
@@ -643,11 +669,6 @@ void CConfigManager::Upgrade()
 		m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "config", "upgrading config to version 1 (v0.6 -> v0.7 migration)");
 
 	int OldNumCorrections = m_NumCorrections;
-
-	for(int i = 0; i < m_NumDeprecated; i++)
-	{
-		MarkFieldLoaded(m_aDeprecated[i].m_pNewName);
-	}
 
 	if(m_Values.m_ClNameplates == 1)
 	{
@@ -825,7 +846,7 @@ void CConfigManager::WriteLine(const char *pLine)
 	io_write_newline(m_ConfigFile);
 }
 
-bool CConfigManager::GetMeta(int Index, const char **ppScriptName, int *pType, int *pCategory, int *pControlType, int *pMin, int *pMax, const char **ppDesc, int *pFlags, int *pSortOrder) const
+bool CConfigManager::GetMeta(int Index, const char **ppScriptName, int *pType, int *pCategory, int *pControlType, int *pMin, int *pMax, const char **ppDesc, int *pFlags, int *pSortOrder, int *pCoveredByHandUi) const
 {
 	if(Index < 0 || Index >= m_NumMeta)
 		return false;
@@ -839,6 +860,7 @@ bool CConfigManager::GetMeta(int Index, const char **ppScriptName, int *pType, i
 	if(ppDesc) *ppDesc = Meta.m_pDesc;
 	if(pFlags) *pFlags = Meta.m_Flags;
 	if(pSortOrder) *pSortOrder = Meta.m_SortOrder;
+	if(pCoveredByHandUi) *pCoveredByHandUi = Meta.m_CoveredByHandUi;
 	return true;
 }
 

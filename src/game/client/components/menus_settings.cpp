@@ -899,10 +899,13 @@ void CMenus::RenderSettingsPageByMetadata(CUIRect MainView, int Category)
 		const char *pDesc = 0;
 		int Flags = 0;
 		int SortOrder = 0;
+		int CoveredByHandUi = 0;
 
-		if(!ConfigManager()->GetMeta(i, &pScriptName, &Type, &Cat, &ControlType, &Min, &Max, &pDesc, &Flags, &SortOrder))
+		if(!ConfigManager()->GetMeta(i, &pScriptName, &Type, &Cat, &ControlType, &Min, &Max, &pDesc, &Flags, &SortOrder, &CoveredByHandUi))
 			continue;
 
+		if(CoveredByHandUi == 1)
+			continue;
 		if(Cat != Category)
 			continue;
 		if(!(Flags & CFGFLAG_SAVE))
@@ -923,6 +926,9 @@ void CMenus::RenderSettingsPageByMetadata(CUIRect MainView, int Category)
 		M.m_pDesc = pDesc;
 		lMeta.add(M);
 	}
+
+	if(lMeta.size() == 0)
+		return;
 
 	const float ButtonHeight = 20.0f;
 	const float Spacing = 2.0f;
@@ -974,11 +980,15 @@ void CMenus::RenderSettingsPageByMetadata(CUIRect MainView, int Category)
 			CEditBoxEntry *pEntry = FindOrAddEditBox(s_lEditBoxes, Meta.m_pScriptName);
 			if(pEntry)
 			{
+				char aCurrent[512];
+				aCurrent[0] = 0;
+				ConfigManager()->GetStr(Meta.m_pScriptName, aCurrent, sizeof(aCurrent));
+				if(str_comp(aCurrent, pEntry->m_Input.GetString()) != 0)
+					pEntry->m_Input.Set(aCurrent);
+
 				char aOriginal[512];
 				aOriginal[0] = 0;
 				ConfigManager()->GetStr(Meta.m_pScriptName, aOriginal, sizeof(aOriginal));
-				if(!pEntry->m_Input.GetString() || pEntry->m_Input.GetString()[0] == 0)
-					pEntry->m_Input.Set(aOriginal);
 
 				UI()->DoEditBoxOption(&pEntry->m_Input, &Button, Localize(Meta.m_pDesc), 150.0f);
 

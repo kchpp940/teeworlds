@@ -87,7 +87,7 @@ public:
 	virtual void WriteLine(const char *pLine) = 0;
 
 	virtual int NumMeta() const = 0;
-	virtual bool GetMeta(int Index, const char **ppScriptName, int *pType, int *pCategory, int *pControlType, int *pMin, int *pMax, const char **ppDesc, int *pFlags = 0, int *pSortOrder = 0) const = 0;
+	virtual bool GetMeta(int Index, const char **ppScriptName, int *pType, int *pCategory, int *pControlType, int *pMin, int *pMax, const char **ppDesc, int *pFlags = 0, int *pSortOrder = 0, int *pCoveredByHandUi = 0) const = 0;
 };
 
 extern IConfigManager *CreateConfigManager();
