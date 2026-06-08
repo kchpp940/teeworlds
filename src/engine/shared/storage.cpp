@@ -34,6 +34,40 @@ public:
 		m_aAppDir[0] = 0;
 	}
 
+	void ValidateManifest()
+	{
+		if(!m_aDataDir[0])
+			return;
+
+		char aManifestPath[IO_MAX_PATH_LENGTH];
+		str_format(aManifestPath, sizeof(aManifestPath), "%s/data_manifest.txt", m_aDataDir);
+		IOHANDLE File = io_open(aManifestPath, IOFLAG_READ | IOFLAG_SKIP_BOM);
+		if(!File)
+		{
+			dbg_msg("storage", "WARNING: data_manifest.txt not found in data dir '%s'. The data/ directory may not have been produced by a proper CMake build. Runtime resource errors may follow.", m_aDataDir);
+			return;
+		}
+
+		CLineReader LineReader;
+		LineReader.Init(File);
+		int TotalEntries = 0;
+		const char *pLine;
+		while((pLine = LineReader.Get()))
+		{
+			(void)pLine;
+			TotalEntries++;
+		}
+		io_close(File);
+
+		if(TotalEntries == 0)
+		{
+			dbg_msg("storage", "WARNING: data_manifest.txt is empty — data directory appears incomplete");
+			return;
+		}
+
+		dbg_msg("storage", "resource manifest: %d entries loaded from '%s'", TotalEntries, aManifestPath);
+	}
+
 	int Init(const char *pApplicationName, int StorageType, int NumArgs, const char **ppArguments)
 	{
 		// get userdir
@@ -48,6 +82,9 @@ public:
 			dbg_msg("storage", "FATAL ERROR: no data directory found. The 'data/' directory must be located next to the executable, in the current working directory, or in a system installation path (e.g. /usr/share/teeworlds/data). If you are building from source, ensure the CMake build succeeded and the copy_data target ran properly.");
 			return 1;
 		}
+
+		// runtime fallback: validate data manifest
+		ValidateManifest();
 
 		// get currentdir
 		fs_getcwd(m_aCurrentDir, sizeof(m_aCurrentDir));
