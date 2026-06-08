@@ -21,6 +21,8 @@ arguments.add_option("-m", "--url-maps", default="http://github.com/teeworlds/te
                       help="URL from which the teeworlds maps files will be downloaded")
 arguments.add_option("-s", "--source-dir",
                       help="Source directory which is used for building the package")
+arguments.add_option("-b", "--build-dir",
+                      help="CMake build output directory (where teeworlds/teeworlds_srv binaries are)")
 arguments.add_option("--include-optional", action="store_true", default=False,
                       help="Include optional debug symbols and files (MUST be explicitly enabled)")
 arguments.add_option("--include-tools", action="store_true", default=False,
@@ -78,7 +80,7 @@ class _StageArgs:
     def __init__(self):
         self.platform = platform
         self.output = stage_dir
-        self.build_dir = manifest.get_build_output_dir(platform)
+        self.build_dir = options.build_dir if options.build_dir else manifest.get_build_output_dir(platform)
         self.include_optional = options.include_optional
         self.include_tools = options.include_tools
         self.strict = not options.no_strict
@@ -87,15 +89,17 @@ class _StageArgs:
         self.url_languages = options.url_languages
         self.url_maps = options.url_maps
         self.download_external = True
+        self.manifest = None
+        self.version = None
 
 class _PackageArgs:
     def __init__(self):
         self.stage_dir = stage_dir
         self.platform = platform
         self.format = fmt
-        self.name_pattern = None
         self.output_dir = os.getcwd()
-        self.keep_dirs = False
+        self.manifest = None
+        self.version = None
 
 try:
     do_stage(_StageArgs())

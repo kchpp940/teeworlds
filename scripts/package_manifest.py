@@ -184,11 +184,10 @@ def do_package(args):
         ext = "tar.xz"
 
     out_name = f"teeworlds-{args.version}-{args.platform}.{ext}"
-    out_file = os.path.join(os.path.dirname(os.path.abspath(args.stage_dir)) or ".", out_name)
+    out_file = os.path.join(args.output_dir if hasattr(args, 'output_dir') and args.output_dir else (os.path.dirname(os.path.abspath(args.stage_dir)) or "."), out_name)
 
     stage_dir = args.stage_dir.rstrip('/')
-    stage_parent = os.path.dirname(stage_dir) or "."
-    stage_base = os.path.basename(stage_dir)
+    arc_top = f"teeworlds-{args.version}-{args.platform}"
 
     print(f"\n=== Package: {fmt} -> {out_file} ===")
 
@@ -197,20 +196,21 @@ def do_package(args):
 
     if fmt == "zip":
         with zipfile.ZipFile(out_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for root, _dirs, files in os.walk(stage_dir):
+            for root, dirs, files in os.walk(stage_dir):
+                rel_root = os.path.relpath(root, stage_dir)
+                for d in dirs:
+                    dir_path = os.path.join(root, d)
+                    dir_rel = os.path.join(rel_root, d) if rel_root != '.' else d
+                    zi = zipfile.ZipInfo(os.path.join(arc_top, dir_rel) + '/')
+                    zf.writestr(zi, b'')
                 for fn in files:
                     full = os.path.join(root, fn)
-                    arc = os.path.join(stage_base, os.path.relpath(full, stage_dir))
-                    zf.write(full, arc)
-    elif fmt in ("tar.gz", "tgz"):
-        with tarfile.open(out_file, 'w:gz') as tf:
-            tf.add(stage_dir, arcname=stage_base)
-    elif fmt in ("tar.xz", "txz"):
-        with tarfile.open(out_file, 'w:xz') as tf:
-            tf.add(stage_dir, arcname=stage_base)
-    elif fmt == "tar":
-        with tarfile.open(out_file, 'w') as tf:
-            tf.add(stage_dir, arcname=stage_base)
+                    file_rel = os.path.join(rel_root, fn) if rel_root != '.' else fn
+                    zf.write(full, os.path.join(arc_top, file_rel))
+    elif fmt in ("tar.gz", "tgz", "tar.xz", "txz", "tar"):
+        mode = {'tar.gz': 'w:gz', 'tgz': 'w:gz', 'tar.xz': 'w:xz', 'txz': 'w:xz', 'tar': 'w'}[fmt]
+        with tarfile.open(out_file, mode) as tf:
+            tf.add(stage_dir, arcname=arc_top)
     elif fmt == "dmg":
         dmg_candidates = [
             (["hdiutil"], "--hdiutil"),
@@ -231,7 +231,7 @@ def do_package(args):
         if os.path.exists(tmp_root):
             shutil.rmtree(tmp_root)
         os.makedirs(tmp_root)
-        inner = os.path.join(tmp_root, f"teeworlds-{args.version}")
+        inner = os.path.join(tmp_root, arc_top)
         shutil.copytree(stage_dir, inner)
         dmg_cmd.extend([out_file, f"Teeworlds {args.version}", tmp_root])
         run_cmd(dmg_cmd)
@@ -298,6 +298,7 @@ Examples:
     pkg_p.add_argument("--platform")
     pkg_p.add_argument("--version")
     pkg_p.add_argument("--format", choices=["zip", "tar.gz", "tgz", "tar.xz", "txz", "tar", "dmg"])
+    pkg_p.add_argument("--output-dir", default=None, help="Output directory for the archive (default: parent of stage-dir)")
     pkg_p.add_argument("--manifest")
 
     list_p = sub.add_parser("list", help="List manifest contents for a platform")

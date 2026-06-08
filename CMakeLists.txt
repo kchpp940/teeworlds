@@ -1841,94 +1841,52 @@ function(regex_inverted VAR)
   set(${VAR} ${RESULT} PARENT_SCOPE)
 endfunction()
 
-set(CPACK_PACKAGE_NAME ${PROJECT_NAME})
-set(CPACK_GENERATOR TGZ TXZ)
-set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
-set(CPACK_STRIP_FILES TRUE)
-set(CPACK_COMPONENTS_ALL portable)
-set(CPACK_SOURCE_GENERATOR ZIP TGZ TBZ2 TXZ)
-set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
-set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
-set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
-set(CPACK_PACKAGE_VERSION ${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH})
-set(CPACK_SYSTEM_NAME ${CMAKE_SYSTEM_NAME})
+########################################################################
+# Release packaging — MANIFEST ONLY
+# All release packaging goes through scripts/release_manifest.json + scripts/package_manifest.py.
+# CPack and legacy install() paths are BLOCKED — they would bypass manifest validation.
+# DO NOT re-enable include(CPack) or install(TARGETS/DIRECTORY) packaging rules.
+#
+# Packaging targets:
+#   - package_zip, package_tar_gz, package_tar_xz, package_dmg (platform-dependent)
+#   - package_default  — platform-native format
+#   - package_all      — all available formats
+#   - manifest_check   — show manifest summary
+########################################################################
+
+set(PKG_NAME ${PROJECT_NAME})
+set(PKG_VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH})
+set(PKG_SYSTEM_NAME ${CMAKE_SYSTEM_NAME})
 
 if(TARGET_OS AND TARGET_BITS)
   if(TARGET_OS STREQUAL "windows")
-    set(CPACK_SYSTEM_NAME "win${TARGET_BITS}")
-    set(CPACK_GENERATOR ZIP)
+    set(PKG_SYSTEM_NAME "win${TARGET_BITS}")
   elseif(TARGET_OS STREQUAL "linux")
-    # Assuming Intel here.
     if(TARGET_BITS EQUAL 32)
-      set(CPACK_SYSTEM_NAME "linux_x86")
+      set(PKG_SYSTEM_NAME "linux_x86")
     elseif(TARGET_BITS EQUAL 64)
-      set(CPACK_SYSTEM_NAME "linux_x86_64")
+      set(PKG_SYSTEM_NAME "linux_x86_64")
     endif()
   elseif(TARGET_OS STREQUAL "mac")
-    set(CPACK_SYSTEM_NAME "macos")
-    set(CPACK_GENERATOR DMG)
+    set(PKG_SYSTEM_NAME "macos")
   endif()
 endif()
 
-set(CPACK_PACKAGE_FILE_NAME ${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_SYSTEM_NAME})
-set(CPACK_ARCHIVE_PORTABLE_FILE_NAME ${CPACK_PACKAGE_FILE_NAME})
-set(CPACK_SOURCE_PACKAGE_FILE_NAME ${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-src)
-set(CPACK_SOURCE_FILES
-  CMakeLists.txt
-  bam.lua
-  cmake/
-  configure.lua
-  datasrc/
-  license.txt
-  other/
-  readme.md
-  scripts/
-  src/
-  storage.cfg
-)
-set(CPACK_SOURCE_IGNORE_FILES
-  "\\\\.o$"
-  "\\\\.pyc$"
-  "/\\\\.git"
-  "/__pycache__/"
-)
+set(PKG_FILE_NAME ${PKG_NAME}-${PKG_VERSION}-${PKG_SYSTEM_NAME})
 
-regex_inverted(CPACK_SOURCE_FILES_INVERTED ${CPACK_SOURCE_FILES})
-escape_regex(PROJECT_SOURCE_DIR_ESCAPED ${PROJECT_SOURCE_DIR})
-
-foreach(str ${CPACK_SOURCE_FILES_INVERTED})
-  escape_backslashes(STR_ESCAPED "${PROJECT_SOURCE_DIR_ESCAPED}/${str}")
-  list(APPEND CPACK_SOURCE_IGNORE_FILES "${STR_ESCAPED}")
-endforeach()
-
-set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME ${PROJECT_NAME})
-
-# NOTE: CPACK variables below are synchronized with scripts/release_manifest.json
-# The manifest is the authoritative source for release package contents.
-# See scripts/release_manifest.py for the manifest parsing tool.
-# Categories in manifest: required, platform_dependencies, optional_debug, tools, macos_bundle, source_package
-set(CPACK_TARGETS
-  ${TARGET_CLIENT}
-  ${TARGET_SERVER}
-)
-set(CPACK_DIRS ${PROJECT_BINARY_DIR}/data)
-set(CPACK_FILES
-  license.txt
-  storage.cfg
-  ${COPY_FILES}
-)
-if(TARGET_OS STREQUAL "windows")
-  list(APPEND CPACK_FILES other/config_directory.bat)
-endif()
-
-if(NOT DEV)
-  # NOTE: install() calls intentionally commented out.
-  # CPack is DISABLED (see comment at bottom of file).
-  # All packaging goes through release manifest via package_manifest.py.
-  # Re-enabling these install() + include(CPack) would bypass manifest validation.
-  # install(DIRECTORY ${PROJECT_BINARY_DIR}/data DESTINATION share/${PROJECT_NAME} COMPONENT data)
-  # install(TARGETS ${TARGET_CLIENT} DESTINATION bin COMPONENT client)
-  # install(TARGETS ${TARGET_SERVER} DESTINATION bin COMPONENT server)
+# --- BLOCKED: legacy CPack / install() paths ---
+# If someone tries to explicitly enable CPack, fail loudly and point to the manifest system.
+option(ENABLE_LEGACY_CPACK "DO NOT USE. Enables bypass of release manifest validation." OFF)
+mark_as_advanced(ENABLE_LEGACY_CPACK)
+if(ENABLE_LEGACY_CPACK)
+  message(FATAL_ERROR
+    "ENABLE_LEGACY_CPACK is blocked. All release packaging MUST go through "
+    "the unified release manifest (scripts/package_manifest.py + scripts/release_manifest.json). "
+    "Use package_zip / package_tar_gz / package_tar_xz / package_dmg targets, or "
+    "scripts/make_release.py (a wrapper around package_manifest.py). "
+    "CPack and install()-based packaging are intentionally disabled to prevent "
+    "undeclared files from leaking into release archives."
+  )
 endif()
 
 if(DEV)
@@ -1943,7 +1901,7 @@ else()
   set(RELEASE_PACKAGER ${PROJECT_SOURCE_DIR}/scripts/package_manifest.py)
   set(MANIFEST_PLATFORM $<IF:$<STREQUAL:${TARGET_OS},windows>,win${TARGET_BITS},$<IF:$<STREQUAL:${TARGET_OS},mac>,macos,$<IF:$<STREQUAL:${TARGET_BITS},32>,linux_x86,linux_x86_64>>>)
   set(MANIFEST_STAGE ${PROJECT_BINARY_DIR}/manifest_pack_stage)
-  set(MANIFEST_PKG_NAME ${CPACK_PACKAGE_FILE_NAME})
+  set(MANIFEST_PKG_NAME ${PKG_FILE_NAME})
 
   option(MANIFEST_INCLUDE_OPTIONAL "Include optional_debug (pdb, dSYM) in packages (default OFF)" OFF)
   option(MANIFEST_INCLUDE_TOOLS "Include development tools in packages (default OFF)" OFF)
@@ -1988,7 +1946,7 @@ else()
   set(PACKAGE_TARGETS)
 
   if(CLIENT AND (DMGTOOLS_FOUND OR HDIUTIL))
-    add_custom_command(OUTPUT ${CPACK_PACKAGE_FILE_NAME}.dmg
+    add_custom_command(OUTPUT ${PKG_FILE_NAME}.dmg
       COMMAND ${CMAKE_COMMAND} -E remove_directory ${MANIFEST_STAGE}
       ${MANIFEST_STAGE_CMD}
       COMMAND ${Python3_EXECUTABLE} ${RELEASE_PACKAGER}
@@ -2000,13 +1958,13 @@ else()
       DEPENDS ${MANIFEST_DEPS}
       COMMENT "Building DMG via release manifest (strict validation)"
     )
-    add_custom_target(package_dmg DEPENDS ${CPACK_PACKAGE_FILE_NAME}.dmg)
+    add_custom_target(package_dmg DEPENDS ${PKG_FILE_NAME}.dmg)
     list(APPEND PACKAGE_TARGETS package_dmg)
   endif()
 
   foreach(ext zip tar.gz tar.xz)
     string(REPLACE . _ EXT_SLUG ${ext})
-    add_custom_command(OUTPUT ${CPACK_PACKAGE_FILE_NAME}.${ext}
+    add_custom_command(OUTPUT ${PKG_FILE_NAME}.${ext}
       COMMAND ${CMAKE_COMMAND} -E remove_directory ${MANIFEST_STAGE}
       ${MANIFEST_STAGE_CMD}
       COMMAND ${Python3_EXECUTABLE} ${RELEASE_PACKAGER}
@@ -2018,7 +1976,7 @@ else()
       DEPENDS ${MANIFEST_DEPS}
       COMMENT "Building ${ext} via release manifest (strict validation)"
     )
-    add_custom_target(package_${EXT_SLUG} DEPENDS ${CPACK_PACKAGE_FILE_NAME}.${ext})
+    add_custom_target(package_${EXT_SLUG} DEPENDS ${PKG_FILE_NAME}.${ext})
     list(APPEND PACKAGE_TARGETS package_${EXT_SLUG})
   endforeach()
 
@@ -2054,18 +2012,15 @@ if(Python3_EXECUTABLE AND EXISTS ${RELEASE_MANIFEST_TOOL} AND EXISTS ${RELEASE_P
   )
 endif()
 
-# NOTE: CPack install() paths are DISABLED (see comment above).
-# All packaging targets (package_zip/package_tar_gz/package_tar_xz/package_dmg)
-# now go through scripts/package_manifest.py (release manifest stage + validate + package).
-# Do NOT re-enable CPack install() — it would bypass manifest validation.
-unset(CPACK_SOURCE_FILES)
-unset(CPACK_SOURCE_FILES_INVERTED)
-unset(CPACK_TARGETS)
-unset(CPACK_DIRS)
-unset(CPACK_FILES)
-
-# include(CPack) intentionally omitted — CPack bypasses manifest validation.
-# All package_* targets use release manifest via package_manifest.py.
+# NOTE: include(CPack) and legacy install() packaging are INTENTIONALLY BLOCKED.
+# They would bypass the release manifest staging/validation and could leak
+# undeclared files into release archives.
+#
+# Use these manifest-only packaging targets instead:
+#   - package_zip, package_tar_gz, package_tar_xz, package_dmg
+#   - package_default, package_all
+# Or run:  python3 scripts/package_manifest.py ...
+# Or:      python3 scripts/make_release.py VERSION PLATFORM ...
 
 ########################################################################
 # COMPILER-SPECIFICS
