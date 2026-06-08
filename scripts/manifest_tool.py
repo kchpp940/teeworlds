@@ -2,6 +2,7 @@
 import sys
 import os
 import argparse
+import shutil
 
 DEFAULT_DATASRC_DIR = "datasrc"
 DEFAULT_MANIFEST_FILE = "data_manifest.txt"
@@ -332,6 +333,56 @@ def check_install_dir(manifest_path, install_dir):
     return ret
 
 
+def stage_files(manifest_path, source_dir, dest_dir, prefix_filter=None, include_manifest=True):
+    if not os.path.exists(manifest_path):
+        print("ERROR: manifest file '%s' not found." % manifest_path)
+        return 1
+    if not os.path.isdir(source_dir):
+        print("ERROR: source data dir '%s' does not exist." % source_dir)
+        return 1
+
+    entries = read_manifest(manifest_path)
+    if prefix_filter:
+        prefix = prefix_filter.rstrip("/") + "/"
+        entries = [e for e in entries if e.startswith(prefix) or e == prefix_filter]
+
+    copied = 0
+    missing = []
+    for entry in sorted(entries):
+        src = os.path.join(source_dir, entry)
+        dst = os.path.join(dest_dir, entry)
+        if not os.path.isfile(src):
+            missing.append(entry)
+            continue
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy2(src, dst)
+        copied += 1
+
+    if include_manifest:
+        dst_manifest = os.path.join(dest_dir, "data_manifest.txt")
+        os.makedirs(os.path.dirname(dst_manifest), exist_ok=True)
+        shutil.copy2(manifest_path, dst_manifest)
+
+    if missing:
+        cats = categorize_entries(missing)
+        print("ERROR: %d file(s) skipped during staging (missing from source '%s'):" % (len(missing), source_dir))
+        for cat in CATEGORIES:
+            items = cats.get(cat, [])
+            if items:
+                print("  [%s] %d missing:" % (cat, len(items)))
+                for m in items[:3]:
+                    print("    - %s" % m)
+                if len(items) > 3:
+                    print("    ... and %d more" % (len(items) - 3))
+        return 1
+
+    filt_info = (" (prefix='%s')" % prefix_filter) if prefix_filter else ""
+    print("manifest_tool: staged %d files%s from '%s' to '%s'" % (copied, filt_info, source_dir, dest_dir))
+    if include_manifest:
+        print("manifest_tool: also copied manifest itself to '%s/data_manifest.txt'" % dest_dir)
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="Teeworlds data resource manifest tool")
     parser.add_argument("--datasrc", default=DEFAULT_DATASRC_DIR, help="Path to datasrc directory (default: datasrc)")
@@ -351,6 +402,12 @@ def main():
     sp_checkdir = sub.add_parser("check_install_dir", help="Verify an install/build data dir matches manifest exactly (no missing, no extra/stale files)")
     sp_checkdir.add_argument("--install-dir", required=True, help="Path to installed data directory (e.g. build/data)")
 
+    sp_stage = sub.add_parser("stage", help="Copy manifest-listed files from a source data dir to a staging dir, item by item (no whole-directory copy)")
+    sp_stage.add_argument("--source", required=True, help="Source data directory (e.g. build/data)")
+    sp_stage.add_argument("--dest", required=True, help="Destination staging directory (e.g. pack_tmp/.../data)")
+    sp_stage.add_argument("--prefix", default=None, help="Only stage entries starting with this prefix (e.g. 'maps' for server-only data)")
+    sp_stage.add_argument("--no-manifest", action="store_true", help="Don't copy data_manifest.txt to dest")
+
     args = parser.parse_args()
 
     if args.command == "generate":
@@ -367,6 +424,10 @@ def main():
         sys.exit(summarize_manifest(args.manifest))
     elif args.command == "check_install_dir":
         sys.exit(check_install_dir(args.manifest, args.install_dir))
+    elif args.command == "stage":
+        sys.exit(stage_files(args.manifest, args.source, args.dest,
+                             prefix_filter=args.prefix,
+                             include_manifest=not args.no_manifest))
 
 
 if __name__ == "__main__":
