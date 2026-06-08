@@ -4,6 +4,7 @@
 #define ENGINE_SHARED_CONFIG_H
 
 #include <engine/config.h>
+#include <engine/console.h>
 #include "protocol.h"
 
 class CConfig
@@ -35,7 +36,11 @@ class CConfigManager : public IConfigManager
 {
 	enum
 	{
-		MAX_CALLBACKS = 16
+		MAX_CALLBACKS = 16,
+		MAX_META = 256,
+		MAX_DEPRECATED = 64,
+		MAX_CORRECTIONS = 256,
+		MAX_MISSING = 256,
 	};
 
 	struct CCallback
@@ -64,6 +69,24 @@ class CConfigManager : public IConfigManager
 		int m_Flags;
 	};
 
+	struct CDeprecatedMapping
+	{
+		const char *m_pOldName;
+		const char *m_pNewName;
+	};
+
+	CCorrection m_aCorrections[MAX_CORRECTIONS];
+	int m_NumCorrections;
+
+	const char *m_apMissingFields[MAX_MISSING];
+	int m_NumMissingFields;
+
+	CDeprecatedMapping m_aDeprecated[MAX_DEPRECATED];
+	int m_NumDeprecated;
+
+	unsigned char m_aFieldLoaded[MAX_META];
+	int m_NumTrackedFields;
+
 	class IStorage *m_pStorage;
 	class IConsole *m_pConsole;
 	IOHANDLE m_ConfigFile;
@@ -76,7 +99,18 @@ class CConfigManager : public IConfigManager
 	int m_NumMeta;
 
 	static void InitMetaTable(const CConfigMeta **ppTable, int *pNum);
-	static bool FindMetaByName(const char *pScriptName, const CConfigMeta *pTable, int Num, CConfigMeta *pOut);
+	bool FindMetaByName(const char *pScriptName, CConfigMeta *pOut) const;
+	bool RedirectDeprecated(const char *pScriptName, char *pRedirectBuffer, int BufferSize) const;
+	void AddCorrection(ECorrectionReason Reason, const char *pFieldName, const char *pOldValue, const char *pNewValue);
+	void MarkFieldLoaded(const char *pScriptName);
+	void DetectMissingFields();
+	int ClampIntValue(const CConfigMeta &Meta, int Value, bool *pCorrected = 0);
+	const char *ClampStrValue(const CConfigMeta &Meta, const char *pValue, char *pBuffer, int BufferSize, bool *pCorrected = 0);
+
+	static void ConSaveConfig(IConsole::IResult *pResult, void *pUserData);
+	static void ConSetConfig(IConsole::IResult *pResult, void *pUserData);
+	static void ConDumpConfig(IConsole::IResult *pResult, void *pUserData);
+	static void ConResetConfig(IConsole::IResult *pResult, void *pUserData);
 
 public:
 	CConfigManager();
@@ -90,6 +124,20 @@ public:
 	virtual void Validate();
 	virtual void Upgrade();
 	virtual bool Load(const char *pFilename);
+
+	virtual bool SetInt(const char *pScriptName, int Value);
+	virtual bool SetStr(const char *pScriptName, const char *pValue);
+	virtual bool GetInt(const char *pScriptName, int *pOutValue) const;
+	virtual bool GetStr(const char *pScriptName, char *pOutValue, int OutSize) const;
+
+	virtual int NumCorrections() const { return m_NumCorrections; }
+	virtual const CCorrection *GetCorrection(int Index) const;
+	virtual void ClearCorrections() { m_NumCorrections = 0; }
+
+	virtual void RegisterDeprecated(const char *pOldScriptName, const char *pNewScriptName);
+
+	virtual int NumMissingFields() const { return m_NumMissingFields; }
+	virtual const char *GetMissingField(int Index) const;
 
 	virtual void RegisterCallback(SAVECALLBACKFUNC pfnFunc, void *pUserData);
 

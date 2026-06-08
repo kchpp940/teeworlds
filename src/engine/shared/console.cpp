@@ -605,6 +605,8 @@ void CConsole::ConModCommandStatus(IResult *pResult, void *pUser)
 struct CIntVariableData
 {
 	IConsole *m_pConsole;
+	class IConfigManager *m_pConfigManager;
+	const char *m_pScriptName;
 	int *m_pVariable;
 	int m_Min;
 	int m_Max;
@@ -613,6 +615,8 @@ struct CIntVariableData
 struct CStrVariableData
 {
 	IConsole *m_pConsole;
+	class IConfigManager *m_pConfigManager;
+	const char *m_pScriptName;
 	char *m_pStr;
 	int m_MaxSize;
 	int m_Length;
@@ -625,17 +629,17 @@ static void IntVariableCommand(IConsole::IResult *pResult, void *pUserData)
 	if(pResult->NumArguments())
 	{
 		int Val = pResult->GetInteger(0);
-
-		// do clamping
-		if(pData->m_Min != pData->m_Max)
+		if(pData->m_pConfigManager)
+			pData->m_pConfigManager->SetInt(pData->m_pScriptName, Val);
+		else
 		{
-			if (Val < pData->m_Min)
-				Val = pData->m_Min;
-			if (pData->m_Max != 0 && Val > pData->m_Max)
-				Val = pData->m_Max;
+			if(pData->m_Min != pData->m_Max)
+			{
+				if(Val < pData->m_Min) Val = pData->m_Min;
+				if(pData->m_Max != 0 && Val > pData->m_Max) Val = pData->m_Max;
+			}
+			*(pData->m_pVariable) = Val;
 		}
-
-		*(pData->m_pVariable) = Val;
 	}
 	else
 	{
@@ -653,25 +657,32 @@ static void StrVariableCommand(IConsole::IResult *pResult, void *pUserData)
 	if(pResult->NumArguments())
 	{
 		const char *pString = pResult->GetString(0);
-		if(!str_utf8_check(pString))
+		if(pData->m_pConfigManager)
 		{
-			char Temp[4];
-			int Length = 0;
-			while(*pString)
-			{
-				int Size = str_utf8_encode(Temp, static_cast<unsigned char>(*pString++));
-				if(Length+Size < pData->m_MaxSize)
-				{
-					mem_copy(pData->m_pStr+Length, &Temp, Size);
-					Length += Size;
-				}
-				else
-					break;
-			}
-			pData->m_pStr[Length] = 0;
+			pData->m_pConfigManager->SetStr(pData->m_pScriptName, pString);
 		}
 		else
-			str_utf8_copy_num(pData->m_pStr, pString, pData->m_MaxSize, pData->m_Length);
+		{
+			if(!str_utf8_check(pString))
+			{
+				char Temp[4];
+				int Length = 0;
+				while(*pString)
+				{
+					int Size = str_utf8_encode(Temp, static_cast<unsigned char>(*pString++));
+					if(Length+Size < pData->m_MaxSize)
+					{
+						mem_copy(pData->m_pStr+Length, &Temp, Size);
+						Length += Size;
+					}
+					else
+						break;
+				}
+				pData->m_pStr[Length] = 0;
+			}
+			else
+				str_utf8_copy_num(pData->m_pStr, pString, pData->m_MaxSize, pData->m_Length);
+		}
 	}
 	else
 	{
@@ -869,25 +880,29 @@ CConsole::~CConsole()
 
 void CConsole::Init()
 {
-	m_pConfig = Kernel()->RequestInterface<IConfigManager>()->Values();
+	m_pConfigManager = Kernel()->RequestInterface<IConfigManager>();
+	m_pConfig = m_pConfigManager->Values();
 	m_pStorage = Kernel()->RequestInterface<IStorage>();
 
 	// TODO: this should disappear
 	#define MACRO_CONFIG_INT(Name,ScriptName,Def,Min,Max,Flags,Desc) \
 	{ \
-		static CIntVariableData Data = { this, &m_pConfig->m_##Name, Min, Max }; \
+		static CIntVariableData Data = { this, 0, #ScriptName, &m_pConfig->m_##Name, Min, Max }; \
+		Data.m_pConfigManager = m_pConfigManager; \
 		Register(#ScriptName, "?i", Flags, IntVariableCommand, &Data, Desc); \
 	}
 
 	#define MACRO_CONFIG_STR(Name,ScriptName,Len,Def,Flags,Desc) \
 	{ \
-		static CStrVariableData Data = { this, m_pConfig->m_##Name, Len, Len }; \
+		static CStrVariableData Data = { this, 0, #ScriptName, m_pConfig->m_##Name, Len, Len }; \
+		Data.m_pConfigManager = m_pConfigManager; \
 		Register(#ScriptName, "?r", Flags, StrVariableCommand, &Data, Desc); \
 	}
 
 	#define MACRO_CONFIG_UTF8STR(Name,ScriptName,Size,Len,Def,Flags,Desc) \
 	{ \
-		static CStrVariableData Data = { this, m_pConfig->m_##Name, Size, Len }; \
+		static CStrVariableData Data = { this, 0, #ScriptName, m_pConfig->m_##Name, Size, Len }; \
+		Data.m_pConfigManager = m_pConfigManager; \
 		Register(#ScriptName, "?r", Flags, StrVariableCommand, &Data, Desc); \
 	}
 
