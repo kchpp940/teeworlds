@@ -2,7 +2,11 @@ import json
 import os
 import re
 import shutil
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Set
+
+
+class ManifestError(Exception):
+    pass
 
 
 class ReleaseManifest:
@@ -16,6 +20,7 @@ class ReleaseManifest:
         self.manifest_dir = os.path.dirname(manifest_path)
         self.project_root = os.path.dirname(self.manifest_dir)
         self._load()
+        self._staged_files: Set[str] = set()
 
     def _load(self):
         with open(self.manifest_path, 'r', encoding='utf-8') as f:
@@ -34,7 +39,7 @@ class ReleaseManifest:
                     match = re.search(rf'#define\s+{macro}\s+"([^"]+)"', line)
                     if match:
                         return match.group(1)
-        raise RuntimeError("Could not determine version from manifest")
+        raise ManifestError("Could not determine version from manifest")
 
     def get_valid_platforms(self) -> List[str]:
         return list(self.data.get("package_formats", {}).keys())
@@ -53,6 +58,10 @@ class ReleaseManifest:
     def get_data_manifest_path(self) -> str:
         dm = self.data.get("data_manifest", {})
         return os.path.join(self.project_root, dm.get("file", "data_manifest.txt"))
+
+    def get_data_base_dir(self) -> str:
+        dm = self.data.get("data_manifest", {})
+        return dm.get("base_dir", "data")
 
     def get_data_files(self) -> List[str]:
         dm_path = self.get_data_manifest_path()
@@ -99,7 +108,7 @@ class ReleaseManifest:
         item: Dict,
         platform: str,
         build_dir: Optional[str] = None
-    ) -> Tuple[str, str]:
+    ) -> Tuple[object, str]:
         source_path = None
         dest_path = None
 
@@ -108,31 +117,33 @@ class ReleaseManifest:
                 build_dir = self.get_build_output_dir(platform)
             base_dir = os.path.join(self.project_root, build_dir)
 
-            if "platform_names" in item:
+            if "source_subdir" in item:
+                source_path = os.path.join(base_dir, item["source_subdir"])
+            elif "platform_names" in item:
                 filename = item["platform_names"].get(platform, item.get("name"))
+                source_path = os.path.join(base_dir, filename)
             elif "path" in item:
-                filename = item["path"]
+                source_path = os.path.join(base_dir, item["path"])
             else:
                 filename = item["name"]
                 if platform.startswith("win") and item.get("type") == "binary":
                     filename += ".exe"
+                source_path = os.path.join(base_dir, filename)
 
-            source_path = os.path.join(base_dir, filename)
-            if "source_subdir" in item:
-                source_path = os.path.join(base_dir, item["source_subdir"])
         elif item.get("system_path"):
             source_path = item["path"]
+
         else:
             if "path" in item:
                 source_path = os.path.join(self.project_root, item["path"])
             elif "paths" in item:
                 source_path = [os.path.join(self.project_root, p) for p in item["paths"]]
 
-        if "dest" in item:
-            dest_path = item["dest"]
-        elif "dest_bundle" in item:
+        if "dest_bundle" in item:
             dest_path = item["dest_bundle"]
-        elif "path" in item and not item.get("source_build"):
+        elif "dest" in item:
+            dest_path = item["dest"]
+        elif "path" in item and not item.get("source_build") and not item.get("system_path"):
             dest_path = os.path.basename(item["path"])
         elif "platform_names" in item:
             dest_path = item["platform_names"].get(platform, item.get("name"))
@@ -141,42 +152,6 @@ class ReleaseManifest:
 
         return source_path, dest_path
 
-    def collect_files(
-        self,
-        platform: str,
-        build_dir: Optional[str] = None,
-        include_optional: bool = False,
-        include_tools: bool = False,
-        verify_exists: bool = True
-    ) -> Dict[str, List[Tuple[str, str, str]]]:
-        items_by_category = self.get_items_for_platform(platform, include_optional, include_tools)
-        collected = {}
-
-        for category, items in items_by_category.items():
-            collected[category] = []
-            for item in items:
-                if item.get("external"):
-                    continue
-                if item.get("template"):
-                    continue
-
-                source, dest = self.resolve_item_path(item, platform, build_dir)
-
-                if isinstance(source, list):
-                    for i, s in enumerate(source):
-                        if verify_exists and not self._check_exists(s, item.get("type")):
-                            print(f"WARNING: Missing {category} item '{item['name']}' at {s}")
-                            continue
-                        d = os.path.basename(s) if isinstance(dest, list) else dest
-                        collected[category].append((item["name"], s, d))
-                else:
-                    if verify_exists and not self._check_exists(source, item.get("type")):
-                        print(f"WARNING: Missing {category} item '{item['name']}' at {source}")
-                        continue
-                    collected[category].append((item["name"], source, dest))
-
-        return collected
-
     def _check_exists(self, path: str, item_type: str) -> bool:
         if not path:
             return False
@@ -184,16 +159,140 @@ class ReleaseManifest:
             return os.path.isdir(path)
         return os.path.isfile(path)
 
+    def _expand_data_files(self, build_dir: Optional[str]) -> List[Tuple[str, str]]:
+        data_base = self.get_data_base_dir()
+        data_files = self.get_data_files()
+        result = []
+        base_src_dir = None
+
+        if build_dir:
+            candidate = os.path.join(self.project_root, build_dir, data_base)
+            if os.path.isdir(candidate):
+                base_src_dir = candidate
+
+        if base_src_dir is None:
+            base_src_dir = os.path.join(self.project_root, data_base)
+
+        for rel_path in data_files:
+            src = os.path.join(base_src_dir, rel_path)
+            dst = os.path.join(data_base, rel_path)
+            result.append((src, dst))
+
+        return result
+
+    def collect_files(
+        self,
+        platform: str,
+        build_dir: Optional[str] = None,
+        include_optional: bool = False,
+        include_tools: bool = False,
+        verify_exists: bool = True,
+        strict: bool = True
+    ) -> Dict:
+        items_by_category = self.get_items_for_platform(platform, include_optional, include_tools)
+        collected: Dict = {
+            "items": {},
+            "data_files": [],
+            "missing_required": [],
+            "missing_optional": [],
+        }
+
+        for category, items in items_by_category.items():
+            collected["items"][category] = []
+            for item in items:
+                if item.get("template"):
+                    continue
+
+                if item.get("external"):
+                    continue
+
+                if item["name"] == "data_directory":
+                    data_pairs = self._expand_data_files(build_dir)
+                    missing_data = []
+                    valid_data = []
+                    for src, dst in data_pairs:
+                        if verify_exists and not os.path.isfile(src):
+                            missing_data.append(src)
+                        else:
+                            valid_data.append((src, dst))
+                    collected["data_files"] = valid_data
+                    if missing_data and strict:
+                        raise ManifestError(
+                            f"Missing {len(missing_data)} data files declared in data_manifest.txt. "
+                            f"First missing: {missing_data[0]}"
+                        )
+                    collected["items"][category].append({
+                        "name": item["name"],
+                        "source": None,
+                        "dest": self.get_data_base_dir(),
+                        "type": item.get("type", "directory"),
+                        "expanded": True,
+                    })
+                    continue
+
+                source, dest = self.resolve_item_path(item, platform, build_dir)
+
+                if isinstance(source, list):
+                    valid_sources = []
+                    for s in source:
+                        if verify_exists and not self._check_exists(s, item.get("type")):
+                            if category == "required" and strict:
+                                raise ManifestError(
+                                    f"Required {category} item '{item['name']}' missing at: {s}"
+                                )
+                            collected["missing_required" if category == "required" else "missing_optional"].append((item["name"], s))
+                            continue
+                        valid_sources.append(s)
+                    for s in valid_sources:
+                        d = os.path.basename(s) if isinstance(dest, list) else dest
+                        collected["items"][category].append({
+                            "name": item["name"],
+                            "source": s,
+                            "dest": d,
+                            "type": item.get("type", "file"),
+                        })
+                else:
+                    if verify_exists and not self._check_exists(source, item.get("type")):
+                        if category == "required" and strict:
+                            raise ManifestError(
+                                f"Required {category} item '{item['name']}' missing at: {source}"
+                            )
+                        collected["missing_required" if category == "required" else "missing_optional"].append((item["name"], source))
+                        continue
+                    collected["items"][category].append({
+                        "name": item["name"],
+                        "source": source,
+                        "dest": dest,
+                        "type": item.get("type", "file"),
+                    })
+
+        return collected
+
     def copy_files_to_package(
         self,
-        collected: Dict[str, List[Tuple[str, str, str]]],
+        collected: Dict,
         package_dir: str,
         platform: str,
-        use_bundle: bool = False
+        use_bundle: bool = False,
+        external_dirs: Optional[Dict[str, str]] = None
     ):
-        for category, items in collected.items():
-            for name, source, dest in items:
+        external_dirs = external_dirs or {}
+        self._staged_files.clear()
+
+        if not os.path.exists(package_dir):
+            os.makedirs(package_dir, exist_ok=True)
+
+        for category, items in collected["items"].items():
+            for entry in items:
+                if entry.get("expanded"):
+                    continue
+
+                source = entry["source"]
+                dest = entry["dest"]
+
                 if use_bundle and category == "platform_dependencies" and platform == "macos":
+                    target_path = os.path.join(package_dir, dest)
+                elif use_bundle and category == "macos_bundle":
                     target_path = os.path.join(package_dir, dest)
                 else:
                     target_path = os.path.join(package_dir, dest) if dest else package_dir
@@ -203,11 +302,126 @@ class ReleaseManifest:
                     os.makedirs(target_dir, exist_ok=True)
 
                 if os.path.isdir(source):
-                    if os.path.exists(target_path):
-                        shutil.rmtree(target_path)
-                    shutil.copytree(source, target_path)
+                    self._copy_dir_tracked(source, target_path, package_dir)
                 else:
-                    shutil.copy2(source, target_path)
+                    self._copy_file_tracked(source, target_path, package_dir)
+
+        for src, dst in collected["data_files"]:
+            target_path = os.path.join(package_dir, dst)
+            target_dir = os.path.dirname(target_path)
+            if target_dir and not os.path.exists(target_dir):
+                os.makedirs(target_dir, exist_ok=True)
+            self._copy_file_tracked(src, target_path, package_dir)
+
+        items_by_category = self.get_items_for_platform(platform)
+        for category, items in items_by_category.items():
+            for item in items:
+                if not item.get("external"):
+                    continue
+                ext_key = item["name"]
+                if ext_key not in external_dirs:
+                    continue
+                ext_src = external_dirs[ext_key]
+                if item["name"] == "languages":
+                    dst_base = os.path.join(package_dir, "data", "languages")
+                elif item["name"] == "maps":
+                    dst_base = os.path.join(package_dir, "data", "maps")
+                else:
+                    dst_base = os.path.join(package_dir, item.get("dest", os.path.basename(item["path"])))
+                if not os.path.exists(dst_base):
+                    os.makedirs(dst_base, exist_ok=True)
+                self._copy_dir_tracked(ext_src, dst_base, package_dir)
+
+    def _copy_file_tracked(self, src: str, dst: str, package_root: str):
+        shutil.copy2(src, dst)
+        rel = os.path.relpath(os.path.realpath(dst), os.path.realpath(package_root))
+        self._staged_files.add(rel)
+
+    def _copy_dir_tracked(self, src: str, dst: str, package_root: str):
+        if os.path.exists(dst):
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst)
+        for root, _dirs, files in os.walk(dst):
+            for fname in files:
+                full = os.path.join(root, fname)
+                rel = os.path.relpath(os.path.realpath(full), os.path.realpath(package_root))
+                self._staged_files.add(rel)
+
+    def validate_staging_directory(
+        self,
+        package_dir: str,
+        collected: Dict,
+        platform: str,
+        allow_extra: bool = False
+    ) -> List[str]:
+        errors = []
+        actual_files: Set[str] = set()
+
+        pkg_real = os.path.realpath(package_dir)
+        for root, _dirs, files in os.walk(pkg_real):
+            for fname in files:
+                full = os.path.join(root, fname)
+                rel = os.path.relpath(full, pkg_real)
+                actual_files.add(rel)
+
+        if not allow_extra:
+            extras = actual_files - self._staged_files
+            for extra in sorted(extras):
+                errors.append(f"UNDECLARED FILE in package: {extra}")
+
+        return errors
+
+    def render_template(
+        self,
+        item_name: str,
+        platform: str,
+        context: Dict[str, str]
+    ) -> Optional[str]:
+        categories = self.data.get("categories", {})
+        for cat_data in categories.values():
+            for item in cat_data.get("items", []):
+                if item.get("name") == item_name and item.get("template"):
+                    if platform not in item.get("platforms", []):
+                        return None
+                    src_path = os.path.join(self.project_root, item["path"])
+                    with open(src_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    for key, value in context.items():
+                        content = content.replace(f"@{key}@", value)
+                    return content
+        return None
+
+    def get_declared_dest_paths(
+        self,
+        platform: str,
+        include_optional: bool = False,
+        include_tools: bool = False,
+        use_bundle: bool = False
+    ) -> Set[str]:
+        paths: Set[str] = set()
+        items_by_category = self.get_items_for_platform(platform, include_optional, include_tools)
+
+        for category, items in items_by_category.items():
+            for item in items:
+                if item.get("template"):
+                    continue
+                if item.get("external"):
+                    if item["name"] == "languages":
+                        paths.add("data/languages")
+                    elif item["name"] == "maps":
+                        paths.add("data/maps")
+                    continue
+                if item["name"] == "data_directory":
+                    data_base = self.get_data_base_dir()
+                    for df in self.get_data_files():
+                        paths.add(os.path.join(data_base, df))
+                    continue
+
+                _src, dest = self.resolve_item_path(item, platform)
+                if dest:
+                    paths.add(dest)
+
+        return paths
 
     def print_summary(
         self,
@@ -243,19 +457,23 @@ class ReleaseManifest:
         include_tools: bool = False
     ) -> Dict[str, List[str]]:
         collected = self.collect_files(platform, include_optional=include_optional,
-                                       include_tools=include_tools, verify_exists=False)
+                                       include_tools=include_tools, verify_exists=False, strict=False)
         cmake_vars = {
             "CPACK_TARGETS": [],
             "CPACK_DIRS": [],
             "CPACK_FILES": [],
         }
 
-        for category, items in collected.items():
-            for name, source, dest in items:
+        for category, items in collected["items"].items():
+            for entry in items:
+                name = entry["name"]
+                source = entry["source"]
+                if not source:
+                    continue
                 rel_source = os.path.relpath(source, self.project_root) if os.path.isabs(source) else source
                 if category == "required" and name in ("client_binary", "server_binary"):
                     cmake_vars["CPACK_TARGETS"].append(name.replace("_binary", ""))
-                elif os.path.isdir(source) if os.path.exists(source) else name.endswith("_directory"):
+                elif entry["type"] in ("directory", "directory_list"):
                     cmake_vars["CPACK_DIRS"].append(rel_source)
                 else:
                     cmake_vars["CPACK_FILES"].append(rel_source)
@@ -277,6 +495,12 @@ def main():
     parser.add_argument("--summary", action="store_true", help="Print summary of files for platform")
     parser.add_argument("--cmake-vars", action="store_true", help="Output CMake variables for platform")
     parser.add_argument("--build-dir", help="Build output directory override", default=None)
+    parser.add_argument("--collect", action="store_true", help="Collect and list all files for platform")
+    parser.add_argument("--copy", metavar="PACKAGE_DIR", help="Copy collected files to PACKAGE_DIR")
+    parser.add_argument("--validate", metavar="PACKAGE_DIR", help="Validate package dir against manifest")
+    parser.add_argument("--languages-dir", help="Path to downloaded languages directory")
+    parser.add_argument("--maps-dir", help="Path to downloaded maps directory")
+    parser.add_argument("--no-strict", action="store_true", help="Do not fail on missing required items")
 
     args = parser.parse_args()
 
@@ -306,6 +530,56 @@ def main():
             for v in values:
                 print(f"  {v}")
             print(")")
+
+    if args.collect or args.copy:
+        collected = manifest.collect_files(
+            args.platform,
+            build_dir=args.build_dir,
+            include_optional=args.include_optional,
+            include_tools=args.include_tools,
+            verify_exists=True,
+            strict=not args.no_strict
+        )
+        if args.collect:
+            for category, items in collected["items"].items():
+                print(f"\n[{category}]")
+                for entry in items:
+                    print(f"  {entry['name']}: {entry['source']} -> {entry['dest']}")
+            if collected["data_files"]:
+                print(f"\n[data_manifest.txt] {len(collected['data_files'])} files")
+            if collected["missing_required"]:
+                print(f"\n[MISSING REQUIRED] {collected['missing_required']}")
+            if collected["missing_optional"]:
+                print(f"\n[MISSING OPTIONAL] {collected['missing_optional']}")
+
+        if args.copy:
+            ext_dirs = {}
+            if args.languages_dir:
+                ext_dirs["languages"] = args.languages_dir
+            if args.maps_dir:
+                ext_dirs["maps"] = args.maps_dir
+            use_bundle = manifest.get_package_format(args.platform).get("use_bundle", False)
+            manifest.copy_files_to_package(collected, args.copy, args.platform, use_bundle, ext_dirs)
+            print(f"Copied files to {args.copy}")
+
+    if args.validate:
+        collected = manifest.collect_files(
+            args.platform,
+            build_dir=args.build_dir,
+            include_optional=args.include_optional,
+            include_tools=args.include_tools,
+            verify_exists=False,
+            strict=False
+        )
+        errors = manifest.validate_staging_directory(args.validate, collected, args.platform)
+        if errors:
+            print("VALIDATION ERRORS:")
+            for e in errors:
+                print(f"  ERROR: {e}")
+            import sys
+            sys.exit(1)
+        else:
+            print("Validation OK - all files declared in manifest")
 
 
 if __name__ == "__main__":

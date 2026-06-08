@@ -2063,12 +2063,92 @@ add_custom_target(package_default DEPENDS package_${PACKAGE_DEFAULT})
 add_custom_target(package_all DEPENDS ${PACKAGE_TARGETS})
 
 if(Python3_EXECUTABLE AND EXISTS ${RELEASE_MANIFEST_TOOL})
+  set(MANIFEST_PLATFORM $<IF:$<STREQUAL:${TARGET_OS},windows>,win${TARGET_BITS},$<IF:$<STREQUAL:${TARGET_OS},mac>,macos,$<IF:$<STREQUAL:${TARGET_BITS},32>,linux_x86,linux_x86_64>>>)
+  set(MANIFEST_STAGE_DIR ${PROJECT_BINARY_DIR}/manifest_stage)
+  set(MANIFEST_PACKAGE_NAME ${CPACK_PACKAGE_FILE_NAME})
+
+  option(MANIFEST_INCLUDE_OPTIONAL "Include optional debug symbols in manifest package" OFF)
+  option(MANIFEST_INCLUDE_TOOLS "Include development tools in manifest package" OFF)
+  option(MANIFEST_ALLOW_EXTRA_FILES "Allow undeclared files in manifest staging directory" OFF)
+
+  set(MANIFEST_OPT_ARGS)
+  set(MANIFEST_TOOLS_ARGS)
+  set(MANIFEST_STRICT_ARGS)
+  if(MANIFEST_INCLUDE_OPTIONAL)
+    list(APPEND MANIFEST_OPT_ARGS --include-optional)
+  endif()
+  if(MANIFEST_INCLUDE_TOOLS)
+    list(APPEND MANIFEST_TOOLS_ARGS --include-tools)
+  endif()
+
   add_custom_target(manifest_check
     COMMAND ${Python3_EXECUTABLE} ${RELEASE_MANIFEST_TOOL}
-      --platform $<IF:$<STREQUAL:${TARGET_OS},windows>,win${TARGET_BITS},$<IF:$<STREQUAL:${TARGET_OS},mac>,macos,$<IF:$<STREQUAL:${TARGET_BITS},32>,linux_x86,linux_x86_64>>>
+      --platform ${MANIFEST_PLATFORM}
       --summary
+      ${MANIFEST_OPT_ARGS}
+      ${MANIFEST_TOOLS_ARGS}
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
     COMMENT "Checking release manifest consistency"
+  )
+
+  add_custom_target(manifest_stage
+    COMMAND ${CMAKE_COMMAND} -E remove_directory ${MANIFEST_STAGE_DIR}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${MANIFEST_STAGE_DIR}
+    COMMAND ${Python3_EXECUTABLE} ${RELEASE_MANIFEST_TOOL}
+      --platform ${MANIFEST_PLATFORM}
+      --build-dir ${PROJECT_BINARY_DIR}
+      --copy ${MANIFEST_STAGE_DIR}
+      ${MANIFEST_OPT_ARGS}
+      ${MANIFEST_TOOLS_ARGS}
+    COMMAND ${Python3_EXECUTABLE} ${RELEASE_MANIFEST_TOOL}
+      --platform ${MANIFEST_PLATFORM}
+      --build-dir ${PROJECT_BINARY_DIR}
+      --validate ${MANIFEST_STAGE_DIR}
+      ${MANIFEST_OPT_ARGS}
+      ${MANIFEST_TOOLS_ARGS}
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    DEPENDS
+      ${TARGET_CLIENT}
+      ${TARGET_SERVER}
+      manifest_check
+      ${RELEASE_MANIFEST}
+      ${RELEASE_MANIFEST_TOOL}
+    COMMENT "Staging files via release manifest with strict validation"
+  )
+
+  if(TARGET_OS STREQUAL "windows")
+    set(MANIFEST_ARCHIVE_EXT zip)
+    set(MANIFEST_ARCHIVE_CMD
+      COMMAND ${CMAKE_COMMAND} -E remove_directory ${PROJECT_BINARY_DIR}/manifest_pack_tmp
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_BINARY_DIR}/manifest_pack_tmp
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${MANIFEST_STAGE_DIR} ${PROJECT_BINARY_DIR}/manifest_pack_tmp/${MANIFEST_PACKAGE_NAME}
+      COMMAND ${CMAKE_COMMAND} -E chdir ${PROJECT_BINARY_DIR}/manifest_pack_tmp ${CMAKE_COMMAND} -E tar c ../${MANIFEST_PACKAGE_NAME}.zip --format=zip -- ${MANIFEST_PACKAGE_NAME}/
+    )
+  elseif(TARGET_OS STREQUAL "mac")
+    set(MANIFEST_ARCHIVE_EXT dmg)
+    set(MANIFEST_ARCHIVE_CMD
+      COMMAND ${CMAKE_COMMAND} -E remove_directory ${PROJECT_BINARY_DIR}/manifest_pack_tmp
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_BINARY_DIR}/manifest_pack_tmp
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${MANIFEST_STAGE_DIR} ${PROJECT_BINARY_DIR}/manifest_pack_tmp/${MANIFEST_PACKAGE_NAME}
+      COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/dmg.py create
+        $<IF:$<BOOL:${HDIUTIL}>,--hdiutil ${HDIUTIL},--dmgtools ${DMG} ${HFSPLUS} ${NEWFS_HFS}>
+        ${MANIFEST_PACKAGE_NAME}.dmg ${MANIFEST_PACKAGE_NAME} ${PROJECT_BINARY_DIR}/manifest_pack_tmp
+    )
+  else()
+    set(MANIFEST_ARCHIVE_EXT tar.gz)
+    set(MANIFEST_ARCHIVE_CMD
+      COMMAND ${CMAKE_COMMAND} -E remove_directory ${PROJECT_BINARY_DIR}/manifest_pack_tmp
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_BINARY_DIR}/manifest_pack_tmp
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${MANIFEST_STAGE_DIR} ${PROJECT_BINARY_DIR}/manifest_pack_tmp/${MANIFEST_PACKAGE_NAME}
+      COMMAND ${CMAKE_COMMAND} -E chdir ${PROJECT_BINARY_DIR}/manifest_pack_tmp ${CMAKE_COMMAND} -E tar cz ../${MANIFEST_PACKAGE_NAME}.tar.gz -- ${MANIFEST_PACKAGE_NAME}/
+    )
+  endif()
+
+  add_custom_target(manifest_package
+    ${MANIFEST_ARCHIVE_CMD}
+    DEPENDS manifest_stage
+    WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+    COMMENT "Creating ${MANIFEST_ARCHIVE_EXT} package from manifest staging directory"
   )
 endif()
 
