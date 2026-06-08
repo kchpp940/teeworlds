@@ -17,6 +17,10 @@ public:
 	virtual void Save(const char *pFilename=0) = 0;
 	virtual class CConfig *Values() = 0;
 
+	virtual void Validate() = 0;
+	virtual void Upgrade() = 0;
+	virtual bool Load(const char *pFilename=0) = 0;
+
 	virtual void RegisterCallback(SAVECALLBACKFUNC pfnFunc, void *pUserData) = 0;
 
 	virtual void WriteLine(const char *pLine) = 0;

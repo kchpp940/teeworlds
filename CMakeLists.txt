@@ -27,12 +27,6 @@ endif()
 
 project(teeworlds VERSION ${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH})
 
-set(RELEASE_MANIFEST "${PROJECT_SOURCE_DIR}/scripts/release_manifest.json")
-set(RELEASE_MANIFEST_TOOL "${PROJECT_SOURCE_DIR}/scripts/release_manifest.py")
-if(EXISTS ${RELEASE_MANIFEST})
-  message(STATUS "Release manifest: ${RELEASE_MANIFEST}")
-endif()
-
 set(ORIGINAL_CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH})
 set(ORIGINAL_CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES})
 set(ORIGINAL_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
@@ -101,22 +95,6 @@ set(CLIENT_EXECUTABLE teeworlds CACHE STRING "Name of the build client executabl
 ########################################################################
 
 find_package(Python3)
-
-if(Python3_EXECUTABLE AND EXISTS ${RELEASE_MANIFEST_TOOL})
-  execute_process(
-    COMMAND ${Python3_EXECUTABLE} ${RELEASE_MANIFEST_TOOL} --version
-    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-    OUTPUT_VARIABLE MANIFEST_VERSION
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    RESULT_VARIABLE MANIFEST_VERSION_RESULT
-  )
-  if(MANIFEST_VERSION_RESULT EQUAL 0)
-    message(STATUS "Release manifest version: ${MANIFEST_VERSION}")
-  else()
-    message(WARNING "Failed to read version from release manifest")
-  endif()
-endif()
-
 if(DOWNLOAD_DEPENDENCIES)
   if(Python3_EXECUTABLE AND TARGET_OS STREQUAL "windows" AND TARGET_BITS)
     set(DOWNLOADS)
@@ -1841,186 +1819,231 @@ function(regex_inverted VAR)
   set(${VAR} ${RESULT} PARENT_SCOPE)
 endfunction()
 
-########################################################################
-# Release packaging — MANIFEST ONLY
-# All release packaging goes through scripts/release_manifest.json + scripts/package_manifest.py.
-# CPack and legacy install() paths are BLOCKED — they would bypass manifest validation.
-# DO NOT re-enable include(CPack) or install(TARGETS/DIRECTORY) packaging rules.
-#
-# Packaging targets:
-#   - package_zip, package_tar_gz, package_tar_xz, package_dmg (platform-dependent)
-#   - package_default  — platform-native format
-#   - package_all      — all available formats
-#   - manifest_check   — show manifest summary
-########################################################################
-
-set(PKG_NAME ${PROJECT_NAME})
-set(PKG_VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH})
-set(PKG_SYSTEM_NAME ${CMAKE_SYSTEM_NAME})
+set(CPACK_PACKAGE_NAME ${PROJECT_NAME})
+set(CPACK_GENERATOR TGZ TXZ)
+set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+set(CPACK_STRIP_FILES TRUE)
+set(CPACK_COMPONENTS_ALL portable)
+set(CPACK_SOURCE_GENERATOR ZIP TGZ TBZ2 TXZ)
+set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
+set(CPACK_PACKAGE_VERSION ${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH})
+set(CPACK_SYSTEM_NAME ${CMAKE_SYSTEM_NAME})
 
 if(TARGET_OS AND TARGET_BITS)
   if(TARGET_OS STREQUAL "windows")
-    set(PKG_SYSTEM_NAME "win${TARGET_BITS}")
+    set(CPACK_SYSTEM_NAME "win${TARGET_BITS}")
+    set(CPACK_GENERATOR ZIP)
   elseif(TARGET_OS STREQUAL "linux")
+    # Assuming Intel here.
     if(TARGET_BITS EQUAL 32)
-      set(PKG_SYSTEM_NAME "linux_x86")
+      set(CPACK_SYSTEM_NAME "linux_x86")
     elseif(TARGET_BITS EQUAL 64)
-      set(PKG_SYSTEM_NAME "linux_x86_64")
+      set(CPACK_SYSTEM_NAME "linux_x86_64")
     endif()
   elseif(TARGET_OS STREQUAL "mac")
-    set(PKG_SYSTEM_NAME "macos")
+    set(CPACK_SYSTEM_NAME "macos")
+    set(CPACK_GENERATOR DMG)
   endif()
 endif()
 
-set(PKG_FILE_NAME ${PKG_NAME}-${PKG_VERSION}-${PKG_SYSTEM_NAME})
+set(CPACK_PACKAGE_FILE_NAME ${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_SYSTEM_NAME})
+set(CPACK_ARCHIVE_PORTABLE_FILE_NAME ${CPACK_PACKAGE_FILE_NAME})
+set(CPACK_SOURCE_PACKAGE_FILE_NAME ${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-src)
+set(CPACK_SOURCE_FILES
+  CMakeLists.txt
+  bam.lua
+  cmake/
+  configure.lua
+  datasrc/
+  license.txt
+  other/
+  readme.md
+  scripts/
+  src/
+  storage.cfg
+)
+set(CPACK_SOURCE_IGNORE_FILES
+  "\\\\.o$"
+  "\\\\.pyc$"
+  "/\\\\.git"
+  "/__pycache__/"
+)
 
-# --- BLOCKED: legacy CPack / install() paths ---
-# If someone tries to explicitly enable CPack, fail loudly and point to the manifest system.
-option(ENABLE_LEGACY_CPACK "DO NOT USE. Enables bypass of release manifest validation." OFF)
-mark_as_advanced(ENABLE_LEGACY_CPACK)
-if(ENABLE_LEGACY_CPACK)
-  message(FATAL_ERROR
-    "ENABLE_LEGACY_CPACK is blocked. All release packaging MUST go through "
-    "the unified release manifest (scripts/package_manifest.py + scripts/release_manifest.json). "
-    "Use package_zip / package_tar_gz / package_tar_xz / package_dmg targets, or "
-    "scripts/make_release.py (a wrapper around package_manifest.py). "
-    "CPack and install()-based packaging are intentionally disabled to prevent "
-    "undeclared files from leaking into release archives."
-  )
+regex_inverted(CPACK_SOURCE_FILES_INVERTED ${CPACK_SOURCE_FILES})
+escape_regex(PROJECT_SOURCE_DIR_ESCAPED ${PROJECT_SOURCE_DIR})
+
+foreach(str ${CPACK_SOURCE_FILES_INVERTED})
+  escape_backslashes(STR_ESCAPED "${PROJECT_SOURCE_DIR_ESCAPED}/${str}")
+  list(APPEND CPACK_SOURCE_IGNORE_FILES "${STR_ESCAPED}")
+endforeach()
+
+set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME ${PROJECT_NAME})
+
+set(CPACK_TARGETS
+  ${TARGET_CLIENT}
+  ${TARGET_SERVER}
+)
+set(CPACK_DIRS ${PROJECT_BINARY_DIR}/data)
+set(CPACK_FILES
+  license.txt
+  storage.cfg
+  ${COPY_FILES}
+)
+if(TARGET_OS STREQUAL "windows")
+  list(APPEND CPACK_FILES other/config_directory.bat)
+endif()
+
+if(NOT DEV)
+  install(DIRECTORY ${PROJECT_BINARY_DIR}/data DESTINATION share/${PROJECT_NAME} COMPONENT data)
+  install(TARGETS ${TARGET_CLIENT} DESTINATION bin COMPONENT client)
+  install(TARGETS ${TARGET_SERVER} DESTINATION bin COMPONENT server)
 endif()
 
 if(DEV)
-  # Don't generate package targets.
-elseif(NOT Python3_EXECUTABLE)
-  message(WARNING "Python3 not found - cannot create package targets. Release manifest packaging requires Python3.")
+  # Don't generate CPack targets.
 elseif(CMAKE_VERSION VERSION_LESS 3.6 OR CMAKE_VERSION VERSION_EQUAL 3.6)
-  message(WARNING "Cannot create package targets, CMake version too old. Use CMake 3.6 or newer.")
+  message(WARNING "Cannot create CPack targets, CMake version too old. Use CMake 3.6 or newer.")
 else()
-  message(STATUS "All package targets (package_dmg/package_zip/package_tar_gz/package_tar_xz) now use release manifest staging and validation")
+  set(EXTRA_ARGS DESTINATION ${CPACK_PACKAGE_FILE_NAME} COMPONENT portable EXCLUDE_FROM_ALL)
+  install(TARGETS ${CPACK_TARGETS} ${EXTRA_ARGS})
+  install(DIRECTORY ${CPACK_DIRS} ${EXTRA_ARGS})
+  install(FILES ${CPACK_FILES} ${EXTRA_ARGS})
+endif()
 
-  set(RELEASE_PACKAGER ${PROJECT_SOURCE_DIR}/scripts/package_manifest.py)
-  set(MANIFEST_PLATFORM $<IF:$<STREQUAL:${TARGET_OS},windows>,win${TARGET_BITS},$<IF:$<STREQUAL:${TARGET_OS},mac>,macos,$<IF:$<STREQUAL:${TARGET_BITS},32>,linux_x86,linux_x86_64>>>)
-  set(MANIFEST_STAGE ${PROJECT_BINARY_DIR}/manifest_pack_stage)
-  set(MANIFEST_PKG_NAME ${PKG_FILE_NAME})
+set(PACKAGE_TARGETS)
 
-  option(MANIFEST_INCLUDE_OPTIONAL "Include optional_debug (pdb, dSYM) in packages (default OFF)" OFF)
-  option(MANIFEST_INCLUDE_TOOLS "Include development tools in packages (default OFF)" OFF)
-  option(MANIFEST_ALLOW_EXTRA_FILES "Allow undeclared files in staging directory (NOT recommended, default OFF)" OFF)
+if(CLIENT AND (DMGTOOLS_FOUND OR HDIUTIL))
+  file(MAKE_DIRECTORY bundle/client/)
+  file(MAKE_DIRECTORY bundle/server/)
+  configure_file(other/bundle/client/Info.plist.in bundle/client/Info.plist)
+  configure_file(other/bundle/server/Info.plist.in bundle/server/Info.plist)
 
-  set(_M_OPT)
-  set(_M_TOOLS)
-  set(_M_ALLOW)
-  if(MANIFEST_INCLUDE_OPTIONAL)
-    set(_M_OPT --include-optional)
+  if(HDIUTIL)
+    set(DMG_PARAMS --hdiutil ${HDIUTIL})
+  elseif(DMGTOOLS_FOUND)
+    set(DMG_PARAMS --dmgtools ${DMG} ${HFSPLUS} ${NEWFS_HFS})
   endif()
-  if(MANIFEST_INCLUDE_TOOLS)
-    set(_M_TOOLS --include-tools)
-  endif()
-  if(MANIFEST_ALLOW_EXTRA_FILES)
-    set(_M_ALLOW --allow-extra-files)
-  endif()
-
-  set(MANIFEST_DEPS
-    ${TARGET_CLIENT}
-    ${TARGET_SERVER}
-    ${RELEASE_PACKAGER}
-    ${RELEASE_MANIFEST}
-    ${RELEASE_MANIFEST_TOOL}
+  set(DMG_TMPDIR pack_${CPACK_PACKAGE_FILE_NAME}_dmg)
+  set(DMG_MKDIRS
+    ${TARGET_CLIENT}.app
+    ${TARGET_CLIENT}.app/Contents
+    ${TARGET_CLIENT}.app/Contents/Frameworks
+    ${TARGET_CLIENT}.app/Contents/MacOS
+    ${TARGET_CLIENT}.app/Contents/Resources
+    ${TARGET_SERVER}.app
+    ${TARGET_SERVER}.app/Contents
+    ${TARGET_SERVER}.app/Contents/MacOS
+    ${TARGET_SERVER}.app/Contents/Resources
+    ${TARGET_SERVER}.app/Contents/Resources/data
+    # Needed so the server recognizes the data directory.
+    ${TARGET_SERVER}.app/Contents/Resources/data/mapres
   )
-  if(TARGET_SERVER_LAUNCHER)
-    list(APPEND MANIFEST_DEPS ${TARGET_SERVER_LAUNCHER})
-  endif()
+  set(DMG_MKDIR_COMMANDS)
+  foreach(dir ${DMG_MKDIRS})
+    list(APPEND DMG_MKDIR_COMMANDS COMMAND ${CMAKE_COMMAND} -E make_directory ${DMG_TMPDIR}/${dir})
+  endforeach()
+  add_custom_command(OUTPUT ${CPACK_PACKAGE_FILE_NAME}.dmg
+    COMMAND ${CMAKE_COMMAND} -E remove_directory ${DMG_TMPDIR}
+    ${DMG_MKDIR_COMMANDS}
 
-  set(MANIFEST_STAGE_CMD
-    COMMAND ${Python3_EXECUTABLE} ${RELEASE_PACKAGER}
-      stage
-      --platform ${MANIFEST_PLATFORM}
-      --output ${MANIFEST_STAGE}
-      --build-dir ${PROJECT_BINARY_DIR}
-      ${_M_OPT}
-      ${_M_TOOLS}
-      ${_M_ALLOW}
-    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    # CLIENT
+    COMMAND ${CMAKE_COMMAND} -E copy_directory data ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/Resources/data
+    COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/other/icons/${TARGET_CLIENT}.icns ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/Resources/
+    COMMAND ${CMAKE_COMMAND} -E copy bundle/client/Info.plist ${PROJECT_SOURCE_DIR}/other/bundle/client/PkgInfo ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${TARGET_CLIENT}> ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/MacOS/
+    COMMAND ${CMAKE_COMMAND} -E copy ${SDL2_LIBRARY} ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/Frameworks/libSDL2-2.0.0.dylib
+    COMMAND ${CMAKE_COMMAND} -E copy ${FREETYPE_LIBRARY} ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/Frameworks/libfreetype.6.dylib
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/darwin_change_dylib.py change --tools ${CMAKE_INSTALL_NAME_TOOL} ${CMAKE_OTOOL} ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/MacOS/${TARGET_CLIENT} SDL2 @executable_path/../Frameworks/libSDL2-2.0.0.dylib
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/darwin_change_dylib.py change --tools ${CMAKE_INSTALL_NAME_TOOL} ${CMAKE_OTOOL} ${DMG_TMPDIR}/${TARGET_CLIENT}.app/Contents/MacOS/${TARGET_CLIENT} libfreetype @executable_path/../Frameworks/libfreetype.6.dylib
+
+    # SERVER
+    COMMAND ${CMAKE_COMMAND} -E copy_directory data/maps ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/Resources/data/maps
+    COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/other/icons/${TARGET_SERVER}.icns ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/Resources/
+    COMMAND ${CMAKE_COMMAND} -E copy bundle/server/Info.plist ${PROJECT_SOURCE_DIR}/other/bundle/server/PkgInfo ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${TARGET_SERVER}> $<TARGET_FILE:${TARGET_SERVER_LAUNCHER}> ${DMG_TMPDIR}/${TARGET_SERVER}.app/Contents/MacOS/
+
+    # DMG
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/dmg.py create ${DMG_PARAMS} ${CPACK_PACKAGE_FILE_NAME}.dmg ${CPACK_PACKAGE_FILE_NAME} ${DMG_TMPDIR}
+
+    DEPENDS
+      ${TARGET_CLIENT}
+      ${TARGET_SERVER_LAUNCHER}
+      ${TARGET_SERVER}
+      ${PROJECT_BINARY_DIR}/bundle/client/Info.plist
+      ${PROJECT_BINARY_DIR}/bundle/server/Info.plist
+      other/bundle/client/PkgInfo
+      other/bundle/server/PkgInfo
+      other/icons/${TARGET_CLIENT}.icns
+      other/icons/${TARGET_SERVER}.icns
+      scripts/dmg.py
   )
+  add_custom_target(package_dmg DEPENDS ${CPACK_PACKAGE_FILE_NAME}.dmg)
+  list(APPEND PACKAGE_TARGETS package_dmg)
+endif()
 
-  set(PACKAGE_TARGETS)
+foreach(ext zip tar.gz tar.xz)
+  set(TAR_MODE c)
+  set(TAR_EXTRA_ARGS)
+  string(REPLACE . _ EXT_SLUG ${ext})
 
-  if(CLIENT AND (DMGTOOLS_FOUND OR HDIUTIL))
-    add_custom_command(OUTPUT ${PKG_FILE_NAME}.dmg
-      COMMAND ${CMAKE_COMMAND} -E remove_directory ${MANIFEST_STAGE}
-      ${MANIFEST_STAGE_CMD}
-      COMMAND ${Python3_EXECUTABLE} ${RELEASE_PACKAGER}
-        package
-        --stage-dir ${MANIFEST_STAGE}
-        --platform ${MANIFEST_PLATFORM}
-        --format dmg
-      WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
-      DEPENDS ${MANIFEST_DEPS}
-      COMMENT "Building DMG via release manifest (strict validation)"
-    )
-    add_custom_target(package_dmg DEPENDS ${PKG_FILE_NAME}.dmg)
-    list(APPEND PACKAGE_TARGETS package_dmg)
-  endif()
+  set(TMPDIR pack_${CPACK_PACKAGE_FILE_NAME}_${EXT_SLUG}/${CPACK_PACKAGE_FILE_NAME})
 
-  foreach(ext zip tar.gz tar.xz)
-    string(REPLACE . _ EXT_SLUG ${ext})
-    add_custom_command(OUTPUT ${PKG_FILE_NAME}.${ext}
-      COMMAND ${CMAKE_COMMAND} -E remove_directory ${MANIFEST_STAGE}
-      ${MANIFEST_STAGE_CMD}
-      COMMAND ${Python3_EXECUTABLE} ${RELEASE_PACKAGER}
-        package
-        --stage-dir ${MANIFEST_STAGE}
-        --platform ${MANIFEST_PLATFORM}
-        --format ${ext}
-      WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
-      DEPENDS ${MANIFEST_DEPS}
-      COMMENT "Building ${ext} via release manifest (strict validation)"
-    )
-    add_custom_target(package_${EXT_SLUG} DEPENDS ${PKG_FILE_NAME}.${ext})
-    list(APPEND PACKAGE_TARGETS package_${EXT_SLUG})
+  set(COPY_FILE_COMMANDS)
+  set(COPY_DIR_COMMANDS)
+  set(COPY_TARGET_COMMANDS)
+  set(STRIP_TARGET_COMMANDS)
+  foreach(file ${CPACK_FILES})
+    list(APPEND COPY_FILE_COMMANDS COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/${file} ${TMPDIR}/)
+  endforeach()
+  foreach(dir ${CPACK_DIRS})
+    get_filename_component(NAME ${dir} NAME)
+    list(APPEND COPY_DIR_COMMANDS COMMAND ${CMAKE_COMMAND} -E copy_directory ${dir} ${TMPDIR}/${NAME})
+  endforeach()
+  foreach(target ${CPACK_TARGETS})
+    list(APPEND COPY_TARGET_COMMANDS COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${target}> ${TMPDIR}/)
   endforeach()
 
-  set(PACKAGE_DEFAULT tar_xz)
-  if(TARGET_OS STREQUAL "windows")
-    set(PACKAGE_DEFAULT zip)
-  elseif(TARGET_OS STREQUAL "mac")
-    set(PACKAGE_DEFAULT dmg)
+  if(ext STREQUAL zip)
+    set(TAR_EXTRA_ARGS --format=zip)
+  elseif(ext STREQUAL tar.gz)
+    set(TAR_MODE cz)
+  elseif(ext STREQUAL tar.xz)
+    set(TAR_MODE cJ)
   endif()
-  add_custom_target(package_default DEPENDS package_${PACKAGE_DEFAULT})
-  add_custom_target(package_all DEPENDS ${PACKAGE_TARGETS})
-endif()
-
-if(Python3_EXECUTABLE AND EXISTS ${RELEASE_MANIFEST_TOOL} AND EXISTS ${RELEASE_PACKAGER})
-  set(MANIFEST_PLATFORM $<IF:$<STREQUAL:${TARGET_OS},windows>,win${TARGET_BITS},$<IF:$<STREQUAL:${TARGET_OS},mac>,macos,$<IF:$<STREQUAL:${TARGET_BITS},32>,linux_x86,linux_x86_64>>>)
-
-  set(_M_OPT_SHOW)
-  set(_M_TOOLS_SHOW)
-  if(MANIFEST_INCLUDE_OPTIONAL)
-    set(_M_OPT_SHOW --include-optional)
-  endif()
-  if(MANIFEST_INCLUDE_TOOLS)
-    set(_M_TOOLS_SHOW --include-tools)
-  endif()
-
-  add_custom_target(manifest_check
-    COMMAND ${Python3_EXECUTABLE} ${RELEASE_PACKAGER} list
-      --platform ${MANIFEST_PLATFORM}
-      ${_M_OPT_SHOW}
-      ${_M_TOOLS_SHOW}
-    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-    COMMENT "Showing release manifest summary for this platform"
+  add_custom_command(OUTPUT ${CPACK_PACKAGE_FILE_NAME}.${ext}
+    COMMAND ${CMAKE_COMMAND} -E remove_directory ${TMPDIR}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${TMPDIR}
+    ${COPY_FILE_COMMANDS}
+    ${COPY_DIR_COMMANDS}
+    ${COPY_TARGET_COMMANDS}
+    ${STRIP_TARGET_COMMANDS}
+    COMMAND ${CMAKE_COMMAND} -E chdir pack_${CPACK_PACKAGE_FILE_NAME}_${EXT_SLUG} ${CMAKE_COMMAND} -E tar ${TAR_MODE} ../${CPACK_PACKAGE_FILE_NAME}.${ext} ${TAR_EXTRA_ARGS} -- ${CPACK_PACKAGE_FILE_NAME}/
+    DEPENDS ${CPACK_TARGETS}
   )
-endif()
+  add_custom_target(package_${EXT_SLUG} DEPENDS ${CPACK_PACKAGE_FILE_NAME}.${ext})
+  list(APPEND PACKAGE_TARGETS package_${EXT_SLUG})
+endforeach()
 
-# NOTE: include(CPack) and legacy install() packaging are INTENTIONALLY BLOCKED.
-# They would bypass the release manifest staging/validation and could leak
-# undeclared files into release archives.
-#
-# Use these manifest-only packaging targets instead:
-#   - package_zip, package_tar_gz, package_tar_xz, package_dmg
-#   - package_default, package_all
-# Or run:  python3 scripts/package_manifest.py ...
-# Or:      python3 scripts/make_release.py VERSION PLATFORM ...
+set(PACKAGE_DEFAULT tar_xz)
+if(TARGET_OS STREQUAL "windows")
+  set(PACKAGE_DEFAULT zip)
+elseif(TARGET_OS STREQUAL "mac")
+  set(PACKAGE_DEFAULT dmg)
+endif()
+add_custom_target(package_default DEPENDS package_${PACKAGE_DEFAULT})
+
+add_custom_target(package_all DEPENDS ${PACKAGE_TARGETS})
+
+# Unset these variables, they might do something in the future of CPack.
+unset(CPACK_SOURCE_FILES)
+unset(CPACK_SOURCE_FILES_INVERTED)
+unset(CPACK_TARGETS)
+unset(CPACK_DIRS)
+unset(CPACK_FILES)
+
+include(CPack)
 
 ########################################################################
 # COMPILER-SPECIFICS

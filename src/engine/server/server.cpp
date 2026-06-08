@@ -1886,6 +1886,8 @@ int main(int argc, const char **argv)
 		// register all console commands
 		pServer->RegisterCommands();
 
+		pConfigManager->Load();
+
 		// execute autoexec file
 		pConsole->ExecuteFile("autoexec.cfg");
 
@@ -1893,9 +1895,6 @@ int main(int argc, const char **argv)
 		if(argc > 1)
 			pConsole->ParseArguments(argc-1, &argv[1]);
 	}
-
-	// restore empty config strings to their defaults
-	pConfigManager->RestoreStrings();
 
 	pEngine->InitLogfile();
 

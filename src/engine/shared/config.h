@@ -44,6 +44,26 @@ class CConfigManager : public IConfigManager
 		void *m_pUserData;
 	};
 
+	struct CConfigMeta
+	{
+		enum EType
+		{
+			TYPE_INT = 0,
+			TYPE_STR,
+			TYPE_UTF8STR
+		};
+
+		EType m_Type;
+		const char *m_pScriptName;
+		int m_Offset;
+		int m_Size;
+		int m_DefaultInt;
+		const char *m_pDefaultStr;
+		int m_Min;
+		int m_Max;
+		int m_Flags;
+	};
+
 	class IStorage *m_pStorage;
 	class IConsole *m_pConsole;
 	IOHANDLE m_ConfigFile;
@@ -51,6 +71,12 @@ class CConfigManager : public IConfigManager
 	CCallback m_aCallbacks[MAX_CALLBACKS];
 	int m_NumCallbacks;
 	CConfig m_Values;
+
+	const CConfigMeta *m_pMetaTable;
+	int m_NumMeta;
+
+	static void InitMetaTable(const CConfigMeta **ppTable, int *pNum);
+	static bool FindMetaByName(const char *pScriptName, const CConfigMeta *pTable, int Num, CConfigMeta *pOut);
 
 public:
 	CConfigManager();
@@ -60,6 +86,10 @@ public:
 	virtual void RestoreStrings();
 	virtual void Save(const char *pFilename);
 	virtual CConfig *Values() { return &m_Values; }
+
+	virtual void Validate();
+	virtual void Upgrade();
+	virtual bool Load(const char *pFilename);
 
 	virtual void RegisterCallback(SAVECALLBACKFUNC pfnFunc, void *pUserData);
 

@@ -2649,9 +2649,7 @@ int main(int argc, const char **argv)
 
 	if(!UseDefaultConfig)
 	{
-		// execute config file
-		if(!pConsole->ExecuteFile(SETTINGS_FILENAME ".cfg"))
-			pConsole->ExecuteFile("settings.cfg"); // fallback to legacy naming scheme
+		pConfigManager->Load();
 
 		// execute autoexec file
 		pConsole->ExecuteFile("autoexec.cfg");
@@ -2691,9 +2689,6 @@ int main(int argc, const char **argv)
 #endif
 
 	pClient->DoVersionSpecificActions();
-
-	// restore empty config strings to their defaults
-	pConfigManager->RestoreStrings();
 
 	pClient->Engine()->InitLogfile();
 

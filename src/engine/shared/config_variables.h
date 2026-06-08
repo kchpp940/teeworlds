@@ -8,6 +8,8 @@
 #include "././game/variables.h"
 
 
+MACRO_CONFIG_INT(ConfigVersion, config_version, 1, 0, 0, CFGFLAG_SAVE|CFGFLAG_CLIENT|CFGFLAG_SERVER, "Version of the config file format, used for migrations")
+
 MACRO_CONFIG_UTF8STR(PlayerName, player_name, MAX_NAME_ARRAY_SIZE, MAX_NAME_LENGTH, "nameless tee", CFGFLAG_SAVE|CFGFLAG_CLIENT, "Name of the player")
 MACRO_CONFIG_UTF8STR(PlayerClan, player_clan, MAX_CLAN_ARRAY_SIZE, MAX_CLAN_LENGTH, "", CFGFLAG_SAVE|CFGFLAG_CLIENT, "Clan of the player")
 MACRO_CONFIG_INT(PlayerCountry, player_country, -1, -1, 1000, CFGFLAG_SAVE|CFGFLAG_CLIENT, "Country of the player")
