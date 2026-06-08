@@ -36,6 +36,8 @@ void CPreflight::Reset()
 	m_pConfig = 0;
 	mem_zero(m_aaResourcePaths, sizeof(m_aaResourcePaths));
 	m_NumResourcePaths = 0;
+	mem_zero(m_aPathChecks, sizeof(m_aPathChecks));
+	m_NumPathChecks = 0;
 	mem_zero(m_aCustomChecks, sizeof(m_aCustomChecks));
 	m_NumCustomChecks = 0;
 	mem_zero(m_aResults, sizeof(m_aResults));
@@ -100,6 +102,19 @@ void CPreflight::AddResourcePath(const char *pPath)
 		return;
 	str_copy(m_aaResourcePaths[m_NumResourcePaths], pPath, sizeof(m_aaResourcePaths[m_NumResourcePaths]));
 	m_NumResourcePaths++;
+}
+
+void CPreflight::AddPathCheck(const char *pPath, bool IsDir, bool RequireWrite, const char *pDescription)
+{
+	if(m_NumPathChecks >= MAX_PATH_CHECKS || !pPath || !pPath[0])
+		return;
+	str_copy(m_aPathChecks[m_NumPathChecks].m_aPath, pPath, sizeof(m_aPathChecks[m_NumPathChecks].m_aPath));
+	m_aPathChecks[m_NumPathChecks].m_IsDir = IsDir;
+	m_aPathChecks[m_NumPathChecks].m_RequireWrite = RequireWrite;
+	str_copy(m_aPathChecks[m_NumPathChecks].m_aDescription,
+		pDescription ? pDescription : (IsDir ? "directory" : "file"),
+		sizeof(m_aPathChecks[m_NumPathChecks].m_aDescription));
+	m_NumPathChecks++;
 }
 
 void CPreflight::RegisterCustomCheck(FPreflightCustomCheck pfnCheck, void *pUser)
@@ -567,7 +582,54 @@ int CPreflight::CheckDemoMapPermissions()
 	int NumFailures = 0;
 	const char *pSaveDir = GetSaveDir();
 
-	if(pSaveDir && pSaveDir[0])
+	if(m_NumPathChecks > 0)
+	{
+		for(int i = 0; i < m_NumPathChecks; ++i)
+		{
+			const SPathCheckInternal *pCheck = &m_aPathChecks[i];
+			bool Exists = pCheck->m_IsDir ? fs_is_dir(pCheck->m_aPath) : PathExistsAndReadable(pCheck->m_aPath);
+
+			if(Exists)
+			{
+				bool HasRead = PathExistsAndReadable(pCheck->m_aPath);
+				bool HasWrite = pCheck->m_RequireWrite ? PathWritable(pCheck->m_aPath) : true;
+
+				if(!HasRead)
+				{
+					char aBuf[512];
+					str_format(aBuf, sizeof(aBuf), "%s exists but is not readable: '%s'", pCheck->m_aDescription, pCheck->m_aPath);
+					AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_ERROR, aBuf,
+						"Fix read permissions: chmod u+r /path/to/file_or_dir"
+					);
+					NumFailures++;
+				}
+				else if(pCheck->m_RequireWrite && !HasWrite)
+				{
+					char aBuf[512];
+					str_format(aBuf, sizeof(aBuf), "%s exists but is not writable: '%s'", pCheck->m_aDescription, pCheck->m_aPath);
+					AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_ERROR, aBuf,
+						"Fix write permissions: chmod u+w /path/to/file_or_dir"
+					);
+					NumFailures++;
+				}
+			}
+			else
+			{
+				bool CanCreate = pCheck->m_IsDir ? CanCreateDirectory(pCheck->m_aPath) : CanCreateDirectory(pCheck->m_aPath);
+				if(!CanCreate)
+				{
+					char aBuf[512];
+					str_format(aBuf, sizeof(aBuf), "%s does not exist and cannot be created at: '%s'", pCheck->m_aDescription, pCheck->m_aPath);
+					AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_ERROR, aBuf,
+						"Check parent directory permissions. The game should be able to create this path automatically:\n"
+						"  chmod u+w /path/to/parent/dir"
+					);
+					NumFailures++;
+				}
+			}
+		}
+	}
+	else if(pSaveDir && pSaveDir[0])
 	{
 		struct
 		{
@@ -618,42 +680,45 @@ int CPreflight::CheckDemoMapPermissions()
 		}
 	}
 
-	if(m_pStorage)
+	if(m_NumPathChecks == 0)
 	{
-		char aMapPath[IO_MAX_PATH_LENGTH];
-		bool HasDm1 = m_pStorage->FindFile("dm1.map", "data/maps", IStorage::TYPE_ALL, aMapPath, sizeof(aMapPath));
-		bool HasCtf1 = m_pStorage->FindFile("ctf1.map", "data/maps", IStorage::TYPE_ALL, aMapPath, sizeof(aMapPath));
-		if(!HasDm1 || !HasCtf1)
+		if(m_pStorage)
 		{
-			AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_WARNING,
-				"Standard map files (dm1.map, ctf1.map) not found in storage search paths.",
-				"Ensure data/maps directory exists with the default .map files from the original Teeworlds distribution."
-			);
-			NumFailures++;
-		}
-	}
-	else
-	{
-		const char *pDataDir = GetDataDir();
-		if(pDataDir && pDataDir[0])
-		{
-			char aBuiltinMaps[IO_MAX_PATH_LENGTH];
-			str_format(aBuiltinMaps, sizeof(aBuiltinMaps), "%s/maps", pDataDir);
-			if(PathExistsAndReadable(aBuiltinMaps))
+			char aMapPath[IO_MAX_PATH_LENGTH];
+			bool HasDm1 = m_pStorage->FindFile("dm1.map", "data/maps", IStorage::TYPE_ALL, aMapPath, sizeof(aMapPath));
+			bool HasCtf1 = m_pStorage->FindFile("ctf1.map", "data/maps", IStorage::TYPE_ALL, aMapPath, sizeof(aMapPath));
+			if(!HasDm1 || !HasCtf1)
 			{
-				const char *apTestMaps[] = {"dm1.map", "ctf1.map"};
-				for(unsigned i = 0; i < sizeof(apTestMaps)/sizeof(apTestMaps[0]); ++i)
+				AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_WARNING,
+					"Standard map files (dm1.map, ctf1.map) not found in storage search paths.",
+					"Ensure data/maps directory exists with the default .map files from the original Teeworlds distribution."
+				);
+				NumFailures++;
+			}
+		}
+		else
+		{
+			const char *pDataDir = GetDataDir();
+			if(pDataDir && pDataDir[0])
+			{
+				char aBuiltinMaps[IO_MAX_PATH_LENGTH];
+				str_format(aBuiltinMaps, sizeof(aBuiltinMaps), "%s/maps", pDataDir);
+				if(PathExistsAndReadable(aBuiltinMaps))
 				{
-					char aMapPath[IO_MAX_PATH_LENGTH];
-					str_format(aMapPath, sizeof(aMapPath), "%s/%s", aBuiltinMaps, apTestMaps[i]);
-					if(!PathExistsAndReadable(aMapPath))
+					const char *apTestMaps[] = {"dm1.map", "ctf1.map"};
+					for(unsigned i = 0; i < sizeof(apTestMaps)/sizeof(apTestMaps[0]); ++i)
 					{
-						char aBuf[512];
-						str_format(aBuf, sizeof(aBuf), "Standard map file missing or unreadable: '%s'", aMapPath);
-						AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_WARNING, aBuf,
-							"Reinstall or restore the missing map files from the original Teeworlds distribution."
-						);
-						NumFailures++;
+						char aMapPath[IO_MAX_PATH_LENGTH];
+						str_format(aMapPath, sizeof(aMapPath), "%s/%s", aBuiltinMaps, apTestMaps[i]);
+						if(!PathExistsAndReadable(aMapPath))
+						{
+							char aBuf[512];
+							str_format(aBuf, sizeof(aBuf), "Standard map file missing or unreadable: '%s'", aMapPath);
+							AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_WARNING, aBuf,
+								"Reinstall or restore the missing map files from the original Teeworlds distribution."
+							);
+							NumFailures++;
+						}
 					}
 				}
 			}
@@ -662,8 +727,16 @@ int CPreflight::CheckDemoMapPermissions()
 
 	if(NumFailures == 0)
 	{
-		AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_INFO,
-			"Demo and map file permissions are correct.", 0);
+		if(m_NumPathChecks > 0)
+		{
+			AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_INFO,
+				"All requested path checks passed.", 0);
+		}
+		else
+		{
+			AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_INFO,
+				"Demo and map file permissions are correct.", 0);
+		}
 	}
 
 	return NumFailures == 0 ? 0 : -1;
@@ -786,9 +859,10 @@ int CPreflight::RunAllChecks()
 
 	dbg_msg("preflight", "=== starting preflight checks ===");
 	dbg_msg("preflight", "mode: %s", ModeName());
-	dbg_msg("preflight", "using %s storage, %s config",
+	dbg_msg("preflight", "using %s storage, %s config, %d extra path check(s)",
 		m_pStorage ? "initialized" : "fallback",
-		m_pConfig ? "loaded" : "default"
+		m_pConfig ? "loaded" : "default",
+		m_NumPathChecks
 	);
 
 	if(m_aCheckEnabled[PRECHECK_NETWORK])
@@ -854,10 +928,40 @@ bool PreflightShouldSkip(int argc, const char **argv)
 	return false;
 }
 
-int PreflightInitAndRun(const char *pAppName, EPreflightMode Mode, int argc, const char **argv,
-	SPreflightContext *pOutContext,
-	FPreflightCustomCheck pfnCustomCheckA, void *pUserA,
-	FPreflightCustomCheck pfnCustomCheckB, void *pUserB)
+void PreflightConfigure(IPreflight *pPreflight, EPreflightMode Mode, const char *pAppName,
+	IStorage *pStorage, CConfig *pConfig, bool NetworkAlreadyInitialized)
+{
+	if(!pPreflight)
+		return;
+
+	pPreflight->SetMode(Mode);
+	pPreflight->SetAppName(pAppName);
+	if(pStorage)
+		pPreflight->SetStorage(pStorage);
+	if(pConfig)
+		pPreflight->SetConfig(pConfig);
+	if(NetworkAlreadyInitialized)
+		pPreflight->SetNetworkAlreadyInitialized();
+
+	switch(Mode)
+	{
+	case PREMODE_CLIENT:
+		pPreflight->DisableCheck(PRECHECK_SERVER_PORT);
+		break;
+	case PREMODE_SERVER:
+		pPreflight->DisableCheck(PRECHECK_GRAPHICS);
+		pPreflight->DisableCheck(PRECHECK_AUDIO);
+		break;
+	case PREMODE_TOOL:
+	default:
+		pPreflight->DisableCheck(PRECHECK_GRAPHICS);
+		pPreflight->DisableCheck(PRECHECK_AUDIO);
+		pPreflight->DisableCheck(PRECHECK_SERVER_PORT);
+		break;
+	}
+}
+
+static void PreflightSetupStorageAndConfig(SPreflightContext *pCtx, const char *pAppName, EPreflightMode Mode, int argc, const char **argv)
 {
 	int FlagMask = CFGFLAG_CLIENT | CFGFLAG_SERVER;
 	int StorageType = IStorage::STORAGETYPE_BASIC;
@@ -876,83 +980,70 @@ int PreflightInitAndRun(const char *pAppName, EPreflightMode Mode, int argc, con
 		break;
 	}
 
-	IEngine *pEngine = CreateEngine(pAppName);
-	IStorage *pStorage = CreateStorage(pAppName, StorageType, argc, argv);
-	IConsole *pConsole = CreateConsole(FlagMask);
-	IConfigManager *pConfigManager = CreateConfigManager();
+	pCtx->m_pEngine = CreateEngine(pAppName);
+	pCtx->m_pStorage = CreateStorage(pAppName, StorageType, argc, argv);
+	pCtx->m_pConsole = CreateConsole(FlagMask);
+	pCtx->m_pConfigManager = CreateConfigManager();
+	pCtx->m_pKernel = IKernel::Create();
 
-	IKernel *pKernel = IKernel::Create();
 	bool RegisterFail = false;
-	RegisterFail = RegisterFail || !pKernel->RegisterInterface(pEngine);
-	RegisterFail = RegisterFail || !pKernel->RegisterInterface(pConsole);
-	RegisterFail = RegisterFail || !pKernel->RegisterInterface(pConfigManager);
-	RegisterFail = RegisterFail || !pKernel->RegisterInterface(pStorage);
+	RegisterFail = RegisterFail || !pCtx->m_pKernel->RegisterInterface(pCtx->m_pEngine);
+	RegisterFail = RegisterFail || !pCtx->m_pKernel->RegisterInterface(pCtx->m_pConsole);
+	RegisterFail = RegisterFail || !pCtx->m_pKernel->RegisterInterface(pCtx->m_pConfigManager);
+	RegisterFail = RegisterFail || !pCtx->m_pKernel->RegisterInterface(pCtx->m_pStorage);
 
-	if(RegisterFail)
+	if(!RegisterFail)
 	{
-		dbg_msg("preflight", "failed to register core interfaces.");
-		delete pKernel;
-		delete pEngine;
-		delete pStorage;
-		delete pConsole;
-		delete pConfigManager;
-		return -1;
+		pCtx->m_pEngine->Init();
+		pCtx->m_pConfigManager->Init(FlagMask);
+		pCtx->m_pConsole->Init();
 	}
 
-	pEngine->Init();
-	pConfigManager->Init(FlagMask);
-	pConsole->Init();
+	pCtx->m_pPreflight = CreatePreflight();
+	PreflightConfigure(pCtx->m_pPreflight, Mode, pAppName,
+		pCtx->m_pStorage,
+		!RegisterFail ? pCtx->m_pConfigManager->Values() : 0,
+		true);
 
-	IPreflight *pPreflight = CreatePreflight();
-	pPreflight->SetMode(Mode);
-	pPreflight->SetAppName(pAppName);
-	pPreflight->SetStorage(pStorage);
-	pPreflight->SetConfig(pConfigManager->Values());
-	pPreflight->SetNetworkAlreadyInitialized();
+	pCtx->m_OwnsInstances = true;
+}
 
-	switch(Mode)
-	{
-	case PREMODE_CLIENT:
-		pPreflight->DisableCheck(PRECHECK_SERVER_PORT);
-		break;
-	case PREMODE_SERVER:
-		pPreflight->DisableCheck(PRECHECK_GRAPHICS);
-		pPreflight->DisableCheck(PRECHECK_AUDIO);
-		break;
-	case PREMODE_TOOL:
-	default:
-		pPreflight->DisableCheck(PRECHECK_GRAPHICS);
-		pPreflight->DisableCheck(PRECHECK_AUDIO);
-		pPreflight->DisableCheck(PRECHECK_SERVER_PORT);
-		break;
-	}
+int PreflightInitAndRun(const char *pAppName, EPreflightMode Mode, int argc, const char **argv,
+	SPreflightContext *pOutContext,
+	FPreflightCustomCheck pfnCustomCheckA, void *pUserA,
+	FPreflightCustomCheck pfnCustomCheckB, void *pUserB,
+	const SPreflightPathCheck *pExtraPathChecks, int NumExtraPathChecks)
+{
+	SPreflightContext Ctx;
+	mem_zero(&Ctx, sizeof(Ctx));
+
+	PreflightSetupStorageAndConfig(&Ctx, pAppName, Mode, argc, argv);
 
 	if(pfnCustomCheckA)
-		pPreflight->RegisterCustomCheck(pfnCustomCheckA, pUserA);
+		Ctx.m_pPreflight->RegisterCustomCheck(pfnCustomCheckA, pUserA);
 	if(pfnCustomCheckB)
-		pPreflight->RegisterCustomCheck(pfnCustomCheckB, pUserB);
+		Ctx.m_pPreflight->RegisterCustomCheck(pfnCustomCheckB, pUserB);
 
-	int NumErrors = pPreflight->RunAllChecks();
-	bool HasErrors = pPreflight->HasErrors();
+	for(int i = 0; i < NumExtraPathChecks && pExtraPathChecks; ++i)
+	{
+		Ctx.m_pPreflight->AddPathCheck(
+			pExtraPathChecks[i].m_pPath,
+			pExtraPathChecks[i].m_IsDir,
+			pExtraPathChecks[i].m_RequireWrite,
+			pExtraPathChecks[i].m_pDescription
+		);
+	}
+
+	int NumErrors = Ctx.m_pPreflight->RunAllChecks();
+	bool HasErrors = Ctx.m_pPreflight->HasErrors();
 
 	if(pOutContext)
 	{
-		pOutContext->m_pKernel = pKernel;
-		pOutContext->m_pEngine = pEngine;
-		pOutContext->m_pStorage = pStorage;
-		pOutContext->m_pConsole = pConsole;
-		pOutContext->m_pConfigManager = pConfigManager;
-		pOutContext->m_pPreflight = pPreflight;
-		pOutContext->m_OwnsInstances = true;
+		*pOutContext = Ctx;
 	}
 	else
 	{
-		delete pPreflight;
-		delete pKernel;
-		delete pEngine;
-		delete pStorage;
-		delete pConsole;
-		delete pConfigManager;
+		PreflightShutdown(&Ctx);
 	}
 
 	return HasErrors ? -1 : NumErrors;
@@ -977,4 +1068,27 @@ void PreflightShutdown(SPreflightContext *pContext)
 	pContext->m_pConsole = 0;
 	pContext->m_pConfigManager = 0;
 	pContext->m_OwnsInstances = false;
+}
+
+int PreflightRunForClient(int argc, const char **argv,
+	SPreflightContext *pOutContext,
+	FPreflightCustomCheck pfnGraphicsCheck,
+	FPreflightCustomCheck pfnAudioCheck)
+{
+	return PreflightInitAndRun("Teeworlds", PREMODE_CLIENT, argc, argv,
+		pOutContext, pfnGraphicsCheck, 0, pfnAudioCheck, 0);
+}
+
+int PreflightRunForServer(int argc, const char **argv,
+	SPreflightContext *pOutContext)
+{
+	return PreflightInitAndRun("Teeworlds", PREMODE_SERVER, argc, argv, pOutContext);
+}
+
+int PreflightRunForTool(int argc, const char **argv,
+	SPreflightContext *pOutContext,
+	const SPreflightPathCheck *pExtraPathChecks, int NumExtraPathChecks)
+{
+	return PreflightInitAndRun("Teeworlds", PREMODE_TOOL, argc, argv,
+		pOutContext, 0, 0, 0, 0, pExtraPathChecks, NumExtraPathChecks);
 }

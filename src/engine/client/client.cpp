@@ -2754,11 +2754,8 @@ int main(int argc, const char **argv)
 	if(!SkipPreflight)
 	{
 		IPreflight *pPreflight = CreatePreflight();
-		pPreflight->SetClientMode();
-		pPreflight->SetAppName("Teeworlds");
-		pPreflight->SetStorage(pStorage);
-		pPreflight->SetConfig(pConfigManager->Values());
-		pPreflight->DisableCheck(PRECHECK_SERVER_PORT);
+		PreflightConfigure(pPreflight, PREMODE_CLIENT, "Teeworlds",
+			pStorage, pConfigManager->Values(), true);
 		pPreflight->RegisterCustomCheck(PreflightGraphicsCheck, 0);
 		pPreflight->RegisterCustomCheck(PreflightAudioCheck, 0);
 		int PreflightErrors = pPreflight->RunAllChecks();

@@ -20,6 +20,14 @@ class CPreflight : public IPreflight
 		void *m_pUser;
 	};
 
+	struct SPathCheckInternal
+	{
+		char m_aPath[IO_MAX_PATH_LENGTH];
+		bool m_IsDir;
+		bool m_RequireWrite;
+		char m_aDescription[128];
+	};
+
 	bool m_aCheckEnabled[PRECHECK_COUNT];
 	EPreflightMode m_Mode;
 	bool m_NetworkAlreadyInitialized;
@@ -28,6 +36,8 @@ class CPreflight : public IPreflight
 	CConfig *m_pConfig;
 	char m_aaResourcePaths[MAX_RESOURCE_PATHS_INTERNAL][IO_MAX_PATH_LENGTH];
 	int m_NumResourcePaths;
+	SPathCheckInternal m_aPathChecks[MAX_PATH_CHECKS];
+	int m_NumPathChecks;
 	SCustomCheck m_aCustomChecks[MAX_CUSTOM_CHECKS];
 	int m_NumCustomChecks;
 
@@ -64,6 +74,7 @@ public:
 	virtual void SetConfig(CConfig *pConfig);
 	virtual void SetNetworkAlreadyInitialized();
 	virtual void AddResourcePath(const char *pPath);
+	virtual void AddPathCheck(const char *pPath, bool IsDir, bool RequireWrite, const char *pDescription);
 	virtual void RegisterCustomCheck(FPreflightCustomCheck pfnCheck, void *pUser);
 	virtual void AddResult(EPreflightCheck Check, EPreflightSeverity Severity, const char *pMessage, const char *pFixSuggestion);
 	virtual int RunAllChecks();

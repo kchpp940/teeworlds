@@ -47,6 +47,14 @@ struct SPreflightResult
 
 typedef int (*FPreflightCustomCheck)(class IPreflight *pPreflight, void *pUser);
 
+struct SPreflightPathCheck
+{
+	const char *m_pPath;
+	bool m_IsDir;
+	bool m_RequireWrite;
+	const char *m_pDescription;
+};
+
 struct SPreflightContext
 {
 	class IKernel *m_pKernel;
@@ -67,6 +75,7 @@ public:
 		MAX_RESULTS = 32,
 		MAX_RESOURCE_PATHS = 8,
 		MAX_CUSTOM_CHECKS = 4,
+		MAX_PATH_CHECKS = 16,
 	};
 
 	virtual void Reset() = 0;
@@ -81,6 +90,7 @@ public:
 	virtual void SetConfig(CConfig *pConfig) = 0;
 	virtual void SetNetworkAlreadyInitialized() = 0;
 	virtual void AddResourcePath(const char *pPath) = 0;
+	virtual void AddPathCheck(const char *pPath, bool IsDir, bool RequireWrite, const char *pDescription) = 0;
 	virtual void RegisterCustomCheck(FPreflightCustomCheck pfnCheck, void *pUser) = 0;
 	virtual void AddResult(EPreflightCheck Check, EPreflightSeverity Severity, const char *pMessage, const char *pFixSuggestion) = 0;
 	virtual int RunAllChecks() = 0;
@@ -95,11 +105,27 @@ extern IPreflight *CreatePreflight();
 
 bool PreflightShouldSkip(int argc, const char **argv);
 
+void PreflightConfigure(IPreflight *pPreflight, EPreflightMode Mode, const char *pAppName,
+	IStorage *pStorage, CConfig *pConfig, bool NetworkAlreadyInitialized);
+
 int PreflightInitAndRun(const char *pAppName, EPreflightMode Mode, int argc, const char **argv,
 	SPreflightContext *pOutContext = 0,
 	FPreflightCustomCheck pfnCustomCheckA = 0, void *pUserA = 0,
-	FPreflightCustomCheck pfnCustomCheckB = 0, void *pUserB = 0);
+	FPreflightCustomCheck pfnCustomCheckB = 0, void *pUserB = 0,
+	const SPreflightPathCheck *pExtraPathChecks = 0, int NumExtraPathChecks = 0);
 
 void PreflightShutdown(SPreflightContext *pContext);
+
+int PreflightRunForClient(int argc, const char **argv,
+	SPreflightContext *pOutContext = 0,
+	FPreflightCustomCheck pfnGraphicsCheck = 0,
+	FPreflightCustomCheck pfnAudioCheck = 0);
+
+int PreflightRunForServer(int argc, const char **argv,
+	SPreflightContext *pOutContext = 0);
+
+int PreflightRunForTool(int argc, const char **argv,
+	SPreflightContext *pOutContext = 0,
+	const SPreflightPathCheck *pExtraPathChecks = 0, int NumExtraPathChecks = 0);
 
 #endif

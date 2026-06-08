@@ -1908,12 +1908,8 @@ int main(int argc, const char **argv)
 	if(!SkipPreflight)
 	{
 		IPreflight *pPreflight = CreatePreflight();
-		pPreflight->SetServerMode();
-		pPreflight->SetAppName("Teeworlds");
-		pPreflight->SetStorage(pStorage);
-		pPreflight->SetConfig(pConfigManager->Values());
-		pPreflight->DisableCheck(PRECHECK_GRAPHICS);
-		pPreflight->DisableCheck(PRECHECK_AUDIO);
+		PreflightConfigure(pPreflight, PREMODE_SERVER, "Teeworlds",
+			pStorage, pConfigManager->Values(), true);
 		int PreflightErrors = pPreflight->RunAllChecks();
 		bool PreflightHasErrors = pPreflight->HasErrors();
 		delete pPreflight;

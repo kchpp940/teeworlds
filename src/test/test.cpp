@@ -28,16 +28,13 @@ int main(int argc, const char **argv)
 
 	if(!PreflightShouldSkip(argc, argv))
 	{
-		SPreflightContext Ctx;
-		int Errors = PreflightInitAndRun("Teeworlds", PREMODE_TOOL, argc, argv, &Ctx);
-		if(Ctx.m_pPreflight && Ctx.m_pPreflight->HasErrors())
+		int Errors = PreflightRunForTool(argc, argv);
+		if(Errors < 0)
 		{
-			dbg_msg("test", "preflight checks failed with %d error(s). aborting.", Errors);
+			dbg_msg("test", "preflight checks failed. aborting.");
 			dbg_msg("test", "use --no-preflight to skip checks (not recommended)");
-			PreflightShutdown(&Ctx);
 			return -1;
 		}
-		PreflightShutdown(&Ctx);
 	}
 
 	int Result = RUN_ALL_TESTS();
