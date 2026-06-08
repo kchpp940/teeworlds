@@ -1821,39 +1821,6 @@ int main(int argc, const char **argv)
 		}
 	}
 
-	if(!SkipPreflight)
-	{
-		IPreflight *pPreflight = CreatePreflight();
-		pPreflight->SetServerMode();
-		pPreflight->SetAppName("Teeworlds");
-		pPreflight->DisableCheck(PRECHECK_GRAPHICS);
-		pPreflight->DisableCheck(PRECHECK_AUDIO);
-
-		int ServerPort = 8303;
-		for(int i = 1; i < argc - 1; i++)
-		{
-			if(str_comp(argv[i], "sv_port") == 0 || str_comp(argv[i], "-p") == 0)
-			{
-				ServerPort = atoi(argv[i + 1]);
-				if(ServerPort <= 0)
-					ServerPort = 8303;
-				break;
-			}
-		}
-		pPreflight->SetServerPort(ServerPort);
-
-		int PreflightErrors = pPreflight->RunAllChecks(argc, argv);
-		bool PreflightHasErrors = pPreflight->HasErrors();
-		delete pPreflight;
-
-		if(PreflightHasErrors)
-		{
-			dbg_msg("server", "preflight checks failed with %d error(s). aborting startup.", PreflightErrors);
-			dbg_msg("server", "use --no-preflight to skip checks (not recommended)");
-			return -1;
-		}
-	}
-
 #if defined(CONF_FAMILY_WINDOWS)
 	for(int i = 1; i < argc; i++)
 	{
@@ -1945,6 +1912,27 @@ int main(int argc, const char **argv)
 	pEngine->InitLogfile();
 
 	pServer->InitRconPasswordIfUnset();
+
+	if(!SkipPreflight)
+	{
+		IPreflight *pPreflight = CreatePreflight();
+		pPreflight->SetServerMode();
+		pPreflight->SetAppName("Teeworlds");
+		pPreflight->SetStorage(pStorage);
+		pPreflight->SetConfig(pConfigManager->Values());
+		pPreflight->DisableCheck(PRECHECK_GRAPHICS);
+		pPreflight->DisableCheck(PRECHECK_AUDIO);
+		int PreflightErrors = pPreflight->RunAllChecks();
+		bool PreflightHasErrors = pPreflight->HasErrors();
+		delete pPreflight;
+
+		if(PreflightHasErrors)
+		{
+			dbg_msg("server", "preflight checks failed with %d error(s). aborting startup.", PreflightErrors);
+			dbg_msg("server", "use --no-preflight to skip checks (not recommended)");
+			return -1;
+		}
+	}
 
 	// run the server
 	dbg_msg("server", "starting...");

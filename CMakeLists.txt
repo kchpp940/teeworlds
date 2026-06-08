@@ -1664,6 +1664,23 @@ if(TARGET_OS AND TARGET_OS STREQUAL "mac")
 endif()
 
 ########################################################################
+# PREFLIGHT CHECK TOOL
+########################################################################
+
+set(TARGET_PREFLIGHT preflight)
+set(PREFLIGHT_SRC
+  src/preflight/preflight.cpp
+)
+add_executable(${TARGET_PREFLIGHT} EXCLUDE_FROM_ALL
+  ${DEPS}
+  ${PREFLIGHT_SRC}
+  $<TARGET_OBJECTS:engine-shared>
+)
+target_link_libraries(${TARGET_PREFLIGHT} ${LIBS})
+list(APPEND TARGETS_OWN ${TARGET_PREFLIGHT})
+list(APPEND TARGETS_LINK ${TARGET_PREFLIGHT})
+
+########################################################################
 # VARIOUS TARGETS
 ########################################################################
 

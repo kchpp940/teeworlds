@@ -2616,26 +2616,6 @@ int main(int argc, const char **argv)
 		}
 	}
 
-	if(!SkipPreflight)
-	{
-		IPreflight *pPreflight = CreatePreflight();
-		pPreflight->SetClientMode();
-		pPreflight->SetAppName("Teeworlds");
-		pPreflight->DisableCheck(PRECHECK_SERVER_PORT);
-		pPreflight->RegisterCustomCheck(PreflightGraphicsCheck, 0);
-		pPreflight->RegisterCustomCheck(PreflightAudioCheck, 0);
-		int PreflightErrors = pPreflight->RunAllChecks(argc, argv);
-		bool PreflightHasErrors = pPreflight->HasErrors();
-		delete pPreflight;
-
-		if(PreflightHasErrors)
-		{
-			dbg_msg("client", "preflight checks failed with %d error(s). aborting startup.", PreflightErrors);
-			dbg_msg("client", "use --no-preflight to skip checks (not recommended)");
-			return -1;
-		}
-	}
-
 #if defined(CONF_FAMILY_WINDOWS)
 	bool QuickEditMode = false;
 	for(int i = 1; i < argc; i++)
@@ -2778,6 +2758,28 @@ int main(int argc, const char **argv)
 	pConfigManager->RestoreStrings();
 
 	pClient->Engine()->InitLogfile();
+
+	if(!SkipPreflight)
+	{
+		IPreflight *pPreflight = CreatePreflight();
+		pPreflight->SetClientMode();
+		pPreflight->SetAppName("Teeworlds");
+		pPreflight->SetStorage(pStorage);
+		pPreflight->SetConfig(pConfigManager->Values());
+		pPreflight->DisableCheck(PRECHECK_SERVER_PORT);
+		pPreflight->RegisterCustomCheck(PreflightGraphicsCheck, 0);
+		pPreflight->RegisterCustomCheck(PreflightAudioCheck, 0);
+		int PreflightErrors = pPreflight->RunAllChecks();
+		bool PreflightHasErrors = pPreflight->HasErrors();
+		delete pPreflight;
+
+		if(PreflightHasErrors)
+		{
+			dbg_msg("client", "preflight checks failed with %d error(s). aborting startup.", PreflightErrors);
+			dbg_msg("client", "use --no-preflight to skip checks (not recommended)");
+			return -1;
+		}
+	}
 
 	// run the client
 	dbg_msg("client", "starting...");

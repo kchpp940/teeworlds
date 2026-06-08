@@ -5,6 +5,9 @@
 
 #include "kernel.h"
 
+class IStorage;
+class CConfig;
+
 enum EPreflightCheck
 {
 	PRECHECK_NETWORK = 0,
@@ -22,6 +25,13 @@ enum EPreflightSeverity
 	PRESEVERITY_INFO = 0,
 	PRESEVERITY_WARNING,
 	PRESEVERITY_ERROR,
+};
+
+enum EPreflightMode
+{
+	PREMODE_TOOL = 0,
+	PREMODE_CLIENT,
+	PREMODE_SERVER,
 };
 
 struct SPreflightResult
@@ -48,14 +58,18 @@ public:
 	virtual void Reset() = 0;
 	virtual void EnableCheck(EPreflightCheck Check) = 0;
 	virtual void DisableCheck(EPreflightCheck Check) = 0;
+	virtual void SetMode(EPreflightMode Mode) = 0;
 	virtual void SetClientMode() = 0;
 	virtual void SetServerMode() = 0;
-	virtual void SetServerPort(int Port) = 0;
+	virtual void SetToolMode() = 0;
 	virtual void SetAppName(const char *pAppName) = 0;
+	virtual void SetStorage(IStorage *pStorage) = 0;
+	virtual void SetConfig(CConfig *pConfig) = 0;
+	virtual void SetNetworkAlreadyInitialized() = 0;
 	virtual void AddResourcePath(const char *pPath) = 0;
 	virtual void RegisterCustomCheck(FPreflightCustomCheck pfnCheck, void *pUser) = 0;
 	virtual void AddResult(EPreflightCheck Check, EPreflightSeverity Severity, const char *pMessage, const char *pFixSuggestion) = 0;
-	virtual int RunAllChecks(int argc, const char **argv) = 0;
+	virtual int RunAllChecks() = 0;
 	virtual int ResultCount() const = 0;
 	virtual const SPreflightResult *GetResult(int Index) const = 0;
 	virtual bool HasErrors() const = 0;

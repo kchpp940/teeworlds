@@ -25,10 +25,11 @@ void CPreflight::Reset()
 {
 	for(int i = 0; i < PRECHECK_COUNT; ++i)
 		m_aCheckEnabled[i] = true;
-	m_ClientMode = false;
-	m_ServerMode = false;
-	m_ServerPort = 8303;
+	m_Mode = PREMODE_TOOL;
+	m_NetworkAlreadyInitialized = false;
 	m_aAppName[0] = 0;
+	m_pStorage = 0;
+	m_pConfig = 0;
 	mem_zero(m_aaResourcePaths, sizeof(m_aaResourcePaths));
 	m_NumResourcePaths = 0;
 	mem_zero(m_aCustomChecks, sizeof(m_aCustomChecks));
@@ -49,26 +50,44 @@ void CPreflight::DisableCheck(EPreflightCheck Check)
 		m_aCheckEnabled[Check] = false;
 }
 
+void CPreflight::SetMode(EPreflightMode Mode)
+{
+	m_Mode = Mode;
+}
+
 void CPreflight::SetClientMode()
 {
-	m_ClientMode = true;
-	m_ServerMode = false;
+	m_Mode = PREMODE_CLIENT;
 }
 
 void CPreflight::SetServerMode()
 {
-	m_ClientMode = false;
-	m_ServerMode = true;
+	m_Mode = PREMODE_SERVER;
 }
 
-void CPreflight::SetServerPort(int Port)
+void CPreflight::SetToolMode()
 {
-	m_ServerPort = clamp(Port, 1, 65535);
+	m_Mode = PREMODE_TOOL;
 }
 
 void CPreflight::SetAppName(const char *pAppName)
 {
 	str_copy(m_aAppName, pAppName, sizeof(m_aAppName));
+}
+
+void CPreflight::SetStorage(IStorage *pStorage)
+{
+	m_pStorage = pStorage;
+}
+
+void CPreflight::SetConfig(CConfig *pConfig)
+{
+	m_pConfig = pConfig;
+}
+
+void CPreflight::SetNetworkAlreadyInitialized()
+{
+	m_NetworkAlreadyInitialized = true;
 }
 
 void CPreflight::AddResourcePath(const char *pPath)
@@ -112,6 +131,17 @@ const char *CPreflight::CheckName(EPreflightCheck Check) const
 	case PRECHECK_DEMO_MAP_PERMISSIONS: return "demo_map_permissions";
 	case PRECHECK_CONFIG_WRITE: return "config_write";
 	default: return "unknown";
+	}
+}
+
+const char *CPreflight::ModeName() const
+{
+	switch(m_Mode)
+	{
+	case PREMODE_CLIENT: return "client";
+	case PREMODE_SERVER: return "server";
+	case PREMODE_TOOL:
+	default: return "tool";
 	}
 }
 
@@ -238,9 +268,70 @@ bool CPreflight::CheckPortAvailable(int Port)
 	return true;
 }
 
+const char *CPreflight::GetSaveDir()
+{
+	static char s_aSaveDir[IO_MAX_PATH_LENGTH];
+	s_aSaveDir[0] = 0;
+
+	if(m_pStorage)
+	{
+		m_pStorage->GetCompletePath(IStorage::TYPE_SAVE, "", s_aSaveDir, sizeof(s_aSaveDir));
+	}
+	else if(m_aAppName[0])
+	{
+		fs_storage_path(m_aAppName, s_aSaveDir, sizeof(s_aSaveDir));
+	}
+
+	int Len = str_length(s_aSaveDir);
+	while(Len > 1 && s_aSaveDir[Len - 1] == '/')
+	{
+		s_aSaveDir[Len - 1] = 0;
+		Len--;
+	}
+	return s_aSaveDir;
+}
+
+const char *CPreflight::GetDataDir()
+{
+	static char s_aDataDir[IO_MAX_PATH_LENGTH];
+	s_aDataDir[0] = 0;
+
+	if(m_pStorage)
+	{
+		char aMarker[IO_MAX_PATH_LENGTH];
+		if(m_pStorage->FindFile("maps/dm1.map", "data", IStorage::TYPE_ALL, aMarker, sizeof(aMarker)))
+		{
+			str_copy(s_aDataDir, aMarker, sizeof(s_aDataDir));
+			for(int i = 0; i < 2; i++)
+				fs_parent_dir(s_aDataDir);
+			return s_aDataDir;
+		}
+		m_pStorage->GetCompletePath(IStorage::TYPE_ALL, "data", s_aDataDir, sizeof(s_aDataDir));
+	}
+	else
+	{
+		str_copy(s_aDataDir, "data", sizeof(s_aDataDir));
+	}
+
+	int Len = str_length(s_aDataDir);
+	while(Len > 1 && s_aDataDir[Len - 1] == '/')
+	{
+		s_aDataDir[Len - 1] = 0;
+		Len--;
+	}
+	return s_aDataDir;
+}
+
 int CPreflight::CheckNetwork()
 {
 	dbg_msg("preflight", "running network initialization check...");
+
+	if(m_NetworkAlreadyInitialized)
+	{
+		AddResult(PRECHECK_NETWORK, PRESEVERITY_INFO,
+			"Network subsystem already initialized (skipped re-init).", 0);
+		return 0;
+	}
 
 	int Ret = net_init();
 	if(Ret != 0)
@@ -256,12 +347,13 @@ int CPreflight::CheckNetwork()
 		return -1;
 	}
 
+	m_NetworkAlreadyInitialized = true;
 	AddResult(PRECHECK_NETWORK, PRESEVERITY_INFO,
 		"Network subsystem initialized successfully.", 0);
 	return 0;
 }
 
-int CPreflight::CheckResourcePaths(int argc, const char **argv)
+int CPreflight::CheckResourcePaths()
 {
 	dbg_msg("preflight", "running resource paths check...");
 
@@ -276,34 +368,53 @@ int CPreflight::CheckResourcePaths(int argc, const char **argv)
 		"ui",
 	};
 
-	char aAppDir[IO_MAX_PATH_LENGTH] = {0};
-	char aDataDir[IO_MAX_PATH_LENGTH] = {0};
-
-	if(argc > 0 && argv && argv[0])
+	if(m_pStorage)
 	{
-		str_copy(aAppDir, argv[0], sizeof(aAppDir));
-		fs_parent_dir(aAppDir);
-	}
+		for(unsigned i = 0; i < sizeof(apDefaultSubdirs)/sizeof(apDefaultSubdirs[0]); ++i)
+		{
+			char aMarker[IO_MAX_PATH_LENGTH];
+			char aPath[IO_MAX_PATH_LENGTH];
+			str_format(aPath, sizeof(aPath), "data/%s", apDefaultSubdirs[i]);
+			bool Found = false;
+			if(str_comp(apDefaultSubdirs[i], "maps") == 0)
+				Found = m_pStorage->FindFile("dm1.map", aPath, IStorage::TYPE_ALL, aMarker, sizeof(aMarker));
+			else if(str_comp(apDefaultSubdirs[i], "mapres") == 0)
+				Found = m_pStorage->FindFile("grass_main.png", aPath, IStorage::TYPE_ALL, aMarker, sizeof(aMarker));
+			else if(str_comp(apDefaultSubdirs[i], "skins") == 0)
+				Found = m_pStorage->FindFile("default.png", aPath, IStorage::TYPE_ALL, aMarker, sizeof(aMarker));
+			else if(str_comp(apDefaultSubdirs[i], "fonts") == 0)
+				Found = m_pStorage->FindFile("DejaVuSans.ttf", aPath, IStorage::TYPE_ALL, aMarker, sizeof(aMarker));
+			else if(str_comp(apDefaultSubdirs[i], "audio") == 0)
+				Found = m_pStorage->FindFile("chat_msg.wav", aPath, IStorage::TYPE_ALL, aMarker, sizeof(aMarker));
+			else if(str_comp(apDefaultSubdirs[i], "languages") == 0)
+				Found = m_pStorage->FindFile("index.txt", aPath, IStorage::TYPE_ALL, aMarker, sizeof(aMarker));
+			else if(str_comp(apDefaultSubdirs[i], "ui") == 0)
+				Found = m_pStorage->FindFile("background.png", aPath, IStorage::TYPE_ALL, aMarker, sizeof(aMarker));
+			else
+			{
+				m_pStorage->GetCompletePath(IStorage::TYPE_ALL, aPath, aMarker, sizeof(aMarker));
+				Found = PathExistsAndReadable(aMarker);
+			}
 
-	if(aAppDir[0])
-	{
-		str_format(aDataDir, sizeof(aDataDir), "%s/data", aAppDir);
+			if(!Found)
+			{
+				char aBuf[512];
+				str_format(aBuf, sizeof(aBuf), "Missing or unreadable resource directory: data/%s (searched in storage paths)", apDefaultSubdirs[i]);
+				AddResult(PRECHECK_RESOURCE_PATHS, PRESEVERITY_WARNING, aBuf,
+					"Verify the data/ directory is complete and present in one of the storage search paths (application dir, user dir, current dir). "
+					"Re-download the game data if files are missing."
+				);
+				NumFailures++;
+			}
+		}
 	}
 	else
 	{
-		str_copy(aDataDir, "data", sizeof(aDataDir));
-	}
-
-	if(!PathExistsAndReadable(aDataDir))
-	{
-		char aCwdData[IO_MAX_PATH_LENGTH];
-		fs_getcwd(aCwdData, sizeof(aCwdData));
-		str_append(aCwdData, "/data", sizeof(aCwdData));
-
-		if(!PathExistsAndReadable(aCwdData))
+		const char *pDataDir = GetDataDir();
+		if(!PathExistsAndReadable(pDataDir))
 		{
 			char aBuf[512];
-			str_format(aBuf, sizeof(aBuf), "Data directory not found at '%s' or '%s'.", aDataDir, aCwdData);
+			str_format(aBuf, sizeof(aBuf), "Data directory not found at '%s'.", pDataDir);
 			AddResult(PRECHECK_RESOURCE_PATHS, PRESEVERITY_ERROR, aBuf,
 				"1. Verify the 'data' directory exists in the same directory as the executable\n"
 				"2. If running from build directory, make sure to copy or symlink the data directory:\n"
@@ -314,24 +425,19 @@ int CPreflight::CheckResourcePaths(int argc, const char **argv)
 		}
 		else
 		{
-			str_copy(aDataDir, aCwdData, sizeof(aDataDir));
-		}
-	}
-
-	if(NumFailures == 0 && aDataDir[0])
-	{
-		for(unsigned i = 0; i < sizeof(apDefaultSubdirs)/sizeof(apDefaultSubdirs[0]); ++i)
-		{
-			char aSubPath[IO_MAX_PATH_LENGTH];
-			str_format(aSubPath, sizeof(aSubPath), "%s/%s", aDataDir, apDefaultSubdirs[i]);
-			if(!PathExistsAndReadable(aSubPath))
+			for(unsigned i = 0; i < sizeof(apDefaultSubdirs)/sizeof(apDefaultSubdirs[0]); ++i)
 			{
-				char aBuf[512];
-				str_format(aBuf, sizeof(aBuf), "Missing or unreadable resource subdirectory: '%s'", aSubPath);
-				AddResult(PRECHECK_RESOURCE_PATHS, PRESEVERITY_WARNING, aBuf,
-					"Verify the data directory is complete. Re-download the game data if files are missing."
-				);
-				NumFailures++;
+				char aSubPath[IO_MAX_PATH_LENGTH];
+				str_format(aSubPath, sizeof(aSubPath), "%s/%s", pDataDir, apDefaultSubdirs[i]);
+				if(!PathExistsAndReadable(aSubPath))
+				{
+					char aBuf[512];
+					str_format(aBuf, sizeof(aBuf), "Missing or unreadable resource subdirectory: '%s'", aSubPath);
+					AddResult(PRECHECK_RESOURCE_PATHS, PRESEVERITY_WARNING, aBuf,
+						"Verify the data directory is complete. Re-download the game data if files are missing."
+					);
+					NumFailures++;
+				}
 			}
 		}
 	}
@@ -360,154 +466,135 @@ int CPreflight::CheckResourcePaths(int argc, const char **argv)
 
 int CPreflight::CheckServerPort()
 {
-	if(!m_ServerMode)
+	if(m_Mode != PREMODE_SERVER)
 		return 0;
 
 	dbg_msg("preflight", "running server port check...");
 
-	if(m_ServerPort <= 0 || m_ServerPort > 65535)
+	int ServerPort = 8303;
+	if(m_pConfig)
+	{
+		ServerPort = m_pConfig->m_SvPort;
+	}
+
+	if(ServerPort <= 0 || ServerPort > 65535)
 	{
 		char aBuf[512];
-		str_format(aBuf, sizeof(aBuf), "Invalid port number: %d. Port must be between 1 and 65535.", m_ServerPort);
+		str_format(aBuf, sizeof(aBuf), "Invalid port number: %d (from sv_port config). Port must be between 1 and 65535.", ServerPort);
 		AddResult(PRECHECK_SERVER_PORT, PRESEVERITY_ERROR, aBuf,
-			"Set sv_port to a valid value between 1 and 65535 (default: 8303)."
+			"Set sv_port to a valid value between 1 and 65535 in settings_ddnet.cfg (default: 8303)."
 		);
 		return -1;
 	}
 
-	if(m_ServerPort < 1024)
+	if(ServerPort < 1024)
 	{
 		char aBuf[512];
-		str_format(aBuf, sizeof(aBuf), "Port %d is a privileged port (< 1024).", m_ServerPort);
+		str_format(aBuf, sizeof(aBuf), "Port %d is a privileged port (< 1024).", ServerPort);
 		AddResult(PRECHECK_SERVER_PORT, PRESEVERITY_WARNING, aBuf,
-			"On Unix systems, privileged ports require root/sudo access. Consider using a port >= 1024 (e.g., 8303)."
+			"On Unix systems, privileged ports require root/sudo access. Consider setting sv_port >= 1024 (e.g., 8303)."
 		);
 	}
 
-	if(!CheckPortAvailable(m_ServerPort))
+	if(!CheckPortAvailable(ServerPort))
 	{
 		char aBuf[512];
-		str_format(aBuf, sizeof(aBuf), "Port %d is already in use or cannot be bound.", m_ServerPort);
+		str_format(aBuf, sizeof(aBuf), "Port %d (sv_port) is already in use or cannot be bound.", ServerPort);
 		AddResult(PRECHECK_SERVER_PORT, PRESEVERITY_ERROR, aBuf,
 			"1. Check if another Teeworlds server is already running on this port\n"
 			"2. Use 'lsof -i :PORT' or 'netstat -tulpn | grep PORT' to find the process\n"
 			"   macOS:   lsof -i :8303\n"
 			"   Linux:   sudo netstat -tulpn | grep 8303\n"
-			"3. Change sv_port to a different, unused port"
+			"3. Change sv_port in settings_ddnet.cfg to a different, unused port"
 		);
 		return -1;
 	}
 
 	char aBuf[512];
-	str_format(aBuf, sizeof(aBuf), "Server port %d is available.", m_ServerPort);
+	str_format(aBuf, sizeof(aBuf), "Server port %d (from sv_port config) is available.", ServerPort);
 	AddResult(PRECHECK_SERVER_PORT, PRESEVERITY_INFO, aBuf, 0);
 	return 0;
 }
 
-int CPreflight::CheckDemoMapPermissions(int argc, const char **argv)
+int CPreflight::CheckDemoMapPermissions()
 {
 	dbg_msg("preflight", "running demo/map file permissions check...");
 
 	int NumFailures = 0;
+	const char *pSaveDir = GetSaveDir();
 
-	char aUserDir[IO_MAX_PATH_LENGTH] = {0};
-	if(m_aAppName[0])
+	if(pSaveDir && pSaveDir[0])
 	{
-		fs_storage_path(m_aAppName, aUserDir, sizeof(aUserDir));
+		struct
+		{
+			const char *m_pSubDir;
+			bool m_IsError;
+		} aDirs[] = {
+			{"demos", true},
+			{"demos/auto", false},
+			{"maps", true},
+			{"downloadedmaps", false},
+		};
+
+		for(unsigned i = 0; i < sizeof(aDirs)/sizeof(aDirs[0]); ++i)
+		{
+			char aFullPath[IO_MAX_PATH_LENGTH];
+			str_format(aFullPath, sizeof(aFullPath), "%s/%s", pSaveDir, aDirs[i].m_pSubDir);
+			if(fs_is_dir(aFullPath))
+			{
+				if(!PathWritable(aFullPath))
+				{
+					char aBuf[512];
+					str_format(aBuf, sizeof(aBuf), "'%s' directory is not writable: '%s'", aDirs[i].m_pSubDir, aFullPath);
+					AddResult(PRECHECK_DEMO_MAP_PERMISSIONS,
+						aDirs[i].m_IsError ? PRESEVERITY_ERROR : PRESEVERITY_WARNING, aBuf,
+						"Fix directory permissions:\n"
+						"  chmod u+w /path/to/dir\n"
+						"Or check the ownership of the directory with: ls -la"
+					);
+					NumFailures++;
+				}
+			}
+		}
 	}
 
-	if(aUserDir[0])
+	if(m_pStorage)
 	{
-		char aDemosDir[IO_MAX_PATH_LENGTH];
-		char aMapsDir[IO_MAX_PATH_LENGTH];
-		str_format(aDemosDir, sizeof(aDemosDir), "%s/demos", aUserDir);
-		str_format(aMapsDir, sizeof(aMapsDir), "%s/maps", aUserDir);
-
-		if(fs_is_dir(aDemosDir))
+		char aMapPath[IO_MAX_PATH_LENGTH];
+		bool HasDm1 = m_pStorage->FindFile("dm1.map", "data/maps", IStorage::TYPE_ALL, aMapPath, sizeof(aMapPath));
+		bool HasCtf1 = m_pStorage->FindFile("ctf1.map", "data/maps", IStorage::TYPE_ALL, aMapPath, sizeof(aMapPath));
+		if(!HasDm1 || !HasCtf1)
 		{
-			if(!PathWritable(aDemosDir))
-			{
-				char aBuf[512];
-				str_format(aBuf, sizeof(aBuf), "Demos directory is not writable: '%s'", aDemosDir);
-				AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_ERROR, aBuf,
-					"Fix directory permissions:\n"
-					"  chmod u+w /path/to/demos\n"
-					"Or check the ownership of the directory with: ls -la"
-				);
-				NumFailures++;
-			}
-		}
-
-		if(fs_is_dir(aMapsDir))
-		{
-			if(!PathWritable(aMapsDir))
-			{
-				char aBuf[512];
-				str_format(aBuf, sizeof(aBuf), "Downloaded maps directory is not writable: '%s'", aMapsDir);
-				AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_ERROR, aBuf,
-					"Fix directory permissions:\n"
-					"  chmod u+w /path/to/maps\n"
-					"Or check the ownership of the directory with: ls -la"
-				);
-				NumFailures++;
-			}
-		}
-
-		char aAutoDemosDir[IO_MAX_PATH_LENGTH];
-		str_format(aAutoDemosDir, sizeof(aAutoDemosDir), "%s/demos/auto", aUserDir);
-		if(fs_is_dir(aAutoDemosDir) && !PathWritable(aAutoDemosDir))
-		{
-			char aBuf[512];
-			str_format(aBuf, sizeof(aBuf), "Auto demos directory is not writable: '%s'", aAutoDemosDir);
-			AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_WARNING, aBuf,
-				"Fix directory permissions: chmod u+w /path/to/demos/auto"
+			AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_WARNING,
+				"Standard map files (dm1.map, ctf1.map) not found in storage search paths.",
+				"Ensure data/maps directory exists with the default .map files from the original Teeworlds distribution."
 			);
 			NumFailures++;
 		}
 	}
-
-	char aAppDir[IO_MAX_PATH_LENGTH] = {0};
-	if(argc > 0 && argv && argv[0])
+	else
 	{
-		str_copy(aAppDir, argv[0], sizeof(aAppDir));
-		fs_parent_dir(aAppDir);
-	}
-
-	if(aAppDir[0])
-	{
-		char aBuiltinMaps[IO_MAX_PATH_LENGTH];
-		str_format(aBuiltinMaps, sizeof(aBuiltinMaps), "%s/data/maps", aAppDir);
-		if(!PathExistsAndReadable(aBuiltinMaps))
+		const char *pDataDir = GetDataDir();
+		if(pDataDir && pDataDir[0])
 		{
-			char aCwdMaps[IO_MAX_PATH_LENGTH];
-			fs_getcwd(aCwdMaps, sizeof(aCwdMaps));
-			str_append(aCwdMaps, "/data/maps", sizeof(aCwdMaps));
-
-			if(!PathExistsAndReadable(aCwdMaps))
+			char aBuiltinMaps[IO_MAX_PATH_LENGTH];
+			str_format(aBuiltinMaps, sizeof(aBuiltinMaps), "%s/maps", pDataDir);
+			if(PathExistsAndReadable(aBuiltinMaps))
 			{
-				char aBuf[512];
-				str_format(aBuf, sizeof(aBuf), "Builtin maps directory not found or unreadable at '%s' or '%s'", aBuiltinMaps, aCwdMaps);
-				AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_WARNING, aBuf,
-					"Ensure data/maps directory exists with the default .map files (dm1, ctf1, etc.)."
-				);
-				NumFailures++;
-			}
-		}
-		else
-		{
-			const char *apTestMaps[] = {"dm1.map", "ctf1.map"};
-			for(unsigned i = 0; i < sizeof(apTestMaps)/sizeof(apTestMaps[0]); ++i)
-			{
-				char aMapPath[IO_MAX_PATH_LENGTH];
-				str_format(aMapPath, sizeof(aMapPath), "%s/%s", aBuiltinMaps, apTestMaps[i]);
-				if(!PathExistsAndReadable(aMapPath))
+				const char *apTestMaps[] = {"dm1.map", "ctf1.map"};
+				for(unsigned i = 0; i < sizeof(apTestMaps)/sizeof(apTestMaps[0]); ++i)
 				{
-					char aBuf[512];
-					str_format(aBuf, sizeof(aBuf), "Standard map file missing or unreadable: '%s'", aMapPath);
-					AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_WARNING, aBuf,
-						"Reinstall or restore the missing map files from the original Teeworlds distribution."
-					);
-					NumFailures++;
+					char aMapPath[IO_MAX_PATH_LENGTH];
+					str_format(aMapPath, sizeof(aMapPath), "%s/%s", aBuiltinMaps, apTestMaps[i]);
+					if(!PathExistsAndReadable(aMapPath))
+					{
+						char aBuf[512];
+						str_format(aBuf, sizeof(aBuf), "Standard map file missing or unreadable: '%s'", aMapPath);
+						AddResult(PRECHECK_DEMO_MAP_PERMISSIONS, PRESEVERITY_WARNING, aBuf,
+							"Reinstall or restore the missing map files from the original Teeworlds distribution."
+						);
+						NumFailures++;
+					}
 				}
 			}
 		}
@@ -522,19 +609,14 @@ int CPreflight::CheckDemoMapPermissions(int argc, const char **argv)
 	return NumFailures == 0 ? 0 : -1;
 }
 
-int CPreflight::CheckConfigWrite(int argc, const char **argv)
+int CPreflight::CheckConfigWrite()
 {
 	dbg_msg("preflight", "running config directory write check...");
 
 	int NumFailures = 0;
+	const char *pSaveDir = GetSaveDir();
 
-	char aUserDir[IO_MAX_PATH_LENGTH] = {0};
-	if(m_aAppName[0])
-	{
-		fs_storage_path(m_aAppName, aUserDir, sizeof(aUserDir));
-	}
-
-	if(!aUserDir[0])
+	if(!pSaveDir || !pSaveDir[0])
 	{
 		AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_ERROR,
 			"Unable to determine user configuration directory path.",
@@ -543,13 +625,13 @@ int CPreflight::CheckConfigWrite(int argc, const char **argv)
 		return -1;
 	}
 
-	if(!fs_is_dir(aUserDir))
+	if(!fs_is_dir(pSaveDir))
 	{
-		int Ret = fs_makedir_recursive(aUserDir);
+		int Ret = fs_makedir_recursive(pSaveDir);
 		if(Ret != 0)
 		{
 			char aBuf[512];
-			str_format(aBuf, sizeof(aBuf), "Failed to create configuration directory: '%s'", aUserDir);
+			str_format(aBuf, sizeof(aBuf), "Failed to create configuration directory: '%s'", pSaveDir);
 			AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_ERROR, aBuf,
 				"1. Check the parent directory permissions\n"
 				"2. Ensure your home directory is writable\n"
@@ -560,10 +642,10 @@ int CPreflight::CheckConfigWrite(int argc, const char **argv)
 		}
 	}
 
-	if(!PathWritable(aUserDir))
+	if(!PathWritable(pSaveDir))
 	{
 		char aBuf[512];
-		str_format(aBuf, sizeof(aBuf), "Configuration directory is not writable: '%s'", aUserDir);
+		str_format(aBuf, sizeof(aBuf), "Configuration directory is not writable: '%s'", pSaveDir);
 		AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_ERROR, aBuf,
 			"Fix directory permissions:\n"
 			"  chmod u+w /path/to/config/dir\n"
@@ -572,32 +654,24 @@ int CPreflight::CheckConfigWrite(int argc, const char **argv)
 		NumFailures++;
 	}
 
-	char aConfigsDir[IO_MAX_PATH_LENGTH];
-	str_format(aConfigsDir, sizeof(aConfigsDir), "%s/configs", aUserDir);
-	if(fs_is_dir(aConfigsDir) && !PathWritable(aConfigsDir))
+	const char *apSubDirs[] = {"configs", "dumps"};
+	for(unsigned i = 0; i < sizeof(apSubDirs)/sizeof(apSubDirs[0]); ++i)
 	{
-		char aBuf[512];
-		str_format(aBuf, sizeof(aBuf), "Settings subdirectory is not writable: '%s'", aConfigsDir);
-		AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_ERROR, aBuf,
-			"Fix directory permissions: chmod u+w /path/to/configs"
-		);
-		NumFailures++;
-	}
-
-	char aDumpsDir[IO_MAX_PATH_LENGTH];
-	str_format(aDumpsDir, sizeof(aDumpsDir), "%s/dumps", aUserDir);
-	if(fs_is_dir(aDumpsDir) && !PathWritable(aDumpsDir))
-	{
-		char aBuf[512];
-		str_format(aBuf, sizeof(aBuf), "Dumps directory is not writable: '%s'", aDumpsDir);
-		AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_WARNING, aBuf,
-			"Fix directory permissions: chmod u+w /path/to/dumps"
-		);
-		NumFailures++;
+		char aFullPath[IO_MAX_PATH_LENGTH];
+		str_format(aFullPath, sizeof(aFullPath), "%s/%s", pSaveDir, apSubDirs[i]);
+		if(fs_is_dir(aFullPath) && !PathWritable(aFullPath))
+		{
+			char aBuf[512];
+			str_format(aBuf, sizeof(aBuf), "'%s' subdirectory is not writable: '%s'", apSubDirs[i], aFullPath);
+			AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_ERROR, aBuf,
+				"Fix directory permissions: chmod u+w /path/to/dir"
+			);
+			NumFailures++;
+		}
 	}
 
 	char aTestFile[IO_MAX_PATH_LENGTH];
-	str_format(aTestFile, sizeof(aTestFile), "%s/.preflight_write_test", aUserDir);
+	str_format(aTestFile, sizeof(aTestFile), "%s/.preflight_write_test", pSaveDir);
 	IOHANDLE f = io_open(aTestFile, IOFLAG_WRITE);
 	if(f)
 	{
@@ -609,7 +683,7 @@ int CPreflight::CheckConfigWrite(int argc, const char **argv)
 	else
 	{
 		char aBuf[512];
-		str_format(aBuf, sizeof(aBuf), "Failed to write test file in config directory: '%s'", aUserDir);
+		str_format(aBuf, sizeof(aBuf), "Failed to write test file in config directory: '%s'", pSaveDir);
 		AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_ERROR, aBuf,
 			"Check that your disk is not full and the directory has write permissions."
 		);
@@ -619,19 +693,23 @@ int CPreflight::CheckConfigWrite(int argc, const char **argv)
 	if(NumFailures == 0)
 	{
 		char aBuf[512];
-		str_format(aBuf, sizeof(aBuf), "Configuration directory is writable: '%s'", aUserDir);
+		str_format(aBuf, sizeof(aBuf), "Configuration directory is writable: '%s'", pSaveDir);
 		AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_INFO, aBuf, 0);
 	}
 
 	return NumFailures == 0 ? 0 : -1;
 }
 
-int CPreflight::RunAllChecks(int argc, const char **argv)
+int CPreflight::RunAllChecks()
 {
 	int TotalErrors = 0;
 
 	dbg_msg("preflight", "=== starting preflight checks ===");
-	dbg_msg("preflight", "mode: %s", m_ClientMode ? "client" : (m_ServerMode ? "server" : "tool"));
+	dbg_msg("preflight", "mode: %s", ModeName());
+	dbg_msg("preflight", "using %s storage, %s config",
+		m_pStorage ? "initialized" : "fallback",
+		m_pConfig ? "loaded" : "default"
+	);
 
 	if(m_aCheckEnabled[PRECHECK_NETWORK])
 	{
@@ -641,7 +719,7 @@ int CPreflight::RunAllChecks(int argc, const char **argv)
 
 	if(m_aCheckEnabled[PRECHECK_RESOURCE_PATHS])
 	{
-		if(CheckResourcePaths(argc, argv) != 0)
+		if(CheckResourcePaths() != 0)
 			TotalErrors++;
 	}
 
@@ -653,13 +731,13 @@ int CPreflight::RunAllChecks(int argc, const char **argv)
 
 	if(m_aCheckEnabled[PRECHECK_DEMO_MAP_PERMISSIONS])
 	{
-		if(CheckDemoMapPermissions(argc, argv) != 0)
+		if(CheckDemoMapPermissions() != 0)
 			TotalErrors++;
 	}
 
 	if(m_aCheckEnabled[PRECHECK_CONFIG_WRITE])
 	{
-		if(CheckConfigWrite(argc, argv) != 0)
+		if(CheckConfigWrite() != 0)
 			TotalErrors++;
 	}
 
