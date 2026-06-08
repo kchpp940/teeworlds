@@ -6,6 +6,9 @@
 #include "kernel.h"
 
 class IStorage;
+class IEngine;
+class IConsole;
+class IConfigManager;
 class CConfig;
 
 enum EPreflightCheck
@@ -44,6 +47,17 @@ struct SPreflightResult
 
 typedef int (*FPreflightCustomCheck)(class IPreflight *pPreflight, void *pUser);
 
+struct SPreflightContext
+{
+	class IKernel *m_pKernel;
+	class IEngine *m_pEngine;
+	class IStorage *m_pStorage;
+	class IConsole *m_pConsole;
+	class IConfigManager *m_pConfigManager;
+	class IPreflight *m_pPreflight;
+	bool m_OwnsInstances;
+};
+
 class IPreflight : public IInterface
 {
 	MACRO_INTERFACE("preflight", 0)
@@ -78,5 +92,14 @@ public:
 };
 
 extern IPreflight *CreatePreflight();
+
+bool PreflightShouldSkip(int argc, const char **argv);
+
+int PreflightInitAndRun(const char *pAppName, EPreflightMode Mode, int argc, const char **argv,
+	SPreflightContext *pOutContext = 0,
+	FPreflightCustomCheck pfnCustomCheckA = 0, void *pUserA = 0,
+	FPreflightCustomCheck pfnCustomCheckB = 0, void *pUserB = 0);
+
+void PreflightShutdown(SPreflightContext *pContext);
 
 #endif

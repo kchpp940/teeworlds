@@ -4,6 +4,10 @@
 #include <base/math.h>
 #include <base/system.h>
 
+#include <engine/config.h>
+#include <engine/console.h>
+#include <engine/engine.h>
+#include <engine/kernel.h>
 #include <engine/preflight.h>
 #include <engine/storage.h>
 
@@ -225,10 +229,50 @@ bool CPreflight::PathExistsAndReadable(const char *pPath)
 #endif
 }
 
+static bool CanCreateDirectory(const char *pPath)
+{
+	if(!pPath || !pPath[0])
+		return false;
+
+	char aParent[IO_MAX_PATH_LENGTH];
+	str_copy(aParent, pPath, sizeof(aParent));
+	if(!fs_parent_dir(aParent))
+		return false;
+
+#if defined(CONF_FAMILY_UNIX)
+	return access(aParent, W_OK) == 0;
+#elif defined(CONF_FAMILY_WINDOWS)
+	DWORD Attr = GetFileAttributesA(aParent);
+	if(Attr == INVALID_FILE_ATTRIBUTES)
+		return false;
+	if(Attr & FILE_ATTRIBUTE_READONLY)
+		return false;
+	return true;
+#else
+	char aTestDir[IO_MAX_PATH_LENGTH];
+	str_format(aTestDir, sizeof(aTestDir), "%s/.preflight_create_test_%d", aParent, (int)pid());
+	int Ret = fs_makedir(aTestDir);
+	if(Ret == 0)
+	{
+		fs_remove(aTestDir);
+		return true;
+	}
+	return false;
+#endif
+}
+
 bool CPreflight::PathWritable(const char *pPath)
 {
 	if(!pPath || !pPath[0])
 		return false;
+
+	if(!fs_is_dir(pPath))
+	{
+		if(!PathExistsAndReadable(pPath))
+		{
+			return CanCreateDirectory(pPath);
+		}
+	}
 
 #if defined(CONF_FAMILY_UNIX)
 	return access(pPath, W_OK) == 0;
@@ -540,17 +584,33 @@ int CPreflight::CheckDemoMapPermissions()
 		{
 			char aFullPath[IO_MAX_PATH_LENGTH];
 			str_format(aFullPath, sizeof(aFullPath), "%s/%s", pSaveDir, aDirs[i].m_pSubDir);
-			if(fs_is_dir(aFullPath))
+
+			bool Exists = fs_is_dir(aFullPath);
+			if(Exists)
 			{
 				if(!PathWritable(aFullPath))
 				{
 					char aBuf[512];
-					str_format(aBuf, sizeof(aBuf), "'%s' directory is not writable: '%s'", aDirs[i].m_pSubDir, aFullPath);
+					str_format(aBuf, sizeof(aBuf), "'%s' directory exists but is not writable: '%s'", aDirs[i].m_pSubDir, aFullPath);
 					AddResult(PRECHECK_DEMO_MAP_PERMISSIONS,
 						aDirs[i].m_IsError ? PRESEVERITY_ERROR : PRESEVERITY_WARNING, aBuf,
 						"Fix directory permissions:\n"
 						"  chmod u+w /path/to/dir\n"
 						"Or check the ownership of the directory with: ls -la"
+					);
+					NumFailures++;
+				}
+			}
+			else
+			{
+				if(!PathWritable(aFullPath))
+				{
+					char aBuf[512];
+					str_format(aBuf, sizeof(aBuf), "'%s' directory does not exist and cannot be created at: '%s'", aDirs[i].m_pSubDir, aFullPath);
+					AddResult(PRECHECK_DEMO_MAP_PERMISSIONS,
+						aDirs[i].m_IsError ? PRESEVERITY_ERROR : PRESEVERITY_WARNING, aBuf,
+						"Check parent directory permissions. The game should be able to create this subdirectory automatically:\n"
+						"  chmod u+w /path/to/parent/dir"
 					);
 					NumFailures++;
 				}
@@ -627,11 +687,10 @@ int CPreflight::CheckConfigWrite()
 
 	if(!fs_is_dir(pSaveDir))
 	{
-		int Ret = fs_makedir_recursive(pSaveDir);
-		if(Ret != 0)
+		if(!PathWritable(pSaveDir))
 		{
 			char aBuf[512];
-			str_format(aBuf, sizeof(aBuf), "Failed to create configuration directory: '%s'", pSaveDir);
+			str_format(aBuf, sizeof(aBuf), "Configuration directory does not exist and cannot be created: '%s'", pSaveDir);
 			AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_ERROR, aBuf,
 				"1. Check the parent directory permissions\n"
 				"2. Ensure your home directory is writable\n"
@@ -641,17 +700,19 @@ int CPreflight::CheckConfigWrite()
 			return -1;
 		}
 	}
-
-	if(!PathWritable(pSaveDir))
+	else
 	{
-		char aBuf[512];
-		str_format(aBuf, sizeof(aBuf), "Configuration directory is not writable: '%s'", pSaveDir);
-		AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_ERROR, aBuf,
-			"Fix directory permissions:\n"
-			"  chmod u+w /path/to/config/dir\n"
-			"  chown -R $(whoami) /path/to/config/dir"
-		);
-		NumFailures++;
+		if(!PathWritable(pSaveDir))
+		{
+			char aBuf[512];
+			str_format(aBuf, sizeof(aBuf), "Configuration directory is not writable: '%s'", pSaveDir);
+			AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_ERROR, aBuf,
+				"Fix directory permissions:\n"
+				"  chmod u+w /path/to/config/dir\n"
+				"  chown -R $(whoami) /path/to/config/dir"
+			);
+			NumFailures++;
+		}
 	}
 
 	const char *apSubDirs[] = {"configs", "dumps"};
@@ -659,14 +720,30 @@ int CPreflight::CheckConfigWrite()
 	{
 		char aFullPath[IO_MAX_PATH_LENGTH];
 		str_format(aFullPath, sizeof(aFullPath), "%s/%s", pSaveDir, apSubDirs[i]);
-		if(fs_is_dir(aFullPath) && !PathWritable(aFullPath))
+
+		if(fs_is_dir(aFullPath))
 		{
-			char aBuf[512];
-			str_format(aBuf, sizeof(aBuf), "'%s' subdirectory is not writable: '%s'", apSubDirs[i], aFullPath);
-			AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_ERROR, aBuf,
-				"Fix directory permissions: chmod u+w /path/to/dir"
-			);
-			NumFailures++;
+			if(!PathWritable(aFullPath))
+			{
+				char aBuf[512];
+				str_format(aBuf, sizeof(aBuf), "'%s' subdirectory is not writable: '%s'", apSubDirs[i], aFullPath);
+				AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_ERROR, aBuf,
+					"Fix directory permissions: chmod u+w /path/to/dir"
+				);
+				NumFailures++;
+			}
+		}
+		else
+		{
+			if(!PathWritable(aFullPath))
+			{
+				char aBuf[512];
+				str_format(aBuf, sizeof(aBuf), "'%s' subdirectory does not exist and cannot be created at: '%s'", apSubDirs[i], aFullPath);
+				AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_WARNING, aBuf,
+					"Check parent directory permissions: chmod u+w /path/to/parent/dir"
+				);
+				NumFailures++;
+			}
 		}
 	}
 
@@ -682,12 +759,15 @@ int CPreflight::CheckConfigWrite()
 	}
 	else
 	{
-		char aBuf[512];
-		str_format(aBuf, sizeof(aBuf), "Failed to write test file in config directory: '%s'", pSaveDir);
-		AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_ERROR, aBuf,
-			"Check that your disk is not full and the directory has write permissions."
-		);
-		NumFailures++;
+		if(fs_is_dir(pSaveDir))
+		{
+			char aBuf[512];
+			str_format(aBuf, sizeof(aBuf), "Failed to write test file in existing config directory: '%s'", pSaveDir);
+			AddResult(PRECHECK_CONFIG_WRITE, PRESEVERITY_ERROR, aBuf,
+				"Check that your disk is not full and the directory has write permissions."
+			);
+			NumFailures++;
+		}
 	}
 
 	if(NumFailures == 0)
@@ -762,4 +842,139 @@ int CPreflight::RunAllChecks()
 IPreflight *CreatePreflight()
 {
 	return new CPreflight;
+}
+
+bool PreflightShouldSkip(int argc, const char **argv)
+{
+	for(int i = 1; i < argc; i++)
+	{
+		if(str_comp(argv[i], "--no-preflight") == 0)
+			return true;
+	}
+	return false;
+}
+
+int PreflightInitAndRun(const char *pAppName, EPreflightMode Mode, int argc, const char **argv,
+	SPreflightContext *pOutContext,
+	FPreflightCustomCheck pfnCustomCheckA, void *pUserA,
+	FPreflightCustomCheck pfnCustomCheckB, void *pUserB)
+{
+	int FlagMask = CFGFLAG_CLIENT | CFGFLAG_SERVER;
+	int StorageType = IStorage::STORAGETYPE_BASIC;
+	switch(Mode)
+	{
+	case PREMODE_CLIENT:
+		FlagMask = CFGFLAG_CLIENT;
+		StorageType = IStorage::STORAGETYPE_CLIENT;
+		break;
+	case PREMODE_SERVER:
+		FlagMask = CFGFLAG_SERVER;
+		StorageType = IStorage::STORAGETYPE_SERVER;
+		break;
+	case PREMODE_TOOL:
+	default:
+		break;
+	}
+
+	IEngine *pEngine = CreateEngine(pAppName);
+	IStorage *pStorage = CreateStorage(pAppName, StorageType, argc, argv);
+	IConsole *pConsole = CreateConsole(FlagMask);
+	IConfigManager *pConfigManager = CreateConfigManager();
+
+	IKernel *pKernel = IKernel::Create();
+	bool RegisterFail = false;
+	RegisterFail = RegisterFail || !pKernel->RegisterInterface(pEngine);
+	RegisterFail = RegisterFail || !pKernel->RegisterInterface(pConsole);
+	RegisterFail = RegisterFail || !pKernel->RegisterInterface(pConfigManager);
+	RegisterFail = RegisterFail || !pKernel->RegisterInterface(pStorage);
+
+	if(RegisterFail)
+	{
+		dbg_msg("preflight", "failed to register core interfaces.");
+		delete pKernel;
+		delete pEngine;
+		delete pStorage;
+		delete pConsole;
+		delete pConfigManager;
+		return -1;
+	}
+
+	pEngine->Init();
+	pConfigManager->Init(FlagMask);
+	pConsole->Init();
+
+	IPreflight *pPreflight = CreatePreflight();
+	pPreflight->SetMode(Mode);
+	pPreflight->SetAppName(pAppName);
+	pPreflight->SetStorage(pStorage);
+	pPreflight->SetConfig(pConfigManager->Values());
+	pPreflight->SetNetworkAlreadyInitialized();
+
+	switch(Mode)
+	{
+	case PREMODE_CLIENT:
+		pPreflight->DisableCheck(PRECHECK_SERVER_PORT);
+		break;
+	case PREMODE_SERVER:
+		pPreflight->DisableCheck(PRECHECK_GRAPHICS);
+		pPreflight->DisableCheck(PRECHECK_AUDIO);
+		break;
+	case PREMODE_TOOL:
+	default:
+		pPreflight->DisableCheck(PRECHECK_GRAPHICS);
+		pPreflight->DisableCheck(PRECHECK_AUDIO);
+		pPreflight->DisableCheck(PRECHECK_SERVER_PORT);
+		break;
+	}
+
+	if(pfnCustomCheckA)
+		pPreflight->RegisterCustomCheck(pfnCustomCheckA, pUserA);
+	if(pfnCustomCheckB)
+		pPreflight->RegisterCustomCheck(pfnCustomCheckB, pUserB);
+
+	int NumErrors = pPreflight->RunAllChecks();
+	bool HasErrors = pPreflight->HasErrors();
+
+	if(pOutContext)
+	{
+		pOutContext->m_pKernel = pKernel;
+		pOutContext->m_pEngine = pEngine;
+		pOutContext->m_pStorage = pStorage;
+		pOutContext->m_pConsole = pConsole;
+		pOutContext->m_pConfigManager = pConfigManager;
+		pOutContext->m_pPreflight = pPreflight;
+		pOutContext->m_OwnsInstances = true;
+	}
+	else
+	{
+		delete pPreflight;
+		delete pKernel;
+		delete pEngine;
+		delete pStorage;
+		delete pConsole;
+		delete pConfigManager;
+	}
+
+	return HasErrors ? -1 : NumErrors;
+}
+
+void PreflightShutdown(SPreflightContext *pContext)
+{
+	if(!pContext || !pContext->m_OwnsInstances)
+		return;
+
+	delete pContext->m_pPreflight;
+	delete pContext->m_pKernel;
+	delete pContext->m_pEngine;
+	delete pContext->m_pStorage;
+	delete pContext->m_pConsole;
+	delete pContext->m_pConfigManager;
+
+	pContext->m_pPreflight = 0;
+	pContext->m_pKernel = 0;
+	pContext->m_pEngine = 0;
+	pContext->m_pStorage = 0;
+	pContext->m_pConsole = 0;
+	pContext->m_pConfigManager = 0;
+	pContext->m_OwnsInstances = false;
 }

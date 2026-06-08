@@ -1811,15 +1811,7 @@ int main(int argc, const char **argv)
 {
 	cmdline_fix(&argc, &argv);
 
-	bool SkipPreflight = false;
-	for(int i = 1; i < argc; i++)
-	{
-		if(str_comp("--no-preflight", argv[i]) == 0)
-		{
-			SkipPreflight = true;
-			break;
-		}
-	}
+	bool SkipPreflight = PreflightShouldSkip(argc, argv);
 
 #if defined(CONF_FAMILY_WINDOWS)
 	for(int i = 1; i < argc; i++)
